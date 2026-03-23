@@ -17,9 +17,9 @@ Review code for correctness, maintainability, architecture, and simplicity.
 - No missing imports, unimplemented interfaces, incomplete migrations
 - Edge cases handled: empty inputs, null values, concurrent access, error paths
 
-### Concurrency
+### Concurrency (correctness only — parallelization perf is in performance agent)
 - Race conditions, deadlocks, thread/coroutine leaks
-- Proper synchronization, atomic operations where needed
+- Data races from missing synchronization
 
 ## Readability & Structure
 

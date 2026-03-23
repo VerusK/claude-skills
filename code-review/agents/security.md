@@ -1,132 +1,62 @@
-# Security Review Checklist
+# Security Review
 
-## Authentication
+Review code for security vulnerabilities and unsafe patterns.
 
-### Password Handling
-- [ ] Passwords are hashed using bcrypt/argon2 (not MD5/SHA1)
-- [ ] Password complexity requirements enforced
-- [ ] Password reset flow is secure
-- [ ] No passwords in logs or error messages
+## Authentication & Sessions
 
-### Session Management
-- [ ] Sessions expire after inactivity
-- [ ] Session tokens are cryptographically random
-- [ ] Sessions invalidated on logout
-- [ ] Secure and HttpOnly cookie flags set
-
-### Token Security
-- [ ] JWTs have appropriate expiration
-- [ ] Tokens stored securely (not localStorage for sensitive data)
-- [ ] Refresh token rotation implemented
-- [ ] Token revocation supported
+- Passwords hashed with bcrypt/argon2 (not MD5/SHA1)
+- Sessions expire, tokens cryptographically random, invalidated on logout
+- JWTs have appropriate expiration, refresh token rotation implemented
+- Secure and HttpOnly cookie flags set
+- No passwords in logs or error messages
 
 ## Authorization
 
-### Access Control
-- [ ] All endpoints require authentication (unless public)
-- [ ] Authorization checks on all protected resources
-- [ ] Deny by default principle applied
-- [ ] Role-based access properly implemented
-
-### Data Access
-- [ ] Users can only access their own data
-- [ ] Admin functions properly restricted
-- [ ] No IDOR (Insecure Direct Object Reference) vulnerabilities
-- [ ] Tenant isolation enforced (multi-tenant apps)
+- All endpoints require authentication (unless explicitly public)
+- Deny by default, role-based access properly implemented
+- Users can only access their own data, no IDOR vulnerabilities
+- Admin functions restricted, tenant isolation enforced
 
 ## Input Validation
 
-### General Input
-- [ ] All user input is validated
-- [ ] Input length limits enforced
-- [ ] Input type validation done
-- [ ] Whitelist validation preferred over blacklist
+- All user input validated, length and type limits enforced
+- Whitelist validation preferred over blacklist
+- File uploads: type validated (not just extension), size limited, stored outside web root
 
-### File Uploads
-- [ ] File type validation (not just extension)
-- [ ] File size limits enforced
-- [ ] Files stored outside web root
-- [ ] Malware scanning for uploads
+## Injection & XSS
 
-## Output Encoding
-
-### XSS Prevention
-- [ ] All output HTML-encoded
-- [ ] Context-appropriate encoding used
-- [ ] User content sanitized before display
-- [ ] Content-Security-Policy header set
-
-### Response Headers
-- [ ] X-Content-Type-Options: nosniff
-- [ ] X-Frame-Options configured
-- [ ] X-XSS-Protection enabled
-- [ ] Referrer-Policy set
-
-## Database Security
-
-### Query Safety
-- [ ] Parameterized queries used (no string concatenation)
-- [ ] ORM used properly to prevent injection
-- [ ] No raw SQL with user input
-- [ ] Database errors don't leak sensitive info
-
-### Data Protection
-- [ ] Sensitive data encrypted at rest
-- [ ] PII properly handled
-- [ ] Database credentials not in code
-- [ ] Backup encryption enabled
+- Parameterized queries used (no string concatenation with user input)
+- ORM used properly, no raw SQL with user input
+- All output HTML-encoded, Content-Security-Policy header set
+- User content sanitized before display
 
 ## Secrets Management
 
-### Credential Storage
-- [ ] No hardcoded secrets in code
-- [ ] Environment variables for configuration
-- [ ] Secrets in secure vault/service
-- [ ] API keys properly scoped
-
-### Code Repository
-- [ ] .gitignore includes sensitive files
-- [ ] No secrets in commit history
-- [ ] Pre-commit hooks for secret detection
-- [ ] Environment-specific configs separated
+- No hardcoded secrets, API keys, or credentials in code
+- Environment variables or secret vault for configuration
+- .gitignore includes sensitive files, no secrets in commit history
 
 ## API Security
 
-### Request Validation
-- [ ] Rate limiting implemented
-- [ ] Request size limits set
-- [ ] CORS properly configured
-- [ ] API versioning in place
+- Rate limiting implemented, request size limits set
+- CORS properly configured
+- Error messages don't leak internal info, no stack traces in production
+- Security headers set: X-Content-Type-Options, X-Frame-Options, Referrer-Policy
 
-### Response Security
-- [ ] Sensitive data not in URLs
-- [ ] Error messages don't leak info
-- [ ] Appropriate HTTP status codes
-- [ ] No stack traces in production
+## Logging
 
-## Logging & Monitoring
-
-### Security Logging
-- [ ] Authentication events logged
-- [ ] Authorization failures logged
-- [ ] Suspicious activity detected
-- [ ] Logs don't contain sensitive data
-
-### Incident Response
-- [ ] Alerting configured
-- [ ] Log retention policy defined
-- [ ] Audit trail maintained
-- [ ] Breach notification process exists
+- Authentication and authorization events logged
+- Logs don't contain sensitive data (passwords, tokens, PII)
+- Alerting configured for suspicious activity
 
 ## Critical Patterns to Flag
 
-### Immediate Action Required
 ```
 Pattern: hardcoded credentials
 Example: const password = "admin123"
 Action: Remove immediately, rotate credential
 
-Pattern: SQL injection vulnerability
+Pattern: SQL injection
 Example: `SELECT * FROM users WHERE id = ${userId}`
 Action: Use parameterized query
 
@@ -138,3 +68,14 @@ Pattern: Missing authentication
 Example: Public endpoint exposing sensitive data
 Action: Add authentication middleware
 ```
+
+## What to Report
+
+For each issue:
+- Location: file path and line number
+- Issue: clear description
+- Impact: how this affects security
+- Fix: specific suggestion
+- Severity: critical / warning / suggestion
+
+Report problems only - no positive observations.

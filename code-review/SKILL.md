@@ -32,10 +32,10 @@ Launch ALL applicable agents **in parallel** using the Agent tool. Pass each age
 | Testing | `${CLAUDE_SKILL_DIR}/agents/testing.md` | Always |
 | Accessibility | `${CLAUDE_SKILL_DIR}/agents/accessibility.md` | Only if changes include frontend code (JSX, TSX, HTML, CSS, Vue, Svelte) |
 
-Each agent prompt MUST include:
-1. The review instructions (read from the agent's file)
-2. The diff or changed file contents
-3. Instruction to report problems only, no positive observations
+For each agent:
+1. Read the agent's instruction file using the Read tool
+2. Compose an Agent tool prompt that includes: the full instruction text, the diff or changed file contents
+3. Launch all agents in parallel (single message with multiple Agent tool calls)
 
 ## 3. Compile Report
 
