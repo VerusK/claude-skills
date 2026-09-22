@@ -41,8 +41,8 @@ off it. The **frontier** is every decision whose prerequisites are settled.
 Work in **rounds**. Each round:
 
 1. List the frontier. A question that depends on another open question waits for the next round.
-2. For each frontier question write 2–4 options with one-line trade-offs and your recommendation.
-3. Run every question through the judge — read `judge.md` in this skill's directory and follow it exactly.
+2. For each frontier question write 2–6 options with one-line trade-offs and your recommendation.
+3. Run every question that has concrete options through the judge (open-ended, taste and credential questions are asked directly, see `judge.md`) — read `judge.md` in this skill's directory and follow it exactly.
 4. Accepted questions: print their decision blocks, add them to the running **Decisions** list (question, options with percentages, choice, confidence).
 5. Unaccepted questions: ask them all in one message, numbered, each with its decision block, options and your recommendation. Wait for the answers.
 6. Recompute the frontier and repeat. The interview ends when the frontier is empty.
@@ -85,7 +85,7 @@ one line. The Decisions section of the spec is the durable copy.
 | Thought | Reality |
 |---|---|
 | "This question is obvious, skip the judge" | Obvious questions are exactly what the judge is for. Run it. |
-| "The judge said 0.69, close enough" | Below threshold means ask. No rounding. |
+| "The judge said just below the threshold, close enough" | Below threshold means ask. No rounding. |
 | "The judge is down, I'll pick my recommendation" | Judge down means ask the user. Always. |
 | "Too simple to need approval" | Simple means a short design, not no design. |
 | "I'll batch the accepted decisions later" | Print each block as it happens. |
