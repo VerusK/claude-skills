@@ -25,15 +25,17 @@ flowchart LR
 
 ```
 kickoff → writing-plans → plan-review → subagent-driven-development → review → finishing-a-development-branch
-   │                          │  ▲                     │                    │
-   └─ questions → TypeSafe    └──┴ 1 re-review         └ per-task reviews   └ findings → TypeSafe, 1 fix wave, 1 re-review
+   │                          │  ▲                   │                  │
+   │                          ├──┘ 1 re-review       │                  │
+   │                          │                      └ per-task reviews │
+   └─ questions → TypeSafe    └─ findings → TypeSafe                    └ findings → TypeSafe, 1 fix wave, 1 re-review
 ```
 
 | Step | Skill | What happens |
 |---|---|---|
 | 1 | `kickoff` | Classifies the task, interviews through a decision tree, judges each multiple-choice question, writes `docs/specs/<date>-<topic>-design.md` with a Decisions section. |
 | 2 | `writing-plans` | Bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
-| 3 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report beside it as `<plan>.review.md`. Findings rated 7+/10 are judged, the plan is revised, one re-review. |
+| 3 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review. |
 | 4 | `subagent-driven-development` | Fresh `opus` subagent per task, spec + quality review after each. |
 | 5 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. One fix subagent, one re-review, then the hand-off to step 6. |
 | 6 | `finishing-a-development-branch` | Merge, PR, or keep. |
@@ -46,11 +48,11 @@ Outside the flow: `systematic-debugging`, `test-driven-development`, `verificati
 
 | Argument | Scope |
 |---|---|
-| *(none)* | the branch diff against `main` (or a commit passed as the argument) |
+| *(none)* | the branch diff against the merge base with `main` (or against a commit passed as the argument) |
 | `<paths\|globs>` | those tracked files, reviewed whole, no diff |
-| `all` | every tracked text file, minus `vendor/`, `node_modules/`, generated docs and lockfiles |
+| `all` | every tracked text file, minus `vendor/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles |
 
-A **clean** working tree gives full mode: review → findings judged → one fix wave by a single `opus` subagent → one re-review → the report is committed → hand-off to `finishing-a-development-branch`. A **dirty** working tree gives report-only mode, so the skill is usable mid-task: findings are still judged and printed, but no fix subagent runs and nothing is committed.
+A **clean** working tree gives full mode: review → findings judged → at most one fix wave and one re-review; each round's report is committed as soon as it is written. In branch scope it then hands off to `finishing-a-development-branch`; path and codebase scope end with the summary. A **dirty** working tree gives report-only mode, so the skill is usable mid-task: findings are still judged and printed, but no fix subagent runs and nothing is committed.
 
 ### Decisions and reviewers
 
@@ -125,6 +127,8 @@ The `sync upstream skills` workflow does the same weekly (Mondays 06:00 UTC) and
 
 Watch-only sources (`mode: watch` in `sources.yaml`) are only tracked in `vendor/`, never merged into `skills/`: `gstack-plan-eng-review` (`plan-eng-review/SKILL.md.tmpl` from garrytan/gstack) and `superpowers-code-reviewer` (`skills/requesting-code-review/code-reviewer.md` from obra/superpowers). Their diffs appear in the PR body; our own prompts derived from them are updated by hand.
 
+This repo's own spec and plan live under `docs/superpowers/` for historical reasons; in target repos the skills write to `docs/specs/` and `docs/plans/`.
+
 ## Add a source
 
 Append to `sources.yaml`:
@@ -147,4 +151,4 @@ make uninstall   # removes symlinks, hook and AGENTS.md line
 
 ## License
 
-MIT. See `NOTICE` for upstream attribution.
+MIT — see [`LICENSE`](LICENSE). Upstream attribution is in `NOTICE`.
