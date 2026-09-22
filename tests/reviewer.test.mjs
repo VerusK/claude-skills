@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, copyFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync, execFileSync } from "node:child_process";
 
-const SCRIPT = new URL("../scripts/reviewer.sh", import.meta.url).pathname;
-const FIX = new URL("./fixtures/fake-bin/", import.meta.url).pathname;
+const SCRIPT = fileURLToPath(new URL("../scripts/reviewer.sh", import.meta.url));
+const FIX = fileURLToPath(new URL("./fixtures/fake-bin/", import.meta.url));
 
 function repo() {
   const dir = mkdtempSync(path.join(tmpdir(), "rev-"));
@@ -14,16 +15,17 @@ function repo() {
   return dir;
 }
 
-function run(dir, bins) {
+function run(dir, bins, opts = {}) {
   const bin = mkdtempSync(path.join(tmpdir(), "bin-"));
   for (const b of bins) { copyFileSync(path.join(FIX, b), path.join(bin, b)); chmodSync(path.join(bin, b), 0o755); }
   const log = path.join(dir, "calls.log");
   const prompt = path.join(dir, "prompt.md");
   writeFileSync(prompt, "Review this.\nWrite the report to docs/reviews/out.md\n");
-  const r = spawnSync("bash", [SCRIPT, "--prompt-file", prompt, "--output", "docs/reviews/out.md", "--title", "t", "--repo", dir, "--timeout-min", "1"], {
-    cwd: dir, encoding: "utf8",
-    env: { PATH: `${bin}:/usr/bin:/bin`, HOME: dir, FAKE_LOG: log, NODE: process.execPath },
-  });
+  const env = { PATH: `${bin}:/usr/bin:/bin`, HOME: dir, FAKE_LOG: log, NODE: process.execPath, ...(opts.env ?? {}) };
+  for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
+  const args = [SCRIPT, "--prompt-file", prompt, "--output", opts.output ?? "docs/reviews/out.md",
+    "--title", "t", "--repo", opts.repo ?? dir, "--timeout-min", "1"];
+  const r = spawnSync("bash", args, { cwd: opts.cwd ?? dir, encoding: "utf8", env });
   return { ...r, log: existsSync(log) ? readFileSync(log, "utf8") : "" };
 }
 
@@ -56,6 +58,88 @@ test("exits 3 when nothing is available", () => {
 });
 
 test("exits 1 on missing args", () => {
-  const r = spawnSync("bash", [SCRIPT], { encoding: "utf8" });
+  const dir = mkdtempSync(path.join(tmpdir(), "rev-noargs-"));
+  const r = spawnSync("bash", [SCRIPT], {
+    cwd: dir, encoding: "utf8",
+    env: { PATH: "/usr/bin:/bin", HOME: dir, NODE: process.execPath },
+  });
   assert.equal(r.status, 1);
+  assert.match(r.stderr, /usage: reviewer\.sh/);
+});
+
+test("codex report mentioning auth still succeeds", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], { env: { FAKE_CODEX_STDOUT: "the authentication handler returns 401 on expired tokens" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.doesNotMatch(r.stderr, /authentication failed/);
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "codex report");
+});
+
+test("real codex auth failure is reported", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], { env: { FAKE_CODEX_STDOUT: "stream error: 401 Unauthorized", FAKE_CODEX_NO_REPORT: "1" } });
+  assert.equal(r.status, 3);
+  assert.match(r.stderr, /authentication failed/);
+});
+
+test("excludes .context in a linked worktree", () => {
+  const main = repo();
+  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: main });
+  const wt = path.join(mkdtempSync(path.join(tmpdir(), "revwt-")), "wt");
+  execFileSync("git", ["worktree", "add", "-q", wt, "-b", "wt-branch"], { cwd: main });
+  const r = run(main, ["codex"], { repo: wt, cwd: wt });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  const ci = spawnSync("git", ["-C", wt, "check-ignore", "-q", ".context"], { encoding: "utf8" });
+  assert.equal(ci.status, 0, "`.context` is not ignored inside the linked worktree");
+  const st = spawnSync("git", ["-C", wt, "status", "--porcelain"], { encoding: "utf8" });
+  assert.doesNotMatch(st.stdout, /\.context/);
+});
+
+test("rejects an absolute --output", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], { output: path.join(dir, "docs/reviews/out.md") });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--output must be repo-relative/);
+});
+
+test("skips Orca when node is unavailable", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { NODE: undefined } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /node not found/);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.doesNotMatch(r.log, /terminal create/);
+});
+
+test("falls back to codex when Orca is unreachable", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_REACHABLE: "false" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.log, /orca status/);
+  assert.doesNotMatch(r.log, /terminal create/);
+});
+
+test("reuses an existing Orca session", () => {
+  const dir = repo();
+  mkdirSync(path.join(dir, ".context"), { recursive: true });
+  writeFileSync(path.join(dir, ".context/t-session"), "term-1\n");
+  const r = run(dir, ["orca", "codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: orca/);
+  assert.match(r.log, /terminal show/);
+  assert.doesNotMatch(r.log, /terminal create/);
+  assert.equal(readFileSync(path.join(dir, ".context/t-session"), "utf8").trim(), "term-1");
+});
+
+test("rejects an option with no value", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "rev-noval-"));
+  const r = spawnSync("bash", [SCRIPT, "--prompt-file"], {
+    cwd: dir, encoding: "utf8",
+    env: { PATH: "/usr/bin:/bin", HOME: dir, NODE: process.execPath },
+  });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /missing value for --prompt-file/);
 });

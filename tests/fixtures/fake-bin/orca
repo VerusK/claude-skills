@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Fake Orca CLI: records calls, writes the report when a prompt is sent.
+# Env knobs:
+#   FAKE_ORCA_REACHABLE=false  -> `status --json` reports runtime.reachable=false
 echo "orca $*" >> "${FAKE_LOG:?}"
 case "$1 $2" in
-  "status "*) echo '{"ok":true,"result":{"runtime":{"reachable":true}}}';;
+  "status "*)
+    if [ "${FAKE_ORCA_REACHABLE:-true}" = "false" ]; then
+      echo '{"ok":true,"result":{"runtime":{"reachable":false}}}'
+    else
+      echo '{"ok":true,"result":{"runtime":{"reachable":true}}}'
+    fi;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}';;
   "terminal show") echo '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}';;
   "terminal wait") echo '{"ok":true,"result":{"wait":{"satisfied":true}}}';;
@@ -13,3 +20,4 @@ case "$1 $2" in
     echo '{"ok":true,"result":{"accepted":true}}';;
   *) echo '{"ok":true}';;
 esac
+exit 0

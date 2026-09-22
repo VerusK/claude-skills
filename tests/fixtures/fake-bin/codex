@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
+# Fake codex CLI. Env knobs:
+#   FAKE_CODEX_STDOUT=<text>  -> echoed to stdout (the launcher captures it in the log)
+#   FAKE_CODEX_NO_REPORT=1    -> do not write the report file
 echo "codex $*" >> "${FAKE_LOG:?}"
 prompt=$(cat)
-out=$(printf '%s\n' "$prompt" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
-[ -n "$out" ] && { mkdir -p "$(dirname "$out")"; echo "codex report" > "$out"; }
+if [ -n "${FAKE_CODEX_STDOUT:-}" ]; then
+  printf '%s\n' "$FAKE_CODEX_STDOUT"
+fi
+if [ -z "${FAKE_CODEX_NO_REPORT:-}" ]; then
+  out=$(printf '%s\n' "$prompt" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
+  [ -n "$out" ] && { mkdir -p "$(dirname "$out")"; echo "codex report" > "$out"; }
+fi
+exit 0
