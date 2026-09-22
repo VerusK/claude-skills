@@ -76,8 +76,17 @@ export async function judge(input, { client, choice, threshold }) {
     questions: buildQuestions(input, choice),
   });
   const a = response?.answers?.answer;
-  if (!a || typeof a.choice !== "string" || typeof a.confidence !== "number" || !a.probabilities) {
+  if (
+    !a ||
+    typeof a.choice !== "string" ||
+    !Number.isFinite(a.confidence) ||
+    typeof a.probabilities !== "object" ||
+    a.probabilities === null
+  ) {
     throw new Error("unexpected SDK response shape");
+  }
+  if (!input.options.some((o) => o.id === a.choice)) {
+    throw new Error(`SDK returned an unknown choice: ${a.choice}`);
   }
   const result = {
     choice: a.choice,
@@ -90,12 +99,42 @@ export async function judge(input, { client, choice, threshold }) {
   return result;
 }
 
+// Reads --threshold <n> and --threshold=<n>; returns null when the flag is absent
+// (the caller then falls back to config/judge.json). Any other --threshold* spelling
+// is a typo, not a silent no-op.
+export function parseThresholdArg(args) {
+  let raw;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--threshold") {
+      // A trailing --threshold with no value stays "" so it is reported as an
+      // invalid threshold rather than falling back to the config file.
+      raw = args[i + 1] ?? "";
+      i++;
+    } else if (a.startsWith("--threshold=")) {
+      raw = a.slice("--threshold=".length);
+    } else if (a.startsWith("--threshold")) {
+      throw new Error(`unknown option: ${a}`);
+    }
+  }
+  return raw === undefined ? null : raw;
+}
+
 async function main() {
-  const args = process.argv.slice(2);
-  const t = args.indexOf("--threshold");
-  const threshold = t >= 0 ? Number(args[t + 1]) : loadConfig().threshold;
+  let threshold;
+  try {
+    const raw = parseThresholdArg(process.argv.slice(2));
+    threshold = raw === null ? loadConfig().threshold : raw.trim() === "" ? Number.NaN : Number(raw);
+  } catch (err) {
+    console.error(`judge failed: ${err.message}`);
+    process.exit(2);
+  }
   if (!Number.isFinite(threshold)) {
     console.error("invalid threshold");
+    process.exit(2);
+  }
+  if (!(threshold > 0 && threshold <= 1)) {
+    console.error("threshold must be in (0,1]");
     process.exit(2);
   }
   if (!process.env.TYPESAFE_API_KEY) {
@@ -121,5 +160,8 @@ async function main() {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
+  main().catch((err) => {
+    console.error(`judge failed: ${err.message}`);
+    process.exit(2);
+  });
 }
