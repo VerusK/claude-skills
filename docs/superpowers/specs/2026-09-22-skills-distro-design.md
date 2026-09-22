@@ -162,6 +162,8 @@ claude-skills/
 2. **`codex exec`**: если Orca нет или шаг 1 не дал отчёт. `codex exec -C <repo> --enable web_search_cached -c model_reasoning_effort=high` с промптом на stdin, таймаут 10 мин. Повторный круг: новый `codex exec` с предыдущим отчётом в промпте.
 3. **Код 3**: ни Orca, ни `codex`, либо auth-ошибка, либо таймаут на обоих. Скилл запускает Claude-агента.
 
+Модель и reasoning для Codex фиксируются в `config/reviewer.json` (по умолчанию `gpt-6-astra`, `high`) и передаются в оба пути запуска (`codex exec -m ... -c model_reasoning_effort=...`, в Orca `--command "codex -m ... -c ..."`); переопределяются переменными `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`.
+
 Промпт всегда начинается с границы файловой системы, как в gstack: не читать `~/.codex/`, `~/.agents/`, `.codex/skills/`, `agents/`. Скрипт печатает, какой путь сработал, и это попадает в отчёт.
 
 ## 6. Установка

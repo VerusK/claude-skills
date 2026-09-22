@@ -1402,6 +1402,23 @@ git commit -m "feat: add external reviewer launcher (Orca -> codex exec -> fallb
 
 ---
 
+### Task 7b: Pin the Codex model and reasoning effort in the launcher
+
+**Files:**
+- Create: `config/reviewer.json`
+- Modify: `scripts/reviewer.sh`, `tests/reviewer.test.mjs`, `tests/fixtures/fake-bin/orca` (only if needed to record the create command)
+
+**Interfaces:**
+- Produces: `config/reviewer.json` = `{ "codexModel": "gpt-6-astra", "codexReasoning": "high" }`. `reviewer.sh` reads it (relative to its own directory: `$(dirname "$0")/../config/reviewer.json`) via `node -e` JSON parse, with env overrides `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING` and hard defaults `gpt-6-astra` / `high` if the file is missing. Both launch paths pass the values: `codex exec -m "$CODEX_MODEL" -c model_reasoning_effort="$CODEX_REASONING" ...` and `orca terminal create --worktree active --command "codex -m $CODEX_MODEL -c model_reasoning_effort=$CODEX_REASONING" --title ...`.
+
+- [ ] **Step 1: Write failing tests** in `tests/reviewer.test.mjs`: (a) codex path: the fake log line contains `-m gpt-6-astra` and `model_reasoning_effort=high`; (b) Orca path: the `terminal create` log line contains `--command codex -m gpt-6-astra -c model_reasoning_effort=high`; (c) env override `REVIEWER_CODEX_MODEL=gpt-test` shows up in the codex log line instead of the default.
+- [ ] **Step 2: Run, expect failure.**
+- [ ] **Step 3: Implement** `config/reviewer.json` and the script changes described above; keep bash 3.2 compatibility and `set -uo pipefail`.
+- [ ] **Step 4: Run** `node --test tests/reviewer.test.mjs` and `npm test`, expect green; `bash -n scripts/reviewer.sh`.
+- [ ] **Step 5: Commit** `feat(reviewer): pin Codex model and reasoning effort via config/reviewer.json`.
+
+---
+
 ### Task 8: `plan-review` skill
 
 **Files:**
@@ -2413,6 +2430,8 @@ make install
 ```
 
 `make install` symlinks every skill into `~/.claude/skills/` and `~/.codex/skills/`, adds a SessionStart hook that injects `USING.md`, adds a pointer line to `~/.codex/AGENTS.md`, and uninstalls the `superpowers` plugin (its skills are vendored here).
+
+Codex model and reasoning effort used by `plan-review` / `branch-review` live in `config/reviewer.json` (default `gpt-6-astra`, `high`); override per run with `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`.
 
 Put the TypeSafe key where Claude Code sees it, in `~/.claude/settings.json`:
 
