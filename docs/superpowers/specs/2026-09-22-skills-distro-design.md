@@ -23,7 +23,7 @@
 | `writing-plans` | obra/superpowers, копия с патчем | план из спеки |
 | `plan-review` | свой, промпт из garrytan/gstack `plan-eng-review` | ревью плана внешним голосом |
 | `subagent-driven-development` | obra/superpowers, копия с патчем | исполнение плана |
-| `branch-review` | свой, промпт из obra/superpowers `requesting-code-review/code-reviewer.md` | финальное ревью ветки |
+| `review` | свой, промпт из obra/superpowers `requesting-code-review/code-reviewer.md` | финальное ревью ветки |
 | `finishing-a-development-branch` | obra/superpowers, копия | merge / PR / оставить |
 | `test-driven-development` | obra/superpowers, копия | вне флоу, используется имплементаторами |
 | `verification-before-completion` | obra/superpowers, копия | вне флоу |
@@ -37,7 +37,7 @@
 ### 2.1. Флоу
 
 ```
-kickoff ──► writing-plans ──► plan-review ──► subagent-driven-development ──► branch-review ──► finishing-a-development-branch
+kickoff ──► writing-plans ──► plan-review ──► subagent-driven-development ──► review ──► finishing-a-development-branch
    │                              │  ▲                    │                        │
    │ вопросы с вариантами         │  └── 1 повторный круг  │ задачные ревью Claude  │ находки
    ▼                              ▼                        ▼                        ▼
@@ -60,12 +60,12 @@ kickoff ──► writing-plans ──► plan-review ──► subagent-driven-
 
 Spike-путь и bounded-путь сохраняются из brainstorming: spike заканчивается рекомендацией, bounded коротким дизайном в чате и переходом сразу к исполнению без плана.
 
-### 2.3. `plan-review` и `branch-review`
+### 2.3. `plan-review` и `review`
 
 Два отдельных скилла с общим лаунчером `scripts/reviewer.sh` (§5). Различаются промптом и входом:
 
 - `plan-review <файл плана>`: промпт `skills/plan-review/reviewer.md`, извлечён из gstack `plan-eng-review`: секции архитектура, качество кода, тесты, производительность, калибровка confidence 1–10, формат находки `[P1] (confidence: 9/10) file:line — описание`. Без преамбулы gstack, без AskUserQuestion, без learnings.
-- `branch-review [база]`: промпт `skills/branch-review/reviewer.md` на основе superpowers `code-reviewer.md`: сверка diff с планом и спекой, качество, тесты, готовность к merge. База по умолчанию `main`.
+- `review [база]`: промпт `skills/review/reviewer.md` на основе superpowers `code-reviewer.md`: сверка diff с планом и спекой, качество, тесты, готовность к merge. База по умолчанию `main`.
 
 Общая логика обоих:
 
@@ -78,9 +78,9 @@ Spike-путь и bounded-путь сохраняются из brainstorming: sp
 
 ### 2.4. Патчи к копиям superpowers
 
-- Все ссылки `superpowers:<name>` заменяются на наши имена (`superpowers:brainstorming` → `kickoff`, `superpowers:requesting-code-review` → `branch-review`).
+- Все ссылки `superpowers:<name>` заменяются на наши имена (`superpowers:brainstorming` → `kickoff`, `superpowers:requesting-code-review` → `review`).
 - Шаг `using-git-worktrees` удаляется из `subagent-driven-development` и `writing-plans`: работа всегда идёт в worktree Orca.
-- В `subagent-driven-development` финальный ревьюер заменяется вызовом `branch-review`; задачные ревью после каждой задачи остаются на Claude-сабагентах.
+- В `subagent-driven-development` финальный ревьюер заменяется вызовом `review`; задачные ревью после каждой задачи остаются на Claude-сабагентах.
 - Во все места, где запускаются сабагенты, добавляется правило `model: opus` (правило пользователя из глобальной памяти) и правило «сабагенты запускаются без имени, в фоне, не как именованные teammates с отдельными окнами; пользователь читает только итоговую сводку».
 - Пути `docs/superpowers/specs/` → `docs/specs/`, `docs/superpowers/plans/` → `docs/plans/`.
 - Шапка плана в `writing-plans` ссылается на `subagent-driven-development` без префикса и убирает `executing-plans`.
