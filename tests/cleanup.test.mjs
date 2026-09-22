@@ -1,20 +1,37 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const SCRIPT = new URL("../scripts/cleanup.sh", import.meta.url).pathname;
 
+// Every temp dir made here is removed in after(); none of the runs may see the real HOME.
+const TMPDIRS = [];
+function mkTmp(prefix) {
+  const d = mkdtempSync(path.join(tmpdir(), prefix));
+  TMPDIRS.push(d);
+  return d;
+}
+const ENV = { ...process.env, HOME: mkTmp("home-throwaway-") };
+
+after(() => {
+  for (const d of TMPDIRS) {
+    try { chmodSync(path.join(d, ".codex"), 0o700); } catch { /* not every fixture has one */ }
+    try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+});
+
 function fakeHome() {
-  const h = mkdtempSync(path.join(tmpdir(), "home-"));
+  const h = mkTmp("home-");
   const mk = (p, content = "") => { mkdirSync(path.dirname(path.join(h, p)), { recursive: true }); writeFileSync(path.join(h, p), content); };
   mk(".agents/skills/gstack/SKILL.md", "x");
   mkdirSync(path.join(h, ".agents/skills/gstack-codex"), { recursive: true });
   mkdirSync(path.join(h, ".agents/skills/keep-me"), { recursive: true });
   symlinkSync("/nowhere/superpowers/skills", path.join(h, ".agents/skills/superpowers"));
   mk(".claude/plugins/cache/compound-engineering-plugin/x", "x");
+  mk(".claude/plugins/marketplaces/compound-engineering-plugin/.marketplace.json", "{}");
   mk(".claude/settings.json", JSON.stringify({ enabledPlugins: { "compound-engineering@compound-engineering-plugin": false, "other@x": true } }, null, 2));
   mk(".claude/plugins/installed_plugins.json", JSON.stringify({ plugins: { "compound-engineering@compound-engineering-plugin": [{}], "other@x": [{}] } }, null, 2));
   mk(".codex/superpowers/README.md", "x");
@@ -25,9 +42,18 @@ function fakeHome() {
   return h;
 }
 
+function homeWithConfig(toml) {
+  const h = mkTmp("home-toml-");
+  mkdirSync(path.join(h, ".codex"), { recursive: true });
+  writeFileSync(path.join(h, ".codex/config.toml"), toml);
+  return h;
+}
+
+const run = (args, opts = {}) => spawnSync("bash", [SCRIPT, ...args], { encoding: "utf8", env: ENV, ...opts });
+
 test("cleanup --yes removes leftovers and strips config sections, keeps everything else", () => {
   const h = fakeHome();
-  const r = spawnSync("bash", [SCRIPT, "--yes", "--home", h], { encoding: "utf8" });
+  const r = spawnSync("bash", [SCRIPT, "--yes", "--home", h], { encoding: "utf8", env: ENV });
   assert.equal(r.status, 0, r.stderr + r.stdout);
   for (const gone of [".agents/skills/gstack", ".agents/skills/gstack-codex", ".agents/skills/superpowers", ".claude/plugins/cache/compound-engineering-plugin", ".codex/superpowers", ".codex/compound-engineering", ".codex/skills/compound-engineering", ".codex/agents/compound-engineering"]) {
     assert.ok(!existsSync(path.join(h, gone)), `${gone} should be gone`);
@@ -48,8 +74,149 @@ test("cleanup --yes removes leftovers and strips config sections, keeps everythi
 
 test("cleanup without --yes and with 'n' answers removes nothing", () => {
   const h = fakeHome();
-  const r = spawnSync("bash", [SCRIPT, "--home", h], { encoding: "utf8", input: "n\nn\nn\nn\nn\n" });
+  const r = spawnSync("bash", [SCRIPT, "--home", h], { encoding: "utf8", env: ENV, input: "n\nn\nn\nn\nn\n" });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(existsSync(path.join(h, ".agents/skills/gstack")));
   assert.ok(existsSync(path.join(h, ".codex/superpowers")));
+});
+
+test("cleanup aborts and leaves config.toml intact when its directory is not writable", () => {
+  const h = fakeHome();
+  const cfg = path.join(h, ".codex/config.toml");
+  const before = readFileSync(cfg, "utf8");
+  chmodSync(path.join(h, ".codex"), 0o500);
+  try {
+    const r = run(["--yes", "--home", h]);
+    assert.equal(r.status, 1, `expected exit 1, got ${r.status}\n${r.stdout}${r.stderr}`);
+    assert.equal(readFileSync(cfg, "utf8"), before, "config.toml must not be touched");
+    assert.ok(!existsSync(cfg + ".bak"), "no backup should have been written");
+    assert.doesNotMatch(r.stdout, /config\.toml[^\n]*edited/);
+    assert.doesNotMatch(r.stdout, /cleanup done/);
+  } finally {
+    chmodSync(path.join(h, ".codex"), 0o700);
+  }
+});
+
+test("cleanup keeps the first backup and writes no new one on a second run", () => {
+  const h = fakeHome();
+  assert.equal(run(["--yes", "--home", h]).status, 0);
+  const r2 = run(["--yes", "--home", h]);
+  assert.equal(r2.status, 0, r2.stderr + r2.stdout);
+  assert.match(readFileSync(path.join(h, ".codex/config.toml.bak"), "utf8"), /compound-engineering/);
+  assert.deepEqual(
+    readdirSync(path.join(h, ".codex")).filter((n) => n.startsWith("config.toml.bak")).sort(),
+    ["config.toml.bak"],
+  );
+  assert.deepEqual(
+    readdirSync(path.join(h, ".claude")).filter((n) => n.startsWith("settings.json.bak")).sort(),
+    ["settings.json.bak"],
+  );
+  assert.match(readFileSync(path.join(h, ".claude/settings.json.bak"), "utf8"), /compound-engineering/);
+  assert.ok(!readdirSync(path.join(h, ".codex")).some((n) => n.includes(".tmp.")), "no temp file left behind");
+});
+
+test("cleanup drops commented headers, nested subtables and array continuations, keeping blank lines inside strings", () => {
+  const input = [
+    'model = "gpt"',
+    "",
+    "[marketplaces.compound-engineering-plugin]  # drop me",
+    "matrix = [",
+    "[1, 2],",
+    "[3, 4],",
+    "]",
+    'source = "x"',
+    "",
+    '[plugins."compound-engineering@compound-engineering-plugin"]',
+    "enabled = false",
+    "",
+    '[plugins."compound-engineering@compound-engineering-plugin".env]',
+    'FOO = "bar"',
+    "",
+    "[marketplaces.keep]",
+    'multi = """',
+    "line1",
+    "",
+    "",
+    "line2",
+    '"""',
+    'source = "y"',
+    "",
+    '[plugins."keep@keep"]',
+    "enabled = true",
+    "",
+  ].join("\n");
+  const expected = [
+    'model = "gpt"',
+    "",
+    "[marketplaces.keep]",
+    'multi = """',
+    "line1",
+    "",
+    "",
+    "line2",
+    '"""',
+    'source = "y"',
+    "",
+    '[plugins."keep@keep"]',
+    "enabled = true",
+    "",
+  ].join("\n");
+  const h = homeWithConfig(input);
+  const r = run(["--yes", "--home", h]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.equal(readFileSync(path.join(h, ".codex/config.toml"), "utf8"), expected);
+  assert.equal(readFileSync(path.join(h, ".codex/config.toml.bak"), "utf8"), input);
+});
+
+test("cleanup reports a failure instead of 'edited' when a JSON file cannot be parsed", () => {
+  const h = fakeHome();
+  writeFileSync(path.join(h, ".claude/settings.json"), "{ not json");
+  const r = run(["--yes", "--home", h]);
+  const out = r.stdout + r.stderr;
+  assert.equal(r.status, 0, out);
+  assert.match(out, /failed: .*settings\.json/);
+  assert.doesNotMatch(r.stdout, /^ +edited$/m);
+  assert.match(r.stdout, /cleanup done \(1 failure\)/);
+  assert.equal(readFileSync(path.join(h, ".claude/settings.json"), "utf8"), "{ not json");
+  assert.ok(!existsSync(path.join(h, ".claude/settings.json.bak")), "a broken file must not be backed up");
+  const installed = JSON.parse(readFileSync(path.join(h, ".claude/plugins/installed_plugins.json"), "utf8"));
+  assert.deepEqual(Object.keys(installed.plugins), ["other@x"]);
+});
+
+test("cleanup accepts --home=DIR and removes the compound-engineering marketplace dir", () => {
+  const h = fakeHome();
+  const r = run(["--yes", `--home=${h}`]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(!existsSync(path.join(h, ".claude/plugins/marketplaces/compound-engineering-plugin")));
+  assert.ok(!existsSync(path.join(h, ".agents/skills/gstack")));
+  assert.ok(existsSync(path.join(h, ".agents/skills/keep-me")));
+});
+
+test("cleanup rejects an unknown option and removes nothing", () => {
+  const h = fakeHome();
+  const r = run(["--yes", "--home", h, "--bogus"]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /unknown argument/);
+  assert.ok(existsSync(path.join(h, ".agents/skills/gstack")));
+  assert.ok(existsSync(path.join(h, ".codex/superpowers")));
+  assert.ok(!existsSync(path.join(h, ".codex/config.toml.bak")));
+});
+
+test("cleanup rejects --home without a value", () => {
+  const r = run(["--yes", "--home"]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--home requires a directory/);
+  const r2 = run(["--yes", "--home="]);
+  assert.equal(r2.status, 1);
+  assert.match(r2.stderr, /--home requires a directory/);
+});
+
+test("cleanup prints no literal glob when no gstack-* dirs exist", () => {
+  const h = mkTmp("home-empty-");
+  mkdirSync(path.join(h, ".agents/skills/keep-me"), { recursive: true });
+  const r = run(["--yes", "--home", h]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.doesNotMatch(r.stdout, /gstack-\*/);
+  assert.match(r.stdout, /nothing to remove/);
+  assert.ok(existsSync(path.join(h, ".agents/skills/keep-me")));
 });
