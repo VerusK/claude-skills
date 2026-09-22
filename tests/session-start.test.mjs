@@ -1,7 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, realpathSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pointerPath, buildContext, readPointer, writePointer, ROOT } from "../scripts/session-start.mjs";
@@ -118,4 +118,16 @@ test("the hook still prints valid JSON when the pointer file cannot be written",
   const res = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8", env: { ...process.env, HOME: home } });
   assert.equal(res.status, 0);
   assert.equal(JSON.parse(res.stdout).hookSpecificOutput.hookEventName, "SessionStart");
+});
+
+test("the hook runs when started through a symlinked path", () => {
+  // the plugin command goes through ${CLAUDE_PLUGIN_ROOT}, which is not a real
+  // path when $HOME or ~/.claude is a symlink
+  const home = tmp("home-");
+  const link = path.join(tmp("link-"), "session-start.mjs");
+  symlinkSync(SESSION_START, link);
+  const res = spawnSync(process.execPath, [link], { encoding: "utf8", env: { ...process.env, HOME: home } });
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(JSON.parse(res.stdout).hookSpecificOutput.hookEventName, "SessionStart");
+  assert.equal(readFileSync(pointerPath(home), "utf8"), ROOT + "\n");
 });

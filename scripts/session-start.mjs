@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,4 +70,11 @@ function main() {
   process.stdout.write(JSON.stringify(payload) + "\n");
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+// Compare real paths: Node resolves symlinks in import.meta.url for the main
+// module but not in argv[1], and the plugin command goes through
+// ${CLAUDE_PLUGIN_ROOT}, which may sit behind a symlinked $HOME or ~/.claude.
+let isMain = false;
+try {
+  isMain = Boolean(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+} catch {}
+if (isMain) main();
