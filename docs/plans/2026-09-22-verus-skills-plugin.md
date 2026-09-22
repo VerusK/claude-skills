@@ -299,12 +299,30 @@ vendor-sdk:
 
 and add `vendor-sdk` to the `.PHONY` list on line 1.
 
-- [ ] **Step 8: Run the whole suite**
+In the same edit, give the `test` target its missing recipe. The file currently
+ends with `test: deps` and no recipe line, so `make test` runs `npm install` and
+then silently nothing, while `README.md` documents it as running the suite. The
+last two lines must become:
+
+```make
+test: deps
+	npm test
+```
+
+- [ ] **Step 8: Verify the Makefile targets actually run**
+
+Run: `make test`
+Expected: the `node --test` summary with all tests passing — not a bare `npm install` and an immediate exit.
+
+Run: `make vendor-sdk`
+Expected: `vendored @typesafe-ai/sdk@0.6.0 into vendor-node/@typesafe-ai/sdk (integrity verified)`.
+
+- [ ] **Step 9: Run the whole suite**
 
 Run: `npm test`
 Expected: PASS, all tests green (107 existing + 8 new).
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add scripts/vendor-sdk.mjs scripts/typesafe-judge.mjs tests/vendor-sdk.test.mjs vendor-node package.json Makefile
@@ -363,6 +381,7 @@ after(() => {
 function fakeDistro() {
   const root = tmp("distro-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
+  writeFileSync(path.join(root, "scripts", "typesafe-judge.mjs"), "// stub\n");
   writeFileSync(path.join(root, "USING.md"), "# routing\n\nuse the skills\n");
   return root;
 }
@@ -406,13 +425,28 @@ test("readPointer returns the stored root, and null when there is none", () => {
   assert.equal(readPointer(home), "/some/root");
 });
 
-test("buildContext warns when another distro already owns the pointer", () => {
+test("readPointer treats a whitespace-only pointer as absent", () => {
+  // what an interrupted hook leaves behind
+  const home = tmp("home-");
+  mkdirSync(path.join(home, ".verus-skills"), { recursive: true });
+  writeFileSync(pointerPath(home), "\n");
+  assert.equal(readPointer(home), null);
+});
+
+test("buildContext warns when another distro already owns the pointer, and names it", () => {
   const mine = fakeDistro();
   const other = fakeDistro();
-  assert.match(buildContext(mine, other), /two installs of this distro are active/);
+  const warned = buildContext(mine, other);
+  assert.match(warned, /two installs of this distro are active/);
+  // the uninstall advice must name the OTHER root: `make uninstall` run from the
+  // running root removes none of the other install's symlinks.
+  assert.ok(warned.includes(`make uninstall\` run from ${other}`), warned);
   assert.doesNotMatch(buildContext(mine, mine), /two installs/);
   assert.doesNotMatch(buildContext(mine, null), /two installs/);
-  assert.doesNotMatch(buildContext(mine, tmp("not-a-distro-")), /two installs/);
+  // a directory with a USING.md but no scripts/typesafe-judge.mjs is not a distro
+  const decoy = tmp("not-a-distro-");
+  writeFileSync(path.join(decoy, "USING.md"), "# not ours\n");
+  assert.doesNotMatch(buildContext(mine, decoy), /two installs/);
 });
 
 test("running the hook warns when a different distro wrote the pointer first", () => {
@@ -491,9 +525,11 @@ export function readPointer(home = homedir()) {
   }
 }
 
+// The same predicate the skills' locator uses, so the hook only warns about a
+// directory those skills would actually run.
 const looksLikeDistro = (dir) => {
   try {
-    return Boolean(dir) && existsSync(path.join(dir, "USING.md"));
+    return Boolean(dir) && existsSync(path.join(dir, "scripts", "typesafe-judge.mjs"));
   } catch {
     return false;
   }
@@ -511,7 +547,7 @@ export function buildContext(root, other = null) {
   }
   const warning =
     other && other !== root && looksLikeDistro(other)
-      ? `WARNING: two installs of this distro are active — this session runs ${root}, while ${other} wrote the pointer file. Keep one: uninstall the plugin, or remove the symlink install with \`make uninstall\`.\n\n`
+      ? `WARNING: two installs of this distro are active — this session runs ${root}, while ${other} wrote the pointer file. Keep one: \`claude plugin uninstall verus-skills@verus-skills\`, or \`make uninstall\` run from ${other}.\n\n`
       : "";
   return `<EXTREMELY_IMPORTANT>\nYou have a personal skills distro.\n\n${warning}Distro root: ${root}\n\n${text}\n</EXTREMELY_IMPORTANT>`;
 }
@@ -1253,7 +1289,15 @@ git commit -m "feat(release): keep one version across the four manifests"
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `pluginInstalled(run?: () => string | null): boolean` exported from `scripts/install.mjs`; `parseArgs` gains `force: boolean` from `--force`.
+- Produces: `PLUGIN_ID: string` and `pluginInstalled(home: string, run?: () => string | null, readCodex?: (home: string) => string | null): "claude" | "codex" | null` exported from `scripts/install.mjs`; `parseArgs` gains `force: boolean` from `--force`.
+
+Both agents must be checked: Claude Code answers `claude plugin list`, while Codex
+declares its plugins as a `[plugins."verus-skills@verus-skills"]` section in
+`~/.codex/config.toml`, which that CLI never reports. Without the second check
+`make install` would link all ten skills into `~/.codex/skills/` on top of the
+plugin's own copies, and the README's "mutually exclusive" claim would be false
+there. `install.mjs` already imports `readFileSync` and takes `--home`, which the
+whole suite uses to redirect `$HOME`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1299,22 +1343,36 @@ Append to `tests/install.test.mjs`:
 ```js
 import { pluginInstalled, parseArgs } from "../scripts/install.mjs";
 
-const FAKE_BIN = path.join(REPO_ROOT, "tests", "fixtures", "fake-bin");
 
 test("parseArgs accepts --force", () => {
   assert.equal(parseArgs(["--force"]).force, true);
   assert.equal(parseArgs([]).force, false);
 });
 
-test("pluginInstalled recognises our plugin and ignores others", () => {
-  assert.equal(pluginInstalled(() => "verus-skills@verus-skills  1.0.0  enabled"), true);
-  assert.equal(pluginInstalled(() => "superpowers@claude-plugins-official  6.3.0"), false);
-  assert.equal(pluginInstalled(() => null), false);
+test("pluginInstalled recognises our plugin in either agent and ignores others", () => {
+  const none = () => null;
+  assert.equal(pluginInstalled("/h", () => "verus-skills@verus-skills  1.0.0  enabled", none), "claude");
+  assert.equal(pluginInstalled("/h", () => "superpowers@claude-plugins-official  6.3.0", none), null);
+  assert.equal(pluginInstalled("/h", none, none), null);
+  // Codex declares its plugins in config.toml; `claude plugin list` never sees them
+  const codex = '[plugins."verus-skills@verus-skills"]\nenabled = true\n';
+  assert.equal(pluginInstalled("/h", none, () => codex), "codex");
+  assert.equal(pluginInstalled("/h", none, () => '[plugins."superpowers@claude-plugins-official"]\nenabled = true\n'), null);
+});
+
+test("pluginInstalled reads the Codex config from the given home", () => {
+  const home = tmp("home-");
+  mkdirSync(path.join(home, ".codex"), { recursive: true });
+  writeFileSync(
+    path.join(home, ".codex", "config.toml"),
+    '[marketplaces.verus-skills]\nsource_type = "git"\n\n[plugins."verus-skills@verus-skills"]\nenabled = true\n',
+  );
+  assert.equal(pluginInstalled(home, () => null), "codex");
+  assert.equal(pluginInstalled(tmp("home-"), () => null), null);
 });
 
 test("the installer refuses when the plugin is installed, and installs with --force", () => {
   const refused = runInstaller(["--home", tmp("home-")], {
-    PATH: `${FAKE_BIN}:${process.env.PATH}`,
     FAKE_CLAUDE_PLUGINS: "verus-skills@verus-skills  1.0.0  enabled",
   });
   assert.equal(refused.status, 1);
@@ -1323,19 +1381,28 @@ test("the installer refuses when the plugin is installed, and installs with --fo
 
   const home = tmp("home-");
   const forced = runInstaller(["--home", home, "--force"], {
-    PATH: `${FAKE_BIN}:${process.env.PATH}`,
     FAKE_CLAUDE_PLUGINS: "verus-skills@verus-skills  1.0.0  enabled",
   });
   assert.equal(forced.status, 0);
   assert.ok(existsSync(path.join(home, ".claude", "skills", "kickoff")));
 });
 
+test("the installer also refuses when only the Codex plugin is declared", () => {
+  const home = tmp("home-");
+  mkdirSync(path.join(home, ".codex"), { recursive: true });
+  writeFileSync(
+    path.join(home, ".codex", "config.toml"),
+    '[plugins."verus-skills@verus-skills"]\nenabled = true\n',
+  );
+  const res = runInstaller(["--home", home]);
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /codex/);
+  assert.match(res.stderr, /config\.toml/);
+});
+
 test("the installer proceeds when the plugin is not installed", () => {
   const home = tmp("home-");
-  const res = runInstaller(["--home", home], {
-    PATH: `${FAKE_BIN}:${process.env.PATH}`,
-    FAKE_CLAUDE_PLUGINS: "",
-  });
+  const res = runInstaller(["--home", home]);
   assert.equal(res.status, 0);
   assert.ok(existsSync(path.join(home, ".claude", "skills", "kickoff")));
 });
@@ -1367,11 +1434,24 @@ function claudePluginList() {
   }
 }
 
+function codexPluginConfig(home) {
+  try {
+    return readFileSync(path.join(home, ".codex", "config.toml"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 // The plugin ships the same skills and the same SessionStart hook, so running
-// both installs would double every skill and inject USING.md twice.
-export function pluginInstalled(run = claudePluginList) {
-  const out = run();
-  return typeof out === "string" && out.includes(PLUGIN_ID);
+// both installs would double every skill and inject USING.md twice. Codex
+// declares its plugins in config.toml, which the claude CLI never reports, so
+// both sources are checked.
+export function pluginInstalled(home, run = claudePluginList, readCodex = codexPluginConfig) {
+  const claude = run();
+  if (typeof claude === "string" && claude.includes(PLUGIN_ID)) return "claude";
+  const codex = readCodex(home);
+  if (typeof codex === "string" && codex.includes(`[plugins."${PLUGIN_ID}"]`)) return "codex";
+  return null;
 }
 ```
 
@@ -1395,9 +1475,14 @@ const USAGE = "usage: install.mjs [--home DIR] [--uninstall] [--skip-plugin] [--
 In `main()`, after the `settings.json` validation block and before the `if (opts.uninstall)` block:
 
 ```js
-  if (!opts.uninstall && !opts.force && pluginInstalled()) {
-    console.error(`${PLUGIN_ID} is installed; the symlink install would duplicate every skill and inject USING.md twice`);
-    console.error(`run: claude plugin uninstall ${PLUGIN_ID}   (or re-run with --force)`);
+  const installedFor = opts.uninstall || opts.force ? null : pluginInstalled(home);
+  if (installedFor) {
+    console.error(`${PLUGIN_ID} is installed (${installedFor}); the symlink install would duplicate every skill and inject USING.md twice`);
+    console.error(
+      installedFor === "codex"
+        ? `remove the [plugins."${PLUGIN_ID}"] section from ${path.join(home, ".codex", "config.toml")}   (or re-run with --force)`
+        : `run: claude plugin uninstall ${PLUGIN_ID}   (or re-run with --force)`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -1406,7 +1491,7 @@ In `main()`, after the `settings.json` validation block and before the `if (opts
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `node --test tests/install.test.mjs`
-Expected: PASS, existing tests plus 4 new ones. The eight pre-existing installer
+Expected: PASS, existing tests plus 6 new ones. The eight pre-existing installer
 spawns now reach the stub rather than the real `claude`, so they stay green
 whether or not the plugin is installed on this machine.
 
@@ -1966,3 +2051,70 @@ state the separate `git push --follow-tags`.
 Applied: Task 2 adds `readPointer`, a `looksLikeDistro` check and a warning line
 in `buildContext` when a different distro owns the pointer; this session's own
 root still wins the pointer. Three tests cover it.
+
+## Plan review decisions (round 2)
+
+Reviewer: fallback (a Claude subagent) again — the Codex path was still refusing
+with a hard usage limit until 2026-09-26, a deterministic quota error, so it was
+not re-attempted. Verdict **CLEAR**: all thirteen round-1 findings resolved, and
+the three that claimed a concrete defect (`cd -P`, the judge's exit-2 path, the
+vendored-SDK fallback) were re-executed against the real files. Round-1 report
+kept at `docs/plans/2026-09-22-verus-skills-plugin.review.md.round1.md`.
+
+Five findings at confidence 7+, all accepted; nothing deferred. Appendix findings
+(confidence below 7) were not acted on and stay in the report.
+
+```
+Решение (Jev): How should the plan handle: the installer's plugin check only asks `claude plugin list`, so on a machine where the plugin is installed for Codex (a section in ~/.codex/config.toml) `make install` proceeds and links all ten skills on top of the plugin's own copies?
+  A. Accept                       100%
+  B. Accept with a different fix  0%
+  C. Reject                       0%
+  Выбрано: A, confidence 1.00, данных 0.73 → принято автоматически
+```
+Applied: `pluginInstalled(home, run?, readCodex?)` returns `"claude" | "codex" |
+null`, checking `claude plugin list` and the `[plugins."verus-skills@verus-skills"]`
+section of `$HOME/.codex/config.toml`; the refusal message names the agent and
+the file to edit. Two new tests, one of them against a fixture `config.toml`
+under a sandbox `$HOME`.
+
+```
+Решение (Jev): How should the plan handle: the double-install warning tells the reader to run `make uninstall`, but it is printed from the running root — usually the plugin cache — where that command removes none of the symlinks and yet strips the hook and the AGENTS.md line?
+  A. Accept  100%
+  C. Reject  0%
+  Выбрано: A, confidence 1.00, данных 0.82 → принято автоматически
+```
+Applied: the warning now reads ``claude plugin uninstall verus-skills@verus-skills`,
+or `make uninstall` run from ${other}``, and the test asserts the other root's
+path appears in it.
+
+```
+Решение (Jev): How should the plan handle: the Makefile's `test: deps` target has no recipe, so `make test` runs npm install and then silently nothing?
+  A. Accept  100%
+  C. Reject  0%
+  Выбрано: A, confidence 0.99, данных 0.78 → принято автоматически
+```
+Applied: Task 1 Step 7 adds the `npm test` recipe in the same edit as the
+`vendor-sdk` target, and a new Step 8 runs `make test` and `make vendor-sdk` to
+prove both targets do something.
+
+```
+Решение (Jev): How should the plan handle: Task 2 Step 4 says "PASS, 11 tests" but the test file written in Step 1 defines 10?
+  A. Accept: add the missing case  99%
+  B. Accept with a different fix   1%
+  C. Reject                        0%
+  Выбрано: A, confidence 0.99, данных 0.54 → спросить пользователя
+  Ответ пользователя: A — добавить одиннадцатый тест
+```
+Applied: `readPointer treats a whitespace-only pointer as absent` — the
+`.trim() || null` branch, which is what an interrupted hook leaves behind.
+
+```
+Решение (Jev): How should the plan handle: three different predicates answer "is this directory a distro" — the hook's looksLikeDistro checks USING.md, the locator checks scripts/typesafe-judge.mjs, and install.mjs's isDistroCheckout checks sources.yaml plus scripts/install.mjs?
+  A. Accept  93%
+  C. Reject  7%
+  Выбрано: A, confidence 0.85, данных 0.66 → принято автоматически
+```
+Applied: `looksLikeDistro` now checks `scripts/typesafe-judge.mjs`, the locator's
+own predicate, so the hook only warns about a directory those skills would
+actually run; the test's decoy directory carries a `USING.md` and must not
+trigger the warning.
