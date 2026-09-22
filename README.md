@@ -94,6 +94,7 @@ make install ARGS="--skip-plugin"              # keep the superpowers plugin ins
 node scripts/install.mjs --home /tmp/sandbox   # install into another HOME (used by the tests)
 node scripts/install.mjs --skip-plugin         # same as make install ARGS="--skip-plugin"
 node scripts/install.mjs --uninstall           # same as make uninstall
+node scripts/install.mjs --force                # install the symlinks even though the plugin is installed
 ```
 
 Re-installing from a second checkout of this repo (a fresh clone, or the old one moved away) re-points the existing symlinks, SessionStart hook and `AGENTS.md` line at the new checkout and reports them as `re-pointed from <old checkout>`, instead of leaving duplicates behind.
