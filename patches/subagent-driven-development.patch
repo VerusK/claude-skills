@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
 --- vendor/subagent-driven-development/SKILL.md	2026-09-22 12:12:10
-+++ skills/subagent-driven-development/SKILL.md	2026-09-22 13:55:20
++++ skills/subagent-driven-development/SKILL.md	2026-09-22 16:01:21
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -51,7 +51,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +    "review: judged findings, ONE fix dispatch, one re-review" [shape=box];
      "Final review clean: delete this plan's workspace" [shape=box];
 -    "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
-+    "Use finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
++    "review hands off to finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
  
 -    "Setup: worktree, ledger check, read plan, pre-flight review" -> "Dispatch implementer subagent (./implementer-prompt.md)";
 +    "Setup: ledger check, read plan, pre-flight review" -> "Dispatch implementer subagent (./implementer-prompt.md)";
@@ -87,7 +87,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +    "More tasks remain?" -> "Invoke review <MERGE_BASE>" [label="no"];
 +    "Invoke review <MERGE_BASE>" -> "review: judged findings, ONE fix dispatch, one re-review";
 +    "review: judged findings, ONE fix dispatch, one re-review" -> "Final review clean: delete this plan's workspace";
-+    "Final review clean: delete this plan's workspace" -> "Use finishing-a-development-branch";
++    "Final review clean: delete this plan's workspace" -> "review hands off to finishing-a-development-branch";
  }
  ```
  
@@ -207,8 +207,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -residual load-bearing findings surface to your human partner when
 -finishing-a-development-branch presents the options.
 +1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
-+2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round.
-+3. When `review` reports clean (or its second round is done), continue to `finishing-a-development-branch`.
++2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
++3. `review` hands off to `finishing-a-development-branch` itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
  
 +There is no second fix wave here; residual findings surface to your human
 +partner when finishing-a-development-branch presents the options.
@@ -216,16 +216,17 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -484,7 +436,7 @@
+@@ -484,7 +436,8 @@
  the record now. Sibling directories belong to other plans; leave them
  alone.
  
 -Use superpowers:finishing-a-development-branch.
-+Use finishing-a-development-branch.
++`review` invokes finishing-a-development-branch itself; invoke it here only if
++`review` stopped without handing off.
  
  ## Common Rationalizations
  
-@@ -505,9 +457,9 @@
+@@ -505,9 +458,9 @@
  ```
  You: I'm using Subagent-Driven Development to execute this plan.
  
@@ -238,7 +239,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  [Create todos for all tasks]
  
  Task 1: Hook installation script
-@@ -559,10 +511,10 @@
+@@ -559,10 +512,10 @@
  ...
  
  [After all tasks]
@@ -249,7 +250,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  [Delete this plan's workspace — the record now lives in git]
  
 -Done! Using superpowers:finishing-a-development-branch.
-+Done! Using finishing-a-development-branch.
++Done! review handed off to finishing-a-development-branch.
  ```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
 --- vendor/subagent-driven-development/implementer-prompt.md	2026-09-22 12:12:10

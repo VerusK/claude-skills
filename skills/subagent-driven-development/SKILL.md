@@ -80,7 +80,7 @@ digraph process {
     "Invoke review <MERGE_BASE>" [shape=box];
     "review: judged findings, ONE fix dispatch, one re-review" [shape=box];
     "Final review clean: delete this plan's workspace" [shape=box];
-    "Use finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
+    "review hands off to finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
 
     "Setup: ledger check, read plan, pre-flight review" -> "Dispatch implementer subagent (./implementer-prompt.md)";
     "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer asks questions?";
@@ -109,7 +109,7 @@ digraph process {
     "More tasks remain?" -> "Invoke review <MERGE_BASE>" [label="no"];
     "Invoke review <MERGE_BASE>" -> "review: judged findings, ONE fix dispatch, one re-review";
     "review: judged findings, ONE fix dispatch, one re-review" -> "Final review clean: delete this plan's workspace";
-    "Final review clean: delete this plan's workspace" -> "Use finishing-a-development-branch";
+    "Final review clean: delete this plan's workspace" -> "review hands off to finishing-a-development-branch";
 }
 ```
 
@@ -414,8 +414,8 @@ The final whole-branch review is done by an external reviewer through the
 `review` skill. After the last task:
 
 1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
-2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round.
-3. When `review` reports clean (or its second round is done), continue to `finishing-a-development-branch`.
+2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
+3. `review` hands off to `finishing-a-development-branch` itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
 
 There is no second fix wave here; residual findings surface to your human
 partner when finishing-a-development-branch presents the options.
@@ -436,7 +436,8 @@ delete this plan's workspace (`rm -rf <workspace>`) — the git history is
 the record now. Sibling directories belong to other plans; leave them
 alone.
 
-Use finishing-a-development-branch.
+`review` invokes finishing-a-development-branch itself; invoke it here only if
+`review` stopped without handing off.
 
 ## Common Rationalizations
 
@@ -516,5 +517,5 @@ Final reviewer: All requirements met. Deferred minors triaged: none block merge.
 
 [Delete this plan's workspace — the record now lives in git]
 
-Done! Using finishing-a-development-branch.
+Done! review handed off to finishing-a-development-branch.
 ```

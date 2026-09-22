@@ -18,6 +18,19 @@ argument-hint: "[all | <path|glob>... | <base>] — default: branch diff vs main
 - `BRANCH`: `git branch --show-current`.
 - `REPORT`: `docs/reviews/<BRANCH with / replaced by ->-<YYYY-MM-DD>.md`; path scope appends a slug of the first path (`...-<slug>.md`), codebase scope appends `-all`. If that file already exists, append `-2`, `-3`, … before `.md` — a same-day rerun and round 2 both get their own file, and `reviewer.sh` deletes its `--output` at startup, so an existing report must never be reused as the output path. Always repo-relative; `reviewer.sh` exits 1 on an absolute path. It is relative to the repo `reviewer.sh` works in, so run from the repo under review, or pass `--repo <that repo>` to `reviewer.sh`. Create `docs/reviews/` if it does not exist.
 - `PLAN`, `SPEC`: the plan and the spec path from its header. Branch scope: the plan the user named, else the newest file in `docs/plans/`. Path and codebase scope: only a plan the user named, otherwise `none` — a set of files or a whole codebase is not the output of the newest plan, so never guess one. Either may be absent — send `none` rather than inventing a path.
+- `LEDGER`: `.superpowers/sdd/<PLAN basename without .md>/progress.md`, when `PLAN` is a path and that file exists; otherwise `none`. This is the ledger `subagent-driven-development` keeps while it works through the plan.
+- `Ledger lines:` the lines of `LEDGER` containing `Minor (deferred)`, `Ruling` or `parked` — the findings the implementation loop deferred or ruled on, which this review is the last chance to catch. `none` when `LEDGER` is `none` or no line matches. Collect them with:
+
+  ```bash
+  PLAN="<PLAN, or empty>"
+  LEDGER=""
+  [ -n "$PLAN" ] && LEDGER=".superpowers/sdd/$(basename "$PLAN" .md)/progress.md"
+  if [ -n "$LEDGER" ] && [ -f "$LEDGER" ]; then
+    grep -E 'Minor \(deferred\)|Ruling|parked' "$LEDGER" || echo none
+  else
+    echo none
+  fi
+  ```
 - `ROUND`: 1.
 - Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `review`). Every fenced block below is one shell call, so a block that uses `$SKILLS_REPO` must run the locator itself.
 
@@ -115,7 +128,7 @@ Create a temp file outside the repo (under `$TMPDIR`) containing, in order:
    - In report-only mode, branch scope: `MODE: report-only — the diff is the working tree vs <BASE> and includes uncommitted changes; title the report "... (includes uncommitted changes)"`.
    - In report-only mode, path or codebase scope: `MODE: report-only — the files below are the working-tree versions and include uncommitted changes; title the report "... (includes uncommitted changes)"`.
 4. `PLAN: <path>` and `SPEC: <path>` — `none` for either one that does not exist.
-5. `Ledger lines:` the plan's deferred-minor and parked lines, if the plan has a ledger; else `none`. When `PLAN` is `none` there is no ledger to read, so send `none`.
+5. `Ledger lines:` the lines collected from `LEDGER` in section 0; `none` when `PLAN` is `none` or the plan has no ledger.
 6. The material under review, by scope. Every fence is longer than any backtick run in the content it wraps — use seven backticks unless the content contains a run of seven or more, then go longer still.
    - **Branch scope**: `DIFF:` followed by `git diff BASE..HEAD` (full mode) or `git diff BASE` (report-only mode) in a fence. If `diff_lines` from section 0 exceeds 6000, embed the `--stat` form instead plus the sentence `Run git diff <BASE>..HEAD yourself (full mode) or git diff <BASE> (report-only); it is too large to embed.` — name the command that produced the diff you would have embedded, so the reviewer reproduces the reviewed material and not a different one.
    - **Path and codebase scope**: `FILES:` followed by every path in `FILELIST`, each as a `### <path>` header and then that file's contents in a fence. If `file_lines` from section 0 exceeds 6000, embed the paths only (one per line, no contents) plus the sentence `Read these files yourself; they are too large to embed.`
@@ -141,7 +154,7 @@ echo "reviewer_exit=$?"
 ```
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
-- `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it.
+- `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it. On a host with no subagent tool (e.g. a Codex session), do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
 - `1`: fix the invocation; do not proceed.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 

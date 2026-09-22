@@ -44,7 +44,7 @@ echo "reviewer_exit=$?"
 ```
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
-- `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it.
+- `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it. On a host with no subagent tool (e.g. a Codex session), do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
 - `1`: fix the invocation; do not proceed.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 
@@ -67,7 +67,7 @@ Findings in the Appendix are not acted on; leave them in the report.
 Apply every accepted `A`/`B` decision to `PLAN` directly (edit tasks, add tests, add steps). Append to the plan a section:
 
 ```
-## Review decisions (round N)
+## Plan review decisions (round N)
 <one decision block per finding, plus "Rejected: <finding> — <reason>" lines>
 ```
 
@@ -87,4 +87,4 @@ Report to the user: rounds run, reviewer path used, findings accepted/rejected/a
 
 - Never start implementation from this skill.
 - Never edit `REPORT`; it is the reviewer's artifact. Decisions go into the plan.
-- One re-review round maximum. Residual P2/P3 go to the plan's Review decisions section as "deferred".
+- One re-review round maximum. Residual P2/P3 go to the plan's `Plan review decisions (round N)` section as "deferred" — a separate heading from the `Review decisions (round N)` section the `review` skill appends after the code exists, so the two never collide in one plan.
