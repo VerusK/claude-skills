@@ -6,14 +6,19 @@ on:
 permissions:
   contents: write
   pull-requests: write
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
       - run: npm ci --no-audit --no-fund
       - id: sync
         run: |
@@ -21,15 +26,34 @@ jobs:
           node scripts/sync.mjs
           echo "exit=$?" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-      - run: npm test
+      - id: test
+        run: npm test
         continue-on-error: true
+      - name: finalize sync report
+        env:
+          SYNC_EXIT: ${{ steps.sync.outputs.exit }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+        run: |
+          if [ ! -f .sync-report.md ]; then
+            printf '# Sync report\n\nsync.mjs exited with code %s without writing a report.\n' \
+              "${SYNC_EXIT:-unknown}" > .sync-report.md
+          fi
+          if [ "$TEST_OUTCOME" = failure ]; then
+            tests='npm test FAILED — see the workflow log'
+          else
+            tests='npm test passed'
+          fi
+          printf '\n## Tests\n\n%s\n' "$tests" >> .sync-report.md
       - uses: peter-evans/create-pull-request@v6
         with:
           branch: sync/upstream
           title: "sync: upstream ${{ steps.sync.outputs.date }}"
           commit-message: "chore(sync): upstream skills ${{ steps.sync.outputs.date }}"
           body-path: .sync-report.md
-          labels: ${{ steps.sync.outputs.exit == '1' && 'sync,needs-attention' || 'sync' }}
+          labels: >-
+            ${{ format('sync{0}{1}',
+            steps.sync.outputs.exit != '0' && ',needs-attention' || '',
+            steps.test.outcome == 'failure' && ',tests-failing' || '') }}
           add-paths: |
             vendor
             skills
