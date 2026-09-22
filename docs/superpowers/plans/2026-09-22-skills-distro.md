@@ -1,5 +1,7 @@
 # Skills Distro Implementation Plan
 
+> Note: where this plan and the shipped code differ (report paths, test counts, workflow details), the code and README are authoritative.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn `claude-skills` into a self-updating personal skills distro for Claude Code and Codex: own `kickoff` / `plan-review` / `review` skills, vendored superpowers and TypeSafe skills with local patches, a TypeSafe judge for auto-answering multiple-choice questions, and an installer that replaces the superpowers plugin, gstack and compound-engineering.

@@ -37,7 +37,7 @@ kickoff → writing-plans → plan-review → subagent-driven-development → re
 | 2 | `writing-plans` | Bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
 | 3 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review. |
 | 4 | `subagent-driven-development` | Fresh `opus` subagent per task, spec + quality review after each. |
-| 5 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. One fix subagent, one re-review, then the hand-off to step 6. |
+| 5 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 6. |
 | 6 | `finishing-a-development-branch` | Merge, PR, or keep. |
 
 Outside the flow: `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `typesafe-ai`.
@@ -87,13 +87,16 @@ make install
 
 `make install` symlinks every skill into `~/.claude/skills/` and `~/.codex/skills/`, adds a SessionStart hook to `~/.claude/settings.json` that runs `scripts/session-start.mjs` to inject `USING.md`, adds a pointer line to `~/.codex/AGENTS.md`, and uninstalls the `superpowers` plugin (its skills are vendored here). It then reports whether `TYPESAFE_API_KEY`, `codex` and `orca` are present. Names already taken in the target directories by something that is not ours are skipped, never overwritten.
 
-The installer runs behind `make`, so pass its flags directly when you need them:
+Pass installer flags through `make install` with `ARGS`, or call the script directly:
 
 ```bash
+make install ARGS="--skip-plugin"              # keep the superpowers plugin installed
 node scripts/install.mjs --home /tmp/sandbox   # install into another HOME (used by the tests)
-node scripts/install.mjs --skip-plugin         # keep the superpowers plugin installed
+node scripts/install.mjs --skip-plugin         # same as make install ARGS="--skip-plugin"
 node scripts/install.mjs --uninstall           # same as make uninstall
 ```
+
+Re-installing from a second checkout of this repo (a fresh clone, or the old one moved away) re-points the existing symlinks, SessionStart hook and `AGENTS.md` line at the new checkout and reports them as `re-pointed from <old checkout>`, instead of leaving duplicates behind.
 
 Codex model and reasoning effort used by `plan-review` / `review` live in `config/reviewer.json` (default `gpt-6-astra`, `high`); override per run with `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`.
 
@@ -112,6 +115,8 @@ make cleanup
 ```
 
 It asks before each group, backs up `~/.codex/config.toml` and `~/.claude/settings.json` before editing them, follows symlinked config files instead of replacing the symlink, and reports anything it could not remove.
+
+Preview it first: `bash scripts/cleanup.sh < /dev/null` lists every group and removes nothing (EOF counts as no). `bash scripts/cleanup.sh --yes` answers yes to all — use it only after a preview.
 
 ## Update
 

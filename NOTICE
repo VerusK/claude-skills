@@ -17,5 +17,5 @@ kickoff, plan-review and review are this repository's own skills; they are marke
 README.md. Local modifications to vendored skills are recorded in patches/ and the upstream
 revision each one was merged from is recorded in sources.lock.json.
 
-This repository is MIT licensed. See skills/typesafe-ai/LICENSE for the license text shipped
-with that upstream skill.
+This repository is MIT licensed; see `LICENSE`. See skills/typesafe-ai/LICENSE for the license
+text shipped with that upstream skill.

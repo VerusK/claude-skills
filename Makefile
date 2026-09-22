@@ -4,7 +4,7 @@ deps:
 	npm install --no-audit --no-fund
 
 install: deps
-	node scripts/install.mjs
+	node scripts/install.mjs $(ARGS)
 
 uninstall:
 	node scripts/install.mjs --uninstall
