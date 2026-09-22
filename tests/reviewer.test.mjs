@@ -30,7 +30,7 @@ function run(dir, bins, opts = {}) {
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   // opts.script: run a copy of the launcher from elsewhere (e.g. a tree with no config/).
   const args = [opts.script ?? SCRIPT, "--prompt-file", prompt, "--output", opts.output ?? "docs/reviews/out.md",
-    "--title", "t", "--repo", opts.repo ?? dir, "--timeout-min", "1"];
+    "--title", "t", "--repo", opts.repo ?? dir, "--timeout-min", opts.timeoutMin ?? "1"];
   const r = spawnSync("bash", args, { cwd: opts.cwd ?? dir, encoding: "utf8", env });
   return { ...r, log: existsSync(log) ? readFileSync(log, "utf8") : "" };
 }
@@ -78,15 +78,25 @@ test("codex report mentioning auth still succeeds", () => {
   const r = run(dir, ["codex"], { env: { FAKE_CODEX_STDOUT: "the authentication handler returns 401 on expired tokens" } });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /reviewer: codex-exec/);
-  assert.doesNotMatch(r.stderr, /authentication failed/);
+  assert.doesNotMatch(r.stderr, /codex exec failed/);
   assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "codex report");
 });
 
-test("real codex auth failure is reported", () => {
+test("a codex failure reports the log tail verbatim, not a guessed cause", () => {
   const dir = repo();
   const r = run(dir, ["codex"], { env: { FAKE_CODEX_STDOUT: "stream error: 401 Unauthorized", FAKE_CODEX_NO_REPORT: "1" } });
   assert.equal(r.status, 3);
-  assert.match(r.stderr, /authentication failed/);
+  assert.match(r.stderr, /codex exec failed: stream error: 401 Unauthorized \(full log: .*t-codex\.log\)/);
+  assert.doesNotMatch(r.stderr, /authentication failed/);
+});
+
+test("a codex usage-limit failure is reported verbatim", () => {
+  const dir = repo();
+  const msg = "ERROR: You've hit your usage limit. Visit https://example.test/usage to purchase more credits.";
+  const r = run(dir, ["codex"], { env: { FAKE_CODEX_STDOUT: `run 'codex login' first\n${msg}`, FAKE_CODEX_NO_REPORT: "1" } });
+  assert.equal(r.status, 3);
+  assert.match(r.stderr, /codex exec failed: ERROR: You've hit your usage limit\./);
+  assert.doesNotMatch(r.stderr, /authentication failed/);
 });
 
 test("excludes .context in a linked worktree", () => {
@@ -263,6 +273,75 @@ test("codex exec stays pinned when node is unavailable", () => {
   assert.match(r.stderr, /node not found/);
   assert.match(r.log, /codex exec .*-m gpt-envonly/);
   assert.match(r.log, /model_reasoning_effort=high/);
+});
+
+// --- the Orca path against a real Codex TUI ------------------------------------
+
+test("answers the Codex directory-trust prompt and stays on the Orca path", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_TRUST_PROMPT: "1" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: orca/);
+  assert.match(r.log, /terminal read/);
+  assert.match(r.log, /terminal send .*--text 1 --enter/);
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "orca report");
+});
+
+test("abandons Orca and closes the terminal when the TUI stays on a prompt", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_STUCK_PROMPT: "1" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.stderr, /interactive prompt/);
+  assert.match(r.log, /terminal close --terminal term-1/);
+});
+
+test("waits the full budget for a report that arrives late", () => {
+  const dir = repo();
+  const started = Date.now();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_REPORT_DELAY: "8" } });
+  const elapsed = (Date.now() - started) / 1000;
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: orca/);
+  assert.ok(elapsed >= 8, `gave up after ${elapsed}s, before the report existed`);
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "orca report");
+});
+
+test("closes the terminal it created when no report ever appears", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_REPORT_DELAY: "999" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.stderr, /orca: no report produced/);
+  assert.match(r.log, /terminal close --terminal term-1/);
+});
+
+test("a reused Orca session terminal is never closed", () => {
+  const dir = repo();
+  mkdirSync(path.join(dir, ".context"), { recursive: true });
+  writeFileSync(path.join(dir, ".context/t-session"), "term-1\n");
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_STUCK_PROMPT: "1" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.doesNotMatch(r.log, /terminal close/);
+});
+
+test("rejects a --timeout-min that is not a positive integer", () => {
+  for (const bad of ["0", "-1", "abc", "1.5"]) {
+    const dir = repo();
+    const r = run(dir, ["codex"], { timeoutMin: bad });
+    assert.equal(r.status, 1, `expected exit 1 for --timeout-min ${bad}`);
+    assert.match(r.stderr, /usage: reviewer\.sh/);
+  }
+});
+
+test("leaves info/exclude alone when .context is already git-ignored", () => {
+  const dir = repo();
+  writeFileSync(path.join(dir, ".gitignore"), ".context/\n");
+  const r = run(dir, ["codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  const excl = path.join(dir, ".git/info/exclude");
+  if (existsSync(excl)) assert.doesNotMatch(readFileSync(excl, "utf8"), /\.context\//);
 });
 
 test("rejects an option with no value", () => {

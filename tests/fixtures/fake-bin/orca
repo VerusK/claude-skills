@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # Fake Orca CLI: records calls, writes the report when a prompt is sent.
 # Env knobs:
-#   FAKE_ORCA_REACHABLE=false  -> `status --json` reports runtime.reachable=false
+#   FAKE_ORCA_REACHABLE=false    -> `status --json` reports runtime.reachable=false
+#   FAKE_ORCA_TRUST_PROMPT=1     -> `terminal read` shows Codex's directory-trust
+#                                   prompt until a `--text 1 --enter` send happened
+#   FAKE_ORCA_STUCK_PROMPT=1     -> `terminal show` keeps reporting
+#                                   agentWait.reason=agent-interactive-prompt
+#   FAKE_ORCA_REPORT_DELAY=<sec> -> the report is written <sec> seconds after the
+#                                   send, by a backgrounded subshell
 echo "orca $*" >> "${FAKE_LOG:?}"
 case "$1 $2" in
   "status "*)
@@ -11,12 +17,28 @@ case "$1 $2" in
       echo '{"ok":true,"result":{"runtime":{"reachable":true}}}'
     fi;;
   "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}';;
-  "terminal show") echo '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}';;
+  "terminal show")
+    if [ "${FAKE_ORCA_STUCK_PROMPT:-}" = "1" ]; then
+      echo '{"ok":true,"result":{"terminal":{"handle":"term-1","agentWait":{"source":"prompt-text","reason":"agent-interactive-prompt"}}}}'
+    else
+      echo '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}'
+    fi;;
+  "terminal read")
+    if [ "${FAKE_ORCA_TRUST_PROMPT:-}" = "1" ] && ! grep -q -- '--text 1 --enter' "$FAKE_LOG"; then
+      echo '{"ok":true,"result":{"screen":{"text":"Do you trust the contents of this directory? 1. Yes, continue  2. No, quit"}}}'
+    else
+      echo '{"ok":true,"result":{"screen":{"text":"codex ready"}}}'
+    fi;;
   "terminal wait") echo '{"ok":true,"result":{"wait":{"satisfied":true}}}';;
   "terminal send")
     # extract the report path from the prompt text and create it
     out=$(printf '%s\n' "$@" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
-    [ -n "$out" ] && { mkdir -p "$(dirname "$out")"; echo "orca report" > "$out"; }
+    if [ -n "$out" ]; then
+      case "${FAKE_ORCA_REPORT_DELAY:-0}" in
+        ''|0|*[!0-9]*) mkdir -p "$(dirname "$out")"; echo "orca report" > "$out";;
+        *) ( sleep "$FAKE_ORCA_REPORT_DELAY"; mkdir -p "$(dirname "$out")"; echo "orca report" > "$out" ) >/dev/null 2>&1 &;;
+      esac
+    fi
     echo '{"ok":true,"result":{"accepted":true}}';;
   *) echo '{"ok":true}';;
 esac
