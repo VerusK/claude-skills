@@ -2118,3 +2118,44 @@ Applied: `looksLikeDistro` now checks `scripts/typesafe-judge.mjs`, the locator'
 own predicate, so the hook only warns about a directory those skills would
 actually run; the test's decoy directory carries a `USING.md` and must not
 trigger the warning.
+
+## Review decisions (round 1)
+
+Whole-branch review of `6581d92..7dffd92`. Reviewer: fallback (a Claude subagent),
+not an independent external model — Codex was under a hard usage limit until
+2026-09-26. Report: `docs/reviews/VerusK-docs-simplify-skills-context-2026-09-22.md`.
+Verdict READY WITH FIXES: 0 P0, 0 P1, 2 P2, 1 P3 at confidence 7+; the ledger
+triage marked nothing BLOCKS MERGE. All three accepted and fixed in `250d775`;
+suite 160/160. No P0/P1, so no round 2.
+
+```
+Решение (Jev): How should the code handle: the SessionStart hook prints a false "two installs of this distro are active" warning whenever the plugin is installed for both Claude Code and Codex, as the README recommends?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 1.00, данных 0.90 → принято автоматически
+```
+Fixed: `buildContext` suppresses the warning when both roots lie under a
+`plugins/cache/verus-skills/` path (matched on whole segments); a symlink checkout
+next to any other root still warns. Three new tests.
+
+```
+Решение (Jev): How should the code handle: the manual acceptance checklist never runs the judge or checks reviewer.sh from the plugin cache, although the spec's acceptance ends with judge_exit=0 and reviewer.sh found?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 0.99, данных 0.79 → принято автоматически
+```
+Fixed: `docs/plugin-acceptance.md` gains a step that runs the judge block from the
+cache and records `judge_exit=0`, confirms no `node_modules` in the cache root, and
+checks `scripts/reviewer.sh`; later steps renumbered.
+
+```
+Решение (Jev): How should the code handle: the review skill's codebase-scope exclusion list omits the new vendor-node/ directory, so `review all` embeds the vendored SDK's generated build output as this repo's own code?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 1.00, данных 0.91 → принято автоматически
+```
+Fixed: `':(exclude)vendor-node'` in `skills/review/SKILL.md`'s pathspec and prose,
+and in README's review table.
+
+Deferred (P2/P3 below confidence 7, and ledger items the triage marked OK) stay in
+the report's Appendix and Ledger triage sections.
