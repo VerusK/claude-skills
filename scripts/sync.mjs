@@ -91,7 +91,12 @@ function diffDirs(vendorDir, stagedDir) {
   try {
     cpSync(vendorDir, path.join(parent, "vendor"), { recursive: true });
     cpSync(stagedDir, path.join(parent, "upstream"), { recursive: true });
-    const r = spawnSync("git", ["diff", "--no-index", "--", "vendor", "upstream"], { cwd: parent, encoding: "utf8" });
+    // The -c flags pin the output shape against user git config (`diff.noprefix`,
+    // `diff.mnemonicPrefix`), and --no-ext-diff keeps a configured external differ out.
+    const r = spawnSync("git", [
+      "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+      "diff", "--no-index", "--no-ext-diff", "--", "vendor", "upstream",
+    ], { cwd: parent, encoding: "utf8" });
     return r.stdout ?? "";
   } finally {
     rmSync(parent, { recursive: true, force: true });
@@ -173,7 +178,9 @@ export async function syncSource(source, { root = REPO_ROOT, fetchSource = fetch
             if (mergeFile(ours, base, theirs) > 0) result.conflicts.push(rel);
           } catch (err) {
             // git could not merge this file at all: leave our copy exactly as it is.
-            result.mergeErrors.push(`${rel} — ${err.message}`);
+            // git's stderr names `ours` by its absolute path; report it repo-relative.
+            const msg = err.message.split(ours).join(path.relative(root, ours));
+            result.mergeErrors.push(`${rel} — ${msg}`);
             result.kept.push(rel);
           }
         }
@@ -192,9 +199,13 @@ export async function syncSource(source, { root = REPO_ROOT, fetchSource = fetch
     }
 
     // Swap vendor in one rename so an interrupted run never leaves a half-copied tree.
-    const tmpVendor = path.join(root, "vendor", `${source.name}.tmp-${process.pid}`);
+    const tmpPrefix = `${source.name}.tmp-`;
+    const tmpVendor = path.join(root, "vendor", `${tmpPrefix}${process.pid}`);
     mkdirSync(path.dirname(vendorDir), { recursive: true });
-    rmSync(tmpVendor, { recursive: true, force: true });
+    // Drop leftovers from any interrupted run, not just this pid's.
+    for (const entry of readdirSync(path.dirname(vendorDir))) {
+      if (entry.startsWith(tmpPrefix)) rmSync(path.join(root, "vendor", entry), { recursive: true, force: true });
+    }
     try {
       cpSync(staged, tmpVendor, { recursive: true });
       rmSync(vendorDir, { recursive: true, force: true });
@@ -230,10 +241,19 @@ export function repatch(source, { root = REPO_ROOT } = {}) {
   return out;
 }
 
+// A run is blocking when any source left conflict markers or could not merge a file.
+export function hasBlockingResults(results) {
+  return results.some((r) => r.conflicts.length || (r.mergeErrors?.length ?? 0));
+}
+
 export function summarize(results) {
   const lines = ["# Sync report", ""];
   for (const r of results) {
-    const state = r.conflicts.length ? "CONFLICTS" : r.changed ? "updated" : "unchanged";
+    // CONFLICTS > MERGE ERRORS > updated > unchanged: both states fail the run,
+    // but markers in skills/ are the louder problem.
+    const state = r.conflicts.length ? "CONFLICTS"
+      : (r.mergeErrors?.length ?? 0) ? "MERGE ERRORS"
+      : r.changed ? "updated" : "unchanged";
     lines.push(`## ${r.name} — ${state} (${r.commit.slice(0, 7)})`);
     if (r.added.length) lines.push(`- added: ${r.added.join(", ")}`);
     if (r.removed.length) lines.push(`- removed: ${r.removed.join(", ")}`);
@@ -272,7 +292,7 @@ async function main() {
   const report = summarize(results);
   writeFileSync(path.join(REPO_ROOT, ".sync-report.md"), report);
   console.log(report);
-  process.exitCode = results.some((r) => r.conflicts.length) ? 1 : 0;
+  process.exitCode = hasBlockingResults(results) ? 1 : 0;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
