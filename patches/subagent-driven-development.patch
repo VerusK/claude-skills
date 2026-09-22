@@ -1,0 +1,230 @@
+diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
+--- vendor/subagent-driven-development/SKILL.md	2026-09-22 12:12:10
++++ skills/subagent-driven-development/SKILL.md	2026-09-22 12:19:28
+@@ -36,25 +36,17 @@
+ digraph when_to_use {
+     "Have implementation plan?" [shape=diamond];
+     "Tasks mostly independent?" [shape=diamond];
+-    "Partner chose inline, or no subagent tool?" [shape=diamond];
+     "subagent-driven-development" [shape=box];
+-    "executing-plans" [shape=box];
+     "Manual execution or brainstorm first" [shape=box];
+ 
+     "Have implementation plan?" -> "Tasks mostly independent?" [label="yes"];
+     "Have implementation plan?" -> "Manual execution or brainstorm first" [label="no"];
+-    "Tasks mostly independent?" -> "Partner chose inline, or no subagent tool?" [label="yes"];
++    "Tasks mostly independent?" -> "subagent-driven-development" [label="yes"];
+     "Tasks mostly independent?" -> "Manual execution or brainstorm first" [label="no - tightly coupled"];
+-    "Partner chose inline, or no subagent tool?" -> "executing-plans" [label="yes"];
+-    "Partner chose inline, or no subagent tool?" -> "subagent-driven-development" [label="no"];
+ }
+ ```
+ 
+-**vs. Executing Plans (inline):**
+-- Fresh subagent per task (no context pollution) instead of one context doing every task
+-- Review after each task (spec compliance + code quality) instead of only at the end
+-- Costs a fresh context per task and per review; inline costs one context plus one final reviewer
+-- Both run in this session, share the same plan workspace and ledger, and never pause between tasks
++This is the only execution path in this distro; there is no parallel-session variant.
+ 
+ ## The Process
+ 
+@@ -83,14 +75,14 @@
+         "Append completion to ledger, mark todo complete" [shape=box];
+     }
+ 
+-    "Setup: worktree, ledger check, read plan, pre-flight review" [shape=box];
++    "Setup: ledger check, read plan, pre-flight review" [shape=box];
+     "More tasks remain?" [shape=diamond];
+     "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" [shape=box];
+     "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals" [shape=box];
+     "Final review clean: delete this plan's workspace" [shape=box];
+-    "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
++    "Use finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
+ 
+-    "Setup: worktree, ledger check, read plan, pre-flight review" -> "Dispatch implementer subagent (./implementer-prompt.md)";
++    "Setup: ledger check, read plan, pre-flight review" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+     "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer asks questions?";
+     "Implementer asks questions?" -> "Answer questions, provide context" [label="yes"];
+     "Answer questions, provide context" -> "Implementer implements, tests, commits, self-reviews";
+@@ -117,14 +109,13 @@
+     "More tasks remain?" -> "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" [label="no"];
+     "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" -> "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals";
+     "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals" -> "Final review clean: delete this plan's workspace";
+-    "Final review clean: delete this plan's workspace" -> "Use superpowers:finishing-a-development-branch";
++    "Final review clean: delete this plan's workspace" -> "Use finishing-a-development-branch";
+ }
+ ```
+ 
+ ## Setup
+ 
+-Ensure the work happens in an isolated workspace: use
+-superpowers:using-git-worktrees to create one or verify the existing one.
++Work in the current checkout (an Orca worktree); never create git worktrees.
+ Never start implementation on a main/master branch without your human
+ partner's explicit consent.
+ 
+@@ -183,41 +174,17 @@
+ 
+ ## Model Selection
+ 
+-Use the least powerful model that can handle each role to conserve cost and increase speed.
++Every subagent dispatched by this skill uses `model: opus`. This is a user rule
++for this machine: implementers, task reviewers, re-reviewers and the final
++reviewer all run on the Opus tier. Always pass the model explicitly.
+ 
+-**Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
++Dispatch subagents unnamed and in the background: never give them a `name`
++or turn them into named teammates, because every named agent opens its own
++window on this machine. The user does not watch subagents work; you collect
++their reports. For fix rounds, resume the agent by the id the dispatch
++returned, or dispatch a fresh unnamed implementer with the brief and report
++file paths.
+ 
+-**Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
+-
+-**Architecture and design tasks**: use the most capable available model.
+-The final whole-branch review is one of these — dispatch it on the most
+-capable available model, not the session default.
+-
+-**Review tasks**: choose the model with the same judgment, scaled to the
+-diff's size, complexity, and risk. A small mechanical diff does not need the
+-most capable model; a subtle concurrency change does. Scoped re-reviews of
+-small fix diffs take a cheap-to-mid tier.
+-
+-**Fix-loop escalation (rounds 4-5)**: use a model at least one tier above
+-the implementer that got stuck.
+-
+-**Always specify the model explicitly when dispatching a subagent.** An
+-omitted model inherits your session's model — often the most capable and
+-most expensive — which silently defeats this section.
+-
+-**Turn count beats token price.** Wall-clock and context cost scale with how
+-many turns a subagent takes, and the cheapest models routinely take 2-3× the
+-turns on multi-step work — costing more overall. Use a mid-tier model as the
+-floor for reviewers and for implementers working from prose descriptions.
+-When the task's plan text contains the complete code to write, the
+-implementation is transcription plus testing: use the cheapest tier for
+-that implementer. Single-file mechanical fixes also take the cheapest tier.
+-
+-**Task complexity signals (implementation tasks):**
+-- Touches 1-2 files with a complete spec → cheap model
+-- Touches multiple files with integration concerns → standard model
+-- Requires design judgment or broad codebase understanding → most capable model
+-
+ ## The Task Loop
+ 
+ **Batch small same-shape work.** When the plan lists several tasks that are
+@@ -444,30 +411,16 @@
+ 
+ ## Final Review
+ 
+-The final whole-branch review gets a package too: run
+-`bash scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = the commit the
+-branch started from, e.g. `git merge-base main HEAD`) and include the
+-printed path in the final review dispatch, so the final reviewer reads
+-one file instead of re-deriving the branch diff with git commands. Dispatch
+-on the most capable available model (see Model Selection), using
+-superpowers:requesting-code-review's
+-[code-reviewer.md](../requesting-code-review/code-reviewer.md). Point it at
+-the ledger's deferred-minor and parked lines so it can triage which must be
+-fixed before merge.
++The final whole-branch review is done by an external reviewer through the
++`branch-review` skill. After the last task:
+ 
+-If the final whole-branch review returns findings, dispatch ONE fix subagent
+-with the complete findings list — not one fixer per finding.
+-Per-finding fixers each rebuild context and re-run suites; a real
+-session's final-review fix wave cost more than all its tasks combined.
+-Then run exactly one scoped re-review of the fix wave
+-(`bash scripts/review-package PLAN_FILE FIX_BASE HEAD` over the fix range,
+-[re-review-prompt.md](re-review-prompt.md)).
+-Adjudicate any residual findings as in the task loop's breaker: park with
+-rulings, or rule on the load-bearing ones and ledger what you decided. Only
+-the four classes above stop you here. There is no second fix wave —
+-residual load-bearing findings surface to your human partner when
+-finishing-a-development-branch presents the options.
++1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
++2. Invoke the `branch-review` skill with the merge base: `branch-review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round.
++3. When `branch-review` reports clean (or its second round is done), continue to `finishing-a-development-branch`.
+ 
++There is no second fix wave here; residual findings surface to your human
++partner when finishing-a-development-branch presents the options.
++
+ ## Finish
+ 
+ Before you delete anything, collect every ledger line containing `Ruling:` —
+@@ -484,7 +437,7 @@
+ the record now. Sibling directories belong to other plans; leave them
+ alone.
+ 
+-Use superpowers:finishing-a-development-branch.
++Use finishing-a-development-branch.
+ 
+ ## Common Rationalizations
+ 
+@@ -505,9 +458,9 @@
+ ```
+ You: I'm using Subagent-Driven Development to execute this plan.
+ 
+-[Setup: worktree verified]
+-[Read plan file once: docs/superpowers/plans/feature-plan.md]
+-[Resolve workspace: bash scripts/sdd-workspace docs/superpowers/plans/feature-plan.md — no ledger inside, fresh start]
++[Setup: working in the current checkout]
++[Read plan file once: docs/plans/feature-plan.md]
++[Resolve workspace: bash scripts/sdd-workspace docs/plans/feature-plan.md — no ledger inside, fresh start]
+ [Create todos for all tasks]
+ 
+ Task 1: Hook installation script
+@@ -559,10 +512,10 @@
+ ...
+ 
+ [After all tasks]
+-[Run review-package PLAN_FILE MERGE_BASE HEAD; dispatch final code-reviewer, most capable model]
++[Run review-package; invoke branch-review <MERGE_BASE>]
+ Final reviewer: All requirements met. Deferred minors triaged: none block merge.
+ 
+ [Delete this plan's workspace — the record now lives in git]
+ 
+-Done! Using superpowers:finishing-a-development-branch.
++Done! Using finishing-a-development-branch.
+ ```
+diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-09-22 12:12:10
++++ skills/subagent-driven-development/implementer-prompt.md	2026-09-22 12:19:31
+@@ -5,8 +5,7 @@
+ ```
+ Subagent (general-purpose):
+   description: "Implement Task N: [task name]"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
++  model: opus
+   prompt: |
+     You are implementing Task N: [task name]
+ 
+diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-09-22 12:12:10
++++ skills/subagent-driven-development/re-review-prompt.md	2026-09-22 12:19:34
+@@ -10,8 +10,7 @@
+ ```
+ Subagent (general-purpose):
+   description: "Re-review Task N fix round R"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
++  model: opus
+   prompt: |
+     You are re-reviewing one task's fix round. A previous review produced
+     findings; an implementer has attempted to fix them. Your job is to
+diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 12:12:10
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 12:19:32
+@@ -10,8 +10,7 @@
+ ```
+ Subagent (general-purpose):
+   description: "Review Task N (spec + quality)"
+-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
+-         model silently inherits the session's most expensive one]
++  model: opus
+   prompt: |
+     You are reviewing one task's implementation: first whether it matches its
+     requirements, then whether it is well-built. This is a task-scoped gate,

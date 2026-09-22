@@ -20,6 +20,7 @@ sources:
     repo: obra/superpowers
     ref: main
     path: skills/test-driven-development
+    patch: true
   - name: verification-before-completion
     repo: obra/superpowers
     ref: main

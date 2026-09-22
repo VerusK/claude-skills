@@ -1,0 +1,21 @@
+diff -ruN vendor/systematic-debugging/SKILL.md skills/systematic-debugging/SKILL.md
+--- vendor/systematic-debugging/SKILL.md	2026-09-22 12:12:16
++++ skills/systematic-debugging/SKILL.md	2026-09-22 12:19:38
+@@ -174,7 +174,7 @@
+    - Automated test if possible
+    - One-off test script if no framework
+    - MUST have before fixing
+-   - Use the `superpowers:test-driven-development` skill for writing proper failing tests
++   - Use the `test-driven-development` skill for writing proper failing tests
+ 
+ 2. **Implement Single Fix**
+    - Address the root cause identified
+@@ -186,7 +186,7 @@
+    - Test passes now?
+    - No other tests broken?
+    - Issue actually resolved?
+-   - Use the `superpowers:verification-before-completion` skill before claiming success
++   - Use the `verification-before-completion` skill before claiming success
+ 
+ 4. **If Fix Doesn't Work**
+    - STOP
