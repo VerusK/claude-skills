@@ -76,3 +76,36 @@ test("the CLI refuses an unknown bump and exits 1", () => {
   assert.equal(res.status, 1);
   assert.match(res.stderr, /patch\|minor\|major/);
 });
+
+function releaseRecipe() {
+  const lines = readFileSync(path.join(REPO_ROOT, "Makefile"), "utf8").split("\n");
+  const start = lines.findIndex((l) => /^release\s*:/.test(l));
+  assert.notEqual(start, -1, "Makefile has no release target");
+  const recipe = [];
+  for (const l of lines.slice(start + 1)) {
+    if (!l.startsWith("\t")) break;
+    recipe.push(l.trim());
+  }
+  return recipe;
+}
+
+test("make release refuses a dirty tracked tree before it bumps anything", () => {
+  const recipe = releaseRecipe();
+  assert.match(recipe[0], /^git diff --quiet HEAD\b/, `first recipe line is not the clean-tree guard: ${recipe[0]}`);
+  assert.match(recipe[0], /\|\|.*exit 1/, "the guard must fail the recipe");
+  const bumpAt = recipe.findIndex((l) => l.includes("bump-version.mjs"));
+  assert.ok(bumpAt > 0, "the bump must come after the guard");
+});
+
+test("make release commits exactly the five version files, never -a", () => {
+  const commit = releaseRecipe().find((l) => /^git commit\b/.test(l));
+  assert.ok(commit, "release recipe has no git commit line");
+  assert.doesNotMatch(commit, /\s-[A-Za-z]*a[A-Za-z]*\s/, `commit must not use -a: ${commit}`);
+  assert.doesNotMatch(commit, /\s--all\b/, `commit must not use --all: ${commit}`);
+  assert.match(commit, /chore\(release\): \$\$\(node -p "require\('\.\/package\.json'\)\.version"\)/);
+  const [, pathspec] = commit.split(/\s--\s/);
+  assert.ok(pathspec, `commit must name its paths after --: ${commit}`);
+  const paths = new Set(pathspec.trim().split(/\s+/));
+  const expected = new Set([...VERSIONED, "package-lock.json"]);
+  assert.deepEqual(paths, expected);
+});
