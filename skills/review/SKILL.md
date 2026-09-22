@@ -17,7 +17,7 @@ argument-hint: "[all | <path|glob>... | <base>] — default: branch diff vs main
 - `BASE`: branch scope only — the commit argument if one was given, else `$(git merge-base main HEAD)`. Always validated with `git rev-parse --verify "$BASE^{commit}"`; if the block below prints `BASE invalid`, stop and ask the user for a base. Unused in path and codebase scope.
 - `BRANCH`: `git branch --show-current`.
 - `REPORT`: `docs/reviews/<BRANCH with / replaced by ->-<YYYY-MM-DD>.md`; path scope appends a slug of the first path (`...-<slug>.md`), codebase scope appends `-all`. If that file already exists, append `-2`, `-3`, … before `.md` — a same-day rerun and round 2 both get their own file, and `reviewer.sh` deletes its `--output` at startup, so an existing report must never be reused as the output path. Always repo-relative; `reviewer.sh` exits 1 on an absolute path. It is relative to the repo `reviewer.sh` works in, so run from the repo under review, or pass `--repo <that repo>` to `reviewer.sh`. Create `docs/reviews/` if it does not exist.
-- `PLAN`, `SPEC`: newest file in `docs/plans/` and the spec path from its header; if the user named a plan, use it. Either may be absent — say so in the prompt rather than inventing a path.
+- `PLAN`, `SPEC`: the plan and the spec path from its header. Branch scope: the plan the user named, else the newest file in `docs/plans/`. Path and codebase scope: only a plan the user named, otherwise `none` — a set of files or a whole codebase is not the output of the newest plan, so never guess one. Either may be absent — send `none` rather than inventing a path.
 - `ROUND`: 1.
 - Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `review`). Every fenced block below is one shell call, so a block that uses `$SKILLS_REPO` must run the locator itself.
 
@@ -69,16 +69,24 @@ if [ "$KIND" = "branch" ]; then
     echo "diff_lines=$(git diff "$BASE" | grep -c '')"
   fi
 else
-  if [ "$KIND" = "codebase" ]; then SET="."; else SET="$SCOPE"; fi
-  FILELIST="${TMPDIR:-/tmp}/review-files.txt"
-  git grep -Il '' -- $SET > "$FILELIST"
+  FILELIST="$(mktemp "${TMPDIR:-/tmp}/review-files.XXXXXX")"
+  if [ "$KIND" = "codebase" ]; then
+    git grep -Il '' -- . \
+      ':(exclude)vendor' ':(exclude)node_modules' ':(exclude)docs/reviews' \
+      ':(exclude).superpowers' ':(exclude).context' \
+      ':(exclude)*package-lock.json' ':(exclude)*yarn.lock' ':(exclude)*pnpm-lock.yaml' \
+      ':(exclude)*Cargo.lock' ':(exclude)*poetry.lock' ':(exclude)*composer.lock' \
+      ':(exclude)*Gemfile.lock' ':(exclude)*go.sum' > "$FILELIST"
+  else
+    git grep -Il '' -- $SCOPE > "$FILELIST"
+  fi
   echo "FILELIST=$FILELIST"
   echo "files=$(grep -c '' "$FILELIST")"
   echo "file_lines=$(while IFS= read -r f; do wc -l < "$f"; done < "$FILELIST" | awk '{s+=$1} END {print s+0}')"
 fi
 ```
 
-`git grep -Il ''` lists tracked text files only, so binaries never reach the prompt.
+`git grep -Il ''` lists tracked text files only, so binaries never reach the prompt. Codebase scope additionally excludes vendored and generated material — `vendor/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles — none of which is this repo's own code; path scope reviews exactly the paths the user named, with no exclusions.
 
 Mode depends on the working tree, ignoring this skill's and the launcher's own artifacts (`docs/reviews/`, `.context/`) — a report left behind by an earlier run must not flip the next run into report-only:
 
@@ -92,7 +100,7 @@ The block prints the `git status --porcelain` lines that caused `MODE=report-onl
 Create a temp file outside the repo (under `$TMPDIR`) containing, in order:
 
 1. The full text of `reviewer.md` from this skill's directory, verbatim.
-2. `WHAT WAS IMPLEMENTED:` a 3–6 line summary. In branch scope write it from the plan and `git log --oneline BASE..HEAD`; in path and codebase scope describe what the files under review are and what they are for.
+2. A 3–6 line summary, under a scope-appropriate header. Branch scope: `WHAT WAS IMPLEMENTED:`, written from the plan and `git log --oneline BASE..HEAD`. Path and codebase scope: `WHAT IS UNDER REVIEW:`, describing what the files under review are and what they are for — nothing was necessarily "implemented", so do not claim it was.
 3. The scope block, one value per line, so the reviewer knows what it is looking at:
 
    ```
@@ -107,9 +115,9 @@ Create a temp file outside the repo (under `$TMPDIR`) containing, in order:
    - In report-only mode, branch scope: `MODE: report-only — the diff is the working tree vs <BASE> and includes uncommitted changes; title the report "... (includes uncommitted changes)"`.
    - In report-only mode, path or codebase scope: `MODE: report-only — the files below are the working-tree versions and include uncommitted changes; title the report "... (includes uncommitted changes)"`.
 4. `PLAN: <path>` and `SPEC: <path>` — `none` for either one that does not exist.
-5. `Ledger lines:` the plan's deferred-minor and parked lines, if the plan has a ledger; else `none`.
+5. `Ledger lines:` the plan's deferred-minor and parked lines, if the plan has a ledger; else `none`. When `PLAN` is `none` there is no ledger to read, so send `none`.
 6. The material under review, by scope. Every fence is longer than any backtick run in the content it wraps — use seven backticks unless the content contains a run of seven or more, then go longer still.
-   - **Branch scope**: `DIFF:` followed by `git diff BASE..HEAD` (full mode) or `git diff BASE` (report-only mode) in a fence. If `diff_lines` from section 0 exceeds 6000, embed the `--stat` form instead plus the sentence `Run git diff <BASE> yourself; it is too large to embed.`
+   - **Branch scope**: `DIFF:` followed by `git diff BASE..HEAD` (full mode) or `git diff BASE` (report-only mode) in a fence. If `diff_lines` from section 0 exceeds 6000, embed the `--stat` form instead plus the sentence `Run git diff <BASE>..HEAD yourself (full mode) or git diff <BASE> (report-only); it is too large to embed.` — name the command that produced the diff you would have embedded, so the reviewer reproduces the reviewed material and not a different one.
    - **Path and codebase scope**: `FILES:` followed by every path in `FILELIST`, each as a `### <path>` header and then that file's contents in a fence. If `file_lines` from section 0 exceeds 6000, embed the paths only (one per line, no contents) plus the sentence `Read these files yourself; they are too large to embed.`
 7. On round 2 only: `Previous report:` followed by the round-1 report verbatim, then `Only report findings still present after the fixes; mark fixed ones as resolved.`
 8. `Write the report to <REPORT>` on its own line — the last line of the file, in round 1 and round 2 alike. Self-check before launching: `[ "$(tail -1 "$PROMPT")" = "Write the report to $REPORT" ] || echo "prompt malformed"`. If it prints `prompt malformed`, rebuild the prompt in this order and re-check; do not launch the reviewer.
@@ -137,6 +145,17 @@ echo "reviewer_exit=$?"
 - `1`: fix the invocation; do not proceed.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 
+### Commit the report
+
+In full mode, commit the report as soon as it exists — every round, whether or not a fix wave follows, and before anything else reads the working tree:
+
+```bash
+REPORT="<REPORT, repo-relative>"
+git add "$REPORT" && git commit -m "docs(review): $(basename "$REPORT" .md)"
+```
+
+That keeps the tree clean for the fix wave and stops an untracked report from pushing the next run into report-only. Never edit `REPORT` — it is only ever committed. In report-only mode nothing is committed; skip this step.
+
 ## 3. Triage findings
 
 Parse `## Findings (confidence 7+)`. For each finding, in order of severity:
@@ -157,22 +176,15 @@ Findings in the Appendix are not acted on; leave them in the report.
 
 In report-only mode skip this section and section 5: print the accepted findings as a checklist for the user to apply, then stop. Nothing is committed in report-only mode.
 
-First commit the report, so the tree is clean before the fix wave and the next run is not pushed into report-only by an untracked artifact:
-
-```bash
-REPORT="<REPORT, repo-relative>"
-git add "$REPORT" && git commit -m "docs(review): $(basename "$REPORT" .md)"
-```
-
-Never edit `REPORT` — it is only ever committed.
-
-Then find the repo's test command, in this order: the plan's header, `CLAUDE.md` or `AGENTS.md`, then `package.json` scripts / `Makefile` targets / `pyproject.toml`. If none of them names one, say so in the hand-off and skip the suite rather than guessing.
+The report is already committed by the step at the end of section 2, so the tree is clean here. Find the repo's test command, in this order: the plan's header, `CLAUDE.md` or `AGENTS.md`, then `package.json` scripts / `Makefile` targets / `pyproject.toml`. If none of them names one, say so in the hand-off and skip the suite rather than guessing.
 
 Collect every accepted finding into one list and dispatch ONE unnamed background fix subagent (`general-purpose`, `model: opus`): give it the list, the spec path, the test command you found, and the rules "fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
 
 If the suite is red after the fix wave, report the failing tests to the user and stop — do not start round 2 and do not hand off to `finishing-a-development-branch`.
 
-Append to `PLAN`:
+Then record the decisions. If `PLAN` is `none` — always the case in path and codebase scope unless the user named a plan — **skip the append and its commit entirely**: print the decision blocks in chat instead and go on to section 5. There is no file to write them to, and inventing one is out of scope.
+
+Otherwise append to `PLAN`:
 
 ```
 ## Review decisions (round N)
@@ -181,11 +193,9 @@ Append to `PLAN`:
 
 Then commit the plan change: `git add "<PLAN>" && git commit -m "docs(plan): apply review round N"`.
 
-If there is no plan (`PLAN` is `none`), print the decision blocks in chat and skip the plan append and its commit.
-
 ## 5. Second round
 
-Skip round 2 if the round-1 report has no P0/P1 at confidence 7+, or if the suite is red. Otherwise, if `ROUND` is 1 and at least one finding was fixed: set `ROUND` to 2, compute a fresh `REPORT` by re-running the suffix loop from section 0 (the round-1 report now exists, so round 2 gets the next `-N` name and `reviewer.sh` cannot delete the round-1 file), rebuild the prompt (section 1, reading the previous report from the round-1 path), relaunch (section 2; in Orca the same terminal session is reused via the session file, so the reviewer sees its own earlier context), and triage again. Run one more fix wave — including the report commit — only if a P0/P1 at confidence 7+ remains.
+Skip round 2 if the round-1 report has no P0/P1 at confidence 7+, or if the suite is red. Otherwise, if `ROUND` is 1 and at least one finding was fixed: set `ROUND` to 2, compute a fresh `REPORT` by re-running the suffix loop from section 0 (the round-1 report now exists, so round 2 gets the next `-N` name and `reviewer.sh` cannot delete the round-1 file), rebuild the prompt (section 1, reading the previous report from the round-1 path), relaunch (section 2; in Orca the same terminal session is reused via the session file, so the reviewer sees its own earlier context), and triage again. The round-2 report is committed by the step at the end of section 2, like every other round. Run one more fix wave only if a P0/P1 at confidence 7+ remains.
 
 Stop after round 2.
 
@@ -199,6 +209,8 @@ In branch scope and full mode, then say: "Review done. Using `finishing-a-develo
 
 - Never edit `REPORT`; it is the reviewer's artifact. Decisions go into the plan, fixes go into code.
 - Each round writes its own report file; an existing report is never reused as `--output`.
+- In full mode every round commits its report as soon as the launcher returns, fix wave or not.
+- `PLAN`/`SPEC` and the ledger are branch-scope inputs; in path and codebase scope they are `none` unless the user named a plan, and the plan append is then skipped.
 - Exactly one fix subagent per round; never one per finding.
 - Report-only mode never commits, never dispatches a fix subagent, never hands off.
 - Path and codebase scope never hand off to `finishing-a-development-branch`.

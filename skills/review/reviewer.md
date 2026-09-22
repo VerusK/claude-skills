@@ -8,7 +8,7 @@ Never skip or condense a section. If a section has no findings, write "No issues
 
 ## Inputs
 
-- WHAT WAS IMPLEMENTED: summary below.
+- WHAT WAS IMPLEMENTED (branch scope) or WHAT IS UNDER REVIEW (a named set of files, or the whole codebase): the summary below, under whichever of the two headers the prompt uses. It describes the material, not a claim that all of it is new work.
 - BRANCH / BASE / SCOPE / MODE: the lines below the summary. They tell you what the embedded material is — a branch diff against a base, the working tree against a base (uncommitted changes included), a named set of whole files, or the whole codebase. There is no `BASE` line when the scope is not a branch.
 - PLAN and SPEC: paths named below; read them from the repo. Either may be `none`; when both are `none`, skip plan alignment and write "No plan given" under that heading.
 - DIFF or FILES: embedded below — a `DIFF:` block for branch scope, a `FILES:` block of whole files (each under a `### <path>` header) otherwise. The BRANCH/BASE/SCOPE/MODE lines above it say which. If the material was too large to embed, the prompt says so and names what to read yourself. You may also run `git diff`, `git log`, `git show` yourself. Do not modify the working tree, index, HEAD or branches.
