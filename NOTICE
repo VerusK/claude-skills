@@ -1,0 +1,21 @@
+This repository vendors and adapts skills from the following projects. All are MIT licensed;
+original copyright remains with their authors.
+
+- obra/superpowers (Jesse Vincent) — writing-plans, subagent-driven-development,
+  finishing-a-development-branch, test-driven-development, verification-before-completion,
+  systematic-debugging; brainstorming inspired kickoff, and skills/requesting-code-review/
+  code-reviewer.md (tracked as a watch-only source) inspired review/reviewer.md.
+  https://github.com/obra/superpowers
+- typesafe-ai/skills (TypeSafe AI) — typesafe-ai. https://github.com/typesafe-ai/skills
+- garrytan/gstack (Garry Tan) — the plan-eng-review methodology (plan-eng-review/SKILL.md.tmpl,
+  tracked as a watch-only source) adapted into plan-review/reviewer.md.
+  https://github.com/garrytan/gstack
+- mattpocock/skills (Matt Pocock) — grilling interview style adapted into kickoff.
+  https://github.com/mattpocock/skills
+
+kickoff, plan-review and review are this repository's own skills; they are marked "own" in
+README.md. Local modifications to vendored skills are recorded in patches/ and the upstream
+revision each one was merged from is recorded in sources.lock.json.
+
+This repository is MIT licensed. See skills/typesafe-ai/LICENSE for the license text shipped
+with that upstream skill.
