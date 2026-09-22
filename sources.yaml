@@ -1,0 +1,46 @@
+# External skills. `mode: merge` (default) syncs into skills/<name>/ via 3-way merge;
+# `mode: watch` only tracks upstream in vendor/<name>/ and reports diffs.
+# `patch: true` marks sources with local edits; `make repatch` records them in patches/.
+sources:
+  - name: writing-plans
+    repo: obra/superpowers
+    ref: main
+    path: skills/writing-plans
+    patch: true
+  - name: subagent-driven-development
+    repo: obra/superpowers
+    ref: main
+    path: skills/subagent-driven-development
+    patch: true
+  - name: finishing-a-development-branch
+    repo: obra/superpowers
+    ref: main
+    path: skills/finishing-a-development-branch
+  - name: test-driven-development
+    repo: obra/superpowers
+    ref: main
+    path: skills/test-driven-development
+  - name: verification-before-completion
+    repo: obra/superpowers
+    ref: main
+    path: skills/verification-before-completion
+  - name: systematic-debugging
+    repo: obra/superpowers
+    ref: main
+    path: skills/systematic-debugging
+    patch: true
+  - name: typesafe-ai
+    repo: typesafe-ai/skills
+    ref: main
+    path: skills/typesafe-ai
+  # Watch-only: sources our own prompts were derived from.
+  - name: gstack-plan-eng-review
+    repo: garrytan/gstack
+    ref: main
+    path: plan-eng-review/SKILL.md.tmpl
+    mode: watch
+  - name: superpowers-code-reviewer
+    repo: obra/superpowers
+    ref: main
+    path: skills/requesting-code-review/code-reviewer.md
+    mode: watch

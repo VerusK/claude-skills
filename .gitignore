@@ -2,3 +2,4 @@
 .omc/
 node_modules/
 .context/
+.sync-report.md
