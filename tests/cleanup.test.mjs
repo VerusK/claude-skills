@@ -1,6 +1,6 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, lstatSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -219,4 +219,87 @@ test("cleanup prints no literal glob when no gstack-* dirs exist", () => {
   assert.doesNotMatch(r.stdout, /gstack-\*/);
   assert.match(r.stdout, /nothing to remove/);
   assert.ok(existsSync(path.join(h, ".agents/skills/keep-me")));
+});
+
+test("cleanup edits the real file behind a symlinked config.toml", () => {
+  const h = mkTmp("home-link-toml-");
+  mkdirSync(path.join(h, ".codex"), { recursive: true });
+  const real = path.join(h, "real-config.toml");
+  const input = [
+    'model = "gpt"',
+    "",
+    "[marketplaces.compound-engineering-plugin]",
+    'source = "x"',
+    "",
+    "[marketplaces.keep]",
+    'source = "y"',
+    "",
+  ].join("\n");
+  writeFileSync(real, input);
+  symlinkSync("../real-config.toml", path.join(h, ".codex/config.toml"));
+  const r = run(["--yes", "--home", h]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(lstatSync(path.join(h, ".codex/config.toml")).isSymbolicLink(), "the symlink must survive");
+  const out = readFileSync(real, "utf8");
+  assert.doesNotMatch(out, /compound-engineering/);
+  assert.match(out, /\[marketplaces\.keep\]\nsource = "y"/);
+  assert.ok(existsSync(path.join(h, "real-config.toml.bak")), "backup belongs next to the real file");
+  assert.equal(readFileSync(path.join(h, "real-config.toml.bak"), "utf8"), input);
+  assert.ok(!existsSync(path.join(h, ".codex/config.toml.bak")), "no backup beside the link");
+  assert.ok(!readdirSync(h).some((n) => n.includes(".tmp.")), "no temp file left behind");
+  assert.match(r.stdout, /-> .*real-config\.toml$/m);
+});
+
+test("cleanup edits the real file behind a symlinked settings.json", () => {
+  const h = mkTmp("home-link-json-");
+  mkdirSync(path.join(h, ".claude"), { recursive: true });
+  mkdirSync(path.join(h, "dotfiles/claude"), { recursive: true });
+  const real = path.join(h, "dotfiles/claude/settings.json");
+  const input = JSON.stringify(
+    { enabledPlugins: { "compound-engineering@compound-engineering-plugin": true, "other@x": true } },
+    null,
+    2,
+  );
+  writeFileSync(real, input);
+  symlinkSync("../dotfiles/claude/settings.json", path.join(h, ".claude/settings.json"));
+  const r = run(["--yes", "--home", h]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.ok(lstatSync(path.join(h, ".claude/settings.json")).isSymbolicLink(), "the symlink must survive");
+  const j = JSON.parse(readFileSync(real, "utf8"));
+  assert.deepEqual(Object.keys(j.enabledPlugins), ["other@x"]);
+  assert.ok(existsSync(path.join(h, "dotfiles/claude/settings.json.bak")), "backup belongs next to the real file");
+  assert.equal(readFileSync(path.join(h, "dotfiles/claude/settings.json.bak"), "utf8"), input);
+  assert.ok(!existsSync(path.join(h, ".claude/settings.json.bak")), "no backup beside the link");
+  assert.ok(!readdirSync(path.join(h, "dotfiles/claude")).some((n) => n.includes(".tmp.")), "no temp file left behind");
+  assert.match(r.stdout, /-> .*dotfiles\/claude\/settings\.json$/m);
+  assert.match(r.stdout, /^ +edited$/m);
+});
+
+test("cleanup reports a failed removal instead of 'removed'", () => {
+  const h = mkTmp("home-rmfail-");
+  mkdirSync(path.join(h, ".codex/superpowers"), { recursive: true });
+  writeFileSync(path.join(h, ".codex/superpowers/README.md"), "x");
+  chmodSync(path.join(h, ".codex"), 0o500);
+  try {
+    const r = run(["--yes", "--home", h]);
+    const out = r.stdout + r.stderr;
+    assert.equal(r.status, 0, out);
+    assert.match(out, /failed: .*\.codex\/superpowers/);
+    assert.doesNotMatch(r.stdout, /^ +removed$/m);
+    assert.match(r.stdout, /cleanup done \(1 failure\)/);
+    assert.ok(existsSync(path.join(h, ".codex/superpowers")), "the undeletable dir is still there");
+  } finally {
+    chmodSync(path.join(h, ".codex"), 0o700);
+  }
+});
+
+test("cleanup says 'nothing to edit' when the JSON config has no compound-engineering entries", () => {
+  const h = mkTmp("home-json-clean-");
+  mkdirSync(path.join(h, ".claude"), { recursive: true });
+  writeFileSync(path.join(h, ".claude/settings.json"), JSON.stringify({ enabledPlugins: { "other@x": true } }, null, 2));
+  const r = run(["--yes", "--home", h]);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.doesNotMatch(r.stdout, /^ +edited$/m);
+  assert.match(r.stdout, /^ +nothing to edit$/m);
+  assert.ok(!existsSync(path.join(h, ".claude/settings.json.bak")), "nothing changed, so no backup");
 });

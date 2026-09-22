@@ -65,6 +65,28 @@ backup_path() { # backup_path <file> -> a path that does not exist yet
   echo "$cand"
 }
 
+physical_path() { # physical_path <file> -> the real file behind any symlink chain
+  # A config file is often a symlink into a dotfiles repo. Editing must land on
+  # the real file, or `mv` replaces the link with a regular file and the
+  # leftovers survive. Echoes <file> unchanged when no link was followed.
+  local p="$1" target dir hops=0 followed=0
+  while [ -L "$p" ]; do
+    hops=$((hops + 1))
+    if [ "$hops" -gt 40 ]; then echo "$1"; return 0; fi
+    target=$(readlink "$p") || { echo "$1"; return 0; }
+    case "$target" in
+      /*) p="$target";;
+      *) dir=$(dirname "$p"); p="$dir/$target";;
+    esac
+    followed=1
+  done
+  if [ "$followed" = 0 ]; then echo "$1"; return 0; fi
+  # Squeeze the ../ left by a relative target; fall back to the literal path.
+  dir=$(cd "$(dirname "$p")" 2>/dev/null && pwd -P) || dir=""
+  if [ -n "$dir" ]; then p="$dir/$(basename "$p")"; fi
+  echo "$p"
+}
+
 remove_paths() { # remove_paths <title> <path>...
   local title="$1"; shift
   local existing=()
@@ -84,17 +106,30 @@ remove_paths() { # remove_paths <title> <path>...
   echo "$title:"
   printf '  %s\n' "${existing[@]}"
   if confirm "Remove these?"; then
-    for p in "${existing[@]}"; do rm -rf "$p"; done
-    echo "  removed"
+    local rc=0
+    for p in "${existing[@]}"; do
+      if ! rm -rf "$p"; then
+        echo "  failed: $p" >&2
+        FAILURES=$((FAILURES + 1))
+        rc=1
+      fi
+    done
+    if [ "$rc" = 0 ]; then echo "  removed"; fi
   else
     echo "  skipped"
   fi
   return 0
 }
 
+# strip_json_key: 0 = an entry was removed, 3 = nothing to do, 1 = failed.
 strip_json_key() { # strip_json_key <file> <top-level object key> <entry key>
-  local f="$1" obj="$2" key="$3" tmp status bak
-  [ -f "$f" ] || return 0
+  local f="$1" obj="$2" key="$3" real tmp status bak
+  [ -f "$f" ] || return 3
+  real=$(physical_path "$f")
+  if [ "$real" != "$f" ]; then
+    echo "  $f -> $real"
+    f="$real"
+  fi
   tmp="$f.tmp.$$"
   # node writes the edited copy to <tmp> and exits 3 when there is nothing to do,
   # so the original is only ever replaced after a complete, successful rewrite.
@@ -116,7 +151,7 @@ strip_json_key() { # strip_json_key <file> <top-level object key> <entry key>
   status=$?
   if [ "$status" = 3 ]; then
     rm -f "$tmp"
-    return 0
+    return 3
   fi
   if [ "$status" != 0 ] || [ ! -f "$tmp" ]; then
     rm -f "$tmp"
@@ -163,9 +198,14 @@ if [ -f "$SETTINGS" ] || [ -f "$INSTALLED" ]; then
     [ -f "$INSTALLED" ] && echo "  $INSTALLED (plugins)"
     if confirm "Remove compound-engineering entries (backup to .bak)?"; then
       json_ok=1
-      strip_json_key "$SETTINGS" enabledPlugins "compound-engineering@compound-engineering-plugin" || json_ok=0
-      strip_json_key "$INSTALLED" plugins "compound-engineering@compound-engineering-plugin" || json_ok=0
-      if [ "$json_ok" = 1 ]; then echo "  edited"; fi
+      json_edited=0
+      strip_json_key "$SETTINGS" enabledPlugins "compound-engineering@compound-engineering-plugin"
+      case $? in 0) json_edited=1;; 3) ;; *) json_ok=0;; esac
+      strip_json_key "$INSTALLED" plugins "compound-engineering@compound-engineering-plugin"
+      case $? in 0) json_edited=1;; 3) ;; *) json_ok=0;; esac
+      if [ "$json_ok" = 1 ]; then
+        if [ "$json_edited" = 1 ]; then echo "  edited"; else echo "  nothing to edit"; fi
+      fi
     else
       echo "  skipped"
     fi
@@ -185,6 +225,11 @@ remove_paths "Codex leftovers" \
 CFG="$H/.codex/config.toml"
 if [ -f "$CFG" ]; then
   echo "config.toml sections to drop: [marketplaces.compound-engineering-plugin], [plugins.\"compound-engineering@compound-engineering-plugin\"], [plugins.\"superpowers@claude-plugins-official\"]"
+  CFG_REAL=$(physical_path "$CFG")
+  if [ "$CFG_REAL" != "$CFG" ]; then
+    echo "  $CFG -> $CFG_REAL"
+    CFG="$CFG_REAL"
+  fi
   if confirm "Edit $CFG (backup to .bak)?"; then
     CFG_TMP="$CFG.tmp.$$"
     # POSIX awk only. The rewrite goes to a temp file next to the original; the
