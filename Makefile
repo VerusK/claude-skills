@@ -1,4 +1,4 @@
-.PHONY: install uninstall sync repatch cleanup test deps
+.PHONY: install uninstall sync repatch vendor-sdk cleanup test deps
 
 deps:
 	npm install --no-audit --no-fund
@@ -15,8 +15,11 @@ sync: deps
 repatch:
 	node scripts/sync.mjs --repatch
 
+vendor-sdk:
+	node scripts/vendor-sdk.mjs
+
 cleanup:
 	bash scripts/cleanup.sh
 
 test: deps
-	node --test tests/*.test.mjs
+	npm test
