@@ -11,7 +11,7 @@ argument-hint: "<path to plan .md>"
 ## 0. Inputs
 
 - `PLAN`: the argument, or the newest file in `docs/plans/`. Stop with a message if none.
-- `REPORT`: `docs/plans/<plan basename without .md>.review.md` — always repo-relative; `reviewer.sh` rejects an absolute path.
+- `REPORT`: `<directory of PLAN>/<plan basename without .md>.review.md` — beside the plan, always repo-relative; `reviewer.sh` rejects an absolute path. It is relative to the repo `reviewer.sh` works in, so run from the repo containing `PLAN`, or pass `--repo <that repo>` to `reviewer.sh`.
 - `ROUND`: 1.
 - Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `plan-review`). Every fenced block below is one shell call, so a block that uses `$SKILLS_REPO` must run the locator itself.
 
@@ -20,11 +20,10 @@ argument-hint: "<path to plan .md>"
 Create a temp file outside the repo (under `$TMPDIR`) containing, in order:
 
 1. The full text of `reviewer.md` from this skill's directory.
-2. `THE PLAN:` followed by the plan file verbatim inside a fenced block.
-3. `Referenced source files:` followed by every repo-relative path mentioned in the plan that exists on disk (grep the plan for path-like tokens containing `/` and check with `test -e`).
-4. `Write the report to <REPORT>` on its own line, last. This must be the only line in the whole prompt that carries that phrase: verify with `grep -c 'Write the report to' "$PROMPT"` → `1`.
-
-On round 2 append: `Previous report:` and the previous report verbatim, then `Only report findings that are still present after the plan changes; mark fixed ones as resolved.`
+2. `THE PLAN:` followed by the plan file verbatim inside a fence longer than any backtick run in the plan — use seven backticks unless the plan contains a run of seven or more, then go longer still.
+3. `Referenced source files:` followed by the repo-relative paths mentioned in the plan that are real files: grep the plan for path-like tokens containing `/`, keep those that pass `test -f`, drop anything under `.claude/`, `.codex/`, `agents/` or `node_modules/`, deduplicate and sort, and keep at most 40 entries.
+4. On round 2 only: `Previous report:` followed by the previous report verbatim (from `<REPORT>.round1.md`), then `Only report findings that are still present after the plan changes; mark fixed ones as resolved.`
+5. `Write the report to <REPORT>` on its own line — the last line of the file, in round 1 and round 2 alike. Self-check before launching: `[ "$(tail -1 "$PROMPT")" = "Write the report to $REPORT" ] || echo "prompt malformed"`. If it prints `prompt malformed`, rebuild the prompt in this order and re-check; do not launch the reviewer.
 
 Say nothing about models or reasoning effort in the prompt — the launcher pins those.
 
@@ -47,6 +46,7 @@ echo "reviewer_exit=$?"
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
 - `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it.
 - `1`: fix the invocation; do not proceed.
+- any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 
 ## 3. Triage findings
 
@@ -54,7 +54,7 @@ Parse `## Findings (confidence 7+)`. For each finding, in order of severity:
 
 Build a judge question:
 - `question`: "How should the plan handle: <finding text>?"
-- options: `A` "Accept: revise the plan as the reviewer proposes", `B` "Accept with a different fix: <your alternative, if you have one>", `C` "Reject: the finding is wrong or out of scope, because <reason>". Omit `B` if you have no alternative.
+- options: `A` "Accept: revise the plan as the reviewer proposes", `B` "Accept with a different fix: <your alternative, if you have one>", `C` "Reject: the finding is wrong or out of scope, because <reason>". Omit `B` if you have no alternative. Map each option to the judge's JSON fields: `label` is the text before the colon, `description` is the rest.
 - `context`: the plan's Goal and Architecture lines, the spec's relevant constraint, and the finding verbatim.
 - `recommended`: your pick.
 
@@ -75,13 +75,13 @@ Commit: `git commit -am "docs(plan): apply plan-review round N"`.
 
 ## 5. Second round
 
-If `ROUND` is 1 and at least one finding was accepted: set `ROUND` to 2, rebuild the prompt (section 1, including the previous report), relaunch (section 2; in Orca the same terminal session is reused via the session file, so the reviewer sees its own earlier context), triage and revise again.
+Skip round 2 if the round-1 report has no P0/P1 at confidence 7+. Otherwise, if `ROUND` is 1 and at least one finding was accepted: copy the round-1 report to `<REPORT>.round1.md` first (`reviewer.sh` deletes `REPORT` at startup, so the only copy would be lost), then set `ROUND` to 2, rebuild the prompt (section 1, reading the previous report from `<REPORT>.round1.md`), relaunch (section 2; in Orca the same terminal session is reused via the session file, so the reviewer sees its own earlier context), triage and revise again.
 
-Stop after round 2, or earlier when the report has no P0/P1 with confidence 7+.
+Stop after round 2.
 
 ## 6. Hand off
 
-Report to the user: rounds run, reviewer path used, findings accepted/rejected/asked, path of the final report. Then say: "Plan review done. Next: `subagent-driven-development` on `<PLAN>`." and invoke it.
+Report to the user: rounds run, reviewer path used, findings accepted/rejected/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then say: "Plan review done. Next: `subagent-driven-development` on `<PLAN>`." and invoke it.
 
 ## Rules
 
