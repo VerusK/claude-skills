@@ -47,7 +47,7 @@ The judge's only runtime dependency must resolve inside the plugin cache, where 
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `vendoredSdkUrl(root?: string): string` and `loadSdk(root?: string): Promise<module>` exported from `scripts/typesafe-judge.mjs`; `vendor-node/@typesafe-ai/sdk/package.json` present in the repo.
+- Produces: `vendoredSdkUrl(root?: string): string` and `loadSdk(root?: string): Promise<module>` exported from `scripts/typesafe-judge.mjs`; `lockedEntry(root?: string): { version: string, integrity: string }`, `integrityOf(buffer: Buffer, algorithm?: string): string` and `assertIntegrity(buffer: Buffer, expected: string): string` exported from `scripts/vendor-sdk.mjs`; `vendor-node/@typesafe-ai/sdk/package.json` present in the repo.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -60,8 +60,9 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { vendoredSdkUrl, REPO_ROOT } from "../scripts/typesafe-judge.mjs";
+import { lockedEntry, integrityOf, assertIntegrity } from "../scripts/vendor-sdk.mjs";
 
 const TEMP_DIRS = [];
 function tmp(prefix) {
@@ -96,27 +97,39 @@ test("the vendored copy really exports TypeSafeClient and choice", async () => {
   assert.equal(typeof mod.choice, "function");
 });
 
-test("the judge resolves the SDK in a root that has no node_modules", () => {
-  // The plugin cache is exactly this: our files, no node_modules. If the fallback
-  // did not fire, the failure would be a module-resolution error.
+test("loadSdk resolves the vendored copy when node_modules is absent", () => {
+  // The plugin cache is exactly this: our files, no node_modules. Calling
+  // loadSdk() directly is the only way to reach the fallback — running the judge
+  // would exit at its TYPESAFE_API_KEY guard before the import, and a dummy key
+  // would drive a live API call.
   const root = tmp("no-node-modules-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
-  mkdirSync(path.join(root, "config"), { recursive: true });
   cpSync(path.join(REPO_ROOT, "scripts", "typesafe-judge.mjs"), path.join(root, "scripts", "typesafe-judge.mjs"));
-  cpSync(path.join(REPO_ROOT, "config", "judge.json"), path.join(root, "config", "judge.json"));
   cpSync(path.join(REPO_ROOT, "vendor-node"), path.join(root, "vendor-node"), { recursive: true });
-  const res = spawnSync(process.execPath, [path.join(root, "scripts", "typesafe-judge.mjs")], {
-    encoding: "utf8",
-    input: JSON.stringify({
-      question: "q",
-      options: [{ id: "A", label: "a" }, { id: "B", label: "b" }],
-      context: "c",
-      recommended: "A",
-    }),
-    env: { ...process.env, TYPESAFE_API_KEY: "" },
-  });
-  assert.doesNotMatch(res.stderr, /Cannot find package/);
-  assert.doesNotMatch(res.stderr, /ERR_MODULE_NOT_FOUND/);
+  const judge = pathToFileURL(path.join(root, "scripts", "typesafe-judge.mjs")).href;
+  const res = spawnSync(
+    process.execPath,
+    ["-e", `import(${JSON.stringify(judge)}).then((m) => m.loadSdk()).then((s) => console.log(typeof s.TypeSafeClient))`],
+    { encoding: "utf8", cwd: root },
+  );
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(res.stdout.trim(), "function");
+});
+
+test("lockedEntry reports the pinned version and integrity, and refuses a lock without them", () => {
+  const entry = lockedEntry(REPO_ROOT);
+  assert.match(entry.version, /^\d+\.\d+\.\d+$/);
+  assert.match(entry.integrity, /^sha\d+-/);
+  const bare = tmp("bare-lock-");
+  writeFileSync(path.join(bare, "package-lock.json"), JSON.stringify({ packages: {} }));
+  assert.throws(() => lockedEntry(bare), /not resolved in package-lock\.json/);
+});
+
+test("assertIntegrity accepts a matching hash and rejects tampered bytes", () => {
+  const bytes = Buffer.from("tarball");
+  const good = integrityOf(bytes);
+  assert.equal(assertIntegrity(bytes, good), good);
+  assert.throws(() => assertIntegrity(Buffer.from("tampered"), good), /integrity mismatch/);
 });
 
 test("vendoredSdkUrl throws a named error when the vendored ESM entry is gone", () => {
@@ -128,7 +141,9 @@ test("vendoredSdkUrl throws a named error when the vendored ESM entry is gone", 
 });
 
 test("the judge exits 2 with a judge failed: line when no SDK can be loaded at all", () => {
-  // scripts/ and config/ copied, vendor-node/ deliberately absent.
+  // scripts/ and config/ copied, vendor-node/ deliberately absent. The key must be
+  // non-empty: main() exits at its TYPESAFE_API_KEY guard with a different message
+  // before it ever reaches loadSdk(). loadSdk then throws ENOENT, offline.
   const root = tmp("broken-root-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
   mkdirSync(path.join(root, "config"), { recursive: true });
@@ -142,7 +157,7 @@ test("the judge exits 2 with a judge failed: line when no SDK can be loaded at a
       context: "c",
       recommended: "A",
     }),
-    env: { ...process.env, TYPESAFE_API_KEY: "" },
+    env: { ...process.env, TYPESAFE_API_KEY: "dummy" },
   });
   assert.equal(res.status, 2);
   assert.match(res.stderr, /judge failed:/);
@@ -152,7 +167,7 @@ test("the judge exits 2 with a judge failed: line when no SDK can be loaded at a
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `node --test tests/vendor-sdk.test.mjs`
-Expected: FAIL — `vendoredSdkUrl` is not exported by `scripts/typesafe-judge.mjs`.
+Expected: FAIL — cannot resolve `../scripts/vendor-sdk.mjs`, and `vendoredSdkUrl` is not exported by `scripts/typesafe-judge.mjs`.
 
 - [ ] **Step 3: Add the vendoring script**
 
@@ -163,6 +178,7 @@ Create `scripts/vendor-sdk.mjs`:
 // Re-vendor @typesafe-ai/sdk into vendor-node/ at the version package-lock.json resolves.
 // The plugin cache has no node_modules, so the judge falls back to this copy.
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -172,26 +188,41 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PKG = "@typesafe-ai/sdk";
 const DEST = path.join(ROOT, "vendor-node", "@typesafe-ai", "sdk");
 
-export function lockedVersion(root = ROOT) {
+export function lockedEntry(root = ROOT) {
   const lock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8"));
   const entry = lock.packages?.[`node_modules/${PKG}`];
   if (!entry?.version) throw new Error(`${PKG} is not resolved in package-lock.json`);
-  return entry.version;
+  if (!entry.integrity) throw new Error(`${PKG} has no integrity in package-lock.json`);
+  return { version: entry.version, integrity: entry.integrity };
+}
+
+// This code runs in every session of every install, so it is never vendored on
+// the registry's word alone: the tarball must match the hash the lock recorded.
+export function integrityOf(buffer, algorithm = "sha512") {
+  return `${algorithm}-${createHash(algorithm).update(buffer).digest("base64")}`;
+}
+
+export function assertIntegrity(buffer, expected) {
+  const algorithm = expected.split("-", 1)[0];
+  const actual = integrityOf(buffer, algorithm);
+  if (actual !== expected) throw new Error(`integrity mismatch for ${PKG}: expected ${expected}, got ${actual}`);
+  return actual;
 }
 
 function main() {
-  const version = lockedVersion();
+  const { version, integrity } = lockedEntry();
   const work = mkdtempSync(path.join(tmpdir(), "vendor-sdk-"));
   try {
-    const out = execFileSync("npm", ["pack", `${PKG}@${version}`, "--pack-destination", work, "--silent"], {
+    const out = execFileSync("npm", ["pack", `${PKG}@${version}`, "--pack-destination", work, "--json"], {
       encoding: "utf8",
     });
-    const tarball = out.trim().split("\n").filter(Boolean).pop();
-    execFileSync("tar", ["-xzf", path.join(work, tarball), "-C", work]);
+    const tarball = path.join(work, JSON.parse(out)[0].filename);
+    assertIntegrity(readFileSync(tarball), integrity);
+    execFileSync("tar", ["-xzf", tarball, "-C", work]);
     rmSync(DEST, { recursive: true, force: true });
     mkdirSync(path.dirname(DEST), { recursive: true });
     cpSync(path.join(work, "package"), DEST, { recursive: true });
-    console.log(`vendored ${PKG}@${version} into ${path.relative(ROOT, DEST)}`);
+    console.log(`vendored ${PKG}@${version} into ${path.relative(ROOT, DEST)} (integrity verified)`);
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
@@ -203,7 +234,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 - [ ] **Step 4: Run the vendoring script**
 
 Run: `node scripts/vendor-sdk.mjs`
-Expected: `vendored @typesafe-ai/sdk@0.6.0 into vendor-node/@typesafe-ai/sdk`, and `vendor-node/@typesafe-ai/sdk/dist/index.mjs` exists.
+Expected: `vendored @typesafe-ai/sdk@0.6.0 into vendor-node/@typesafe-ai/sdk (integrity verified)`, and `vendor-node/@typesafe-ai/sdk/dist/index.mjs` exists.
 
 - [ ] **Step 5: Teach the judge to fall back to the vendored copy**
 
@@ -249,7 +280,7 @@ with
 - [ ] **Step 6: Run the test to verify it passes**
 
 Run: `node --test tests/vendor-sdk.test.mjs`
-Expected: PASS, 6 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 7: Wire the script into npm and make**
 
@@ -271,7 +302,7 @@ and add `vendor-sdk` to the `.PHONY` list on line 1.
 - [ ] **Step 8: Run the whole suite**
 
 Run: `npm test`
-Expected: PASS, all tests green (107 existing + 6 new).
+Expected: PASS, all tests green (107 existing + 8 new).
 
 - [ ] **Step 9: Commit**
 
@@ -288,11 +319,19 @@ The hook is the only process that knows where the distro lives under every insta
 
 **Files:**
 - Modify: `scripts/session-start.mjs` (whole file)
+- Modify: `tests/install.test.mjs` (the existing spawn of `session-start.mjs`, which today runs with the developer's real `HOME`)
 - Create: `tests/session-start.test.mjs`
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `ROOT: string`, `pointerPath(home?: string): string`, `writePointer(root: string, home?: string): string | null`, `buildContext(root: string): string` exported from `scripts/session-start.mjs`. The pointer file holds the absolute root plus a trailing newline. `install.mjs`'s `HOOK_MARKER` (`scripts/session-start.mjs`) keeps matching, so the symlink installer is untouched.
+- Produces: `ROOT: string`, `pointerPath(home?: string): string`, `readPointer(home?: string): string | null`, `writePointer(root: string, home?: string): string | null`, `buildContext(root: string, other?: string | null): string` exported from `scripts/session-start.mjs`. The pointer file holds the absolute root plus a trailing newline. `install.mjs`'s `HOOK_MARKER` (`scripts/session-start.mjs`) keeps matching, so the symlink installer is untouched.
+
+The hook is also the only place where the two installs meet at runtime: the
+plugin manager cannot be made to consult the symlink install, so when the
+pointer already names a *different* directory that also looks like a distro,
+`buildContext` adds one warning line. That is a warning, not a refusal — the
+pointer is still overwritten with this session's own root, which is the one
+whose skills are running.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -305,7 +344,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pointerPath, buildContext, writePointer, ROOT } from "../scripts/session-start.mjs";
+import { pointerPath, buildContext, readPointer, writePointer, ROOT } from "../scripts/session-start.mjs";
 
 const SESSION_START = path.join(ROOT, "scripts", "session-start.mjs");
 const TEMP_DIRS = [];
@@ -360,6 +399,33 @@ test("buildContext reports an unreadable USING.md instead of throwing", () => {
   assert.match(ctx, /^<EXTREMELY_IMPORTANT>/);
 });
 
+test("readPointer returns the stored root, and null when there is none", () => {
+  const home = tmp("home-");
+  assert.equal(readPointer(home), null);
+  writePointer("/some/root", home);
+  assert.equal(readPointer(home), "/some/root");
+});
+
+test("buildContext warns when another distro already owns the pointer", () => {
+  const mine = fakeDistro();
+  const other = fakeDistro();
+  assert.match(buildContext(mine, other), /two installs of this distro are active/);
+  assert.doesNotMatch(buildContext(mine, mine), /two installs/);
+  assert.doesNotMatch(buildContext(mine, null), /two installs/);
+  assert.doesNotMatch(buildContext(mine, tmp("not-a-distro-")), /two installs/);
+});
+
+test("running the hook warns when a different distro wrote the pointer first", () => {
+  const home = tmp("home-");
+  const other = fakeDistro();
+  writePointer(other, home);
+  const res = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8", env: { ...process.env, HOME: home } });
+  assert.equal(res.status, 0);
+  assert.match(JSON.parse(res.stdout).hookSpecificOutput.additionalContext, /two installs of this distro are active/);
+  // this session's own root wins the pointer
+  assert.equal(readFileSync(pointerPath(home), "utf8"), ROOT + "\n");
+});
+
 test("running the hook writes the pointer file and prints SessionStart JSON", () => {
   const home = tmp("home-");
   const res = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8", env: { ...process.env, HOME: home } });
@@ -390,7 +456,7 @@ Replace the whole of `scripts/session-start.mjs`:
 
 ```js
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -417,20 +483,44 @@ export function writePointer(root, home = homedir()) {
   }
 }
 
-export function buildContext(root) {
+export function readPointer(home = homedir()) {
+  try {
+    return readFileSync(pointerPath(home), "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+const looksLikeDistro = (dir) => {
+  try {
+    return Boolean(dir) && existsSync(path.join(dir, "USING.md"));
+  } catch {
+    return false;
+  }
+};
+
+// The plugin manager cannot consult the symlink install, so this is the only
+// place the two meet. A warning, not a refusal: our own root still wins the
+// pointer, because these are the skills the session actually loaded.
+export function buildContext(root, other = null) {
   let text;
   try {
     text = readFileSync(path.join(root, "USING.md"), "utf8");
   } catch (err) {
     text = `verus-skills: could not read USING.md (${err.message})`;
   }
-  return `<EXTREMELY_IMPORTANT>\nYou have a personal skills distro.\n\nDistro root: ${root}\n\n${text}\n</EXTREMELY_IMPORTANT>`;
+  const warning =
+    other && other !== root && looksLikeDistro(other)
+      ? `WARNING: two installs of this distro are active — this session runs ${root}, while ${other} wrote the pointer file. Keep one: uninstall the plugin, or remove the symlink install with \`make uninstall\`.\n\n`
+      : "";
+  return `<EXTREMELY_IMPORTANT>\nYou have a personal skills distro.\n\n${warning}Distro root: ${root}\n\n${text}\n</EXTREMELY_IMPORTANT>`;
 }
 
 function main() {
+  const other = readPointer();
   writePointer(ROOT);
   const payload = {
-    hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: buildContext(ROOT) },
+    hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: buildContext(ROOT, other) },
   };
   process.stdout.write(JSON.stringify(payload) + "\n");
 }
@@ -441,17 +531,40 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `node --test tests/session-start.test.mjs`
-Expected: PASS, 7 tests.
+Expected: PASS, 11 tests.
 
-- [ ] **Step 5: Run the whole suite**
+- [ ] **Step 5: Stop the suite from rewriting the developer's own pointer file**
+
+`tests/install.test.mjs` spawns the hook with the real `HOME`; after this task
+that spawn would write `~/.verus-skills/root` and point it at the checkout,
+overriding whatever a plugin install put there. Every other spawn in that file
+already uses a throwaway `HOME`. Replace the first line of the body of
+`test("session-start.mjs prints a parseable SessionStart hook payload", ...)`:
+
+```js
+  const r = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8" });
+```
+
+with:
+
+```js
+  const r = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8", env: { ...process.env, HOME: tmp("home-") } });
+```
+
+- [ ] **Step 6: Run the whole suite**
 
 Run: `npm test`
 Expected: PASS. `tests/install.test.mjs` must stay green — `HOOK_MARKER` is unchanged and the installer still points at the same script.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Confirm the real pointer file was not touched**
+
+Run: `ls -la ~/.verus-skills 2>&1`
+Expected: `No such file or directory` on a machine that has never run the hook — the suite must not have created it.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add scripts/session-start.mjs tests/session-start.test.mjs
+git add scripts/session-start.mjs tests/session-start.test.mjs tests/install.test.mjs
 git commit -m "feat(hook): write the distro-root pointer file on SessionStart"
 ```
 
@@ -470,6 +583,13 @@ git commit -m "feat(hook): write the distro-root pointer file on SessionStart"
 - Produces: a locator snippet whose only per-file difference is the skill name (`kickoff`, `plan-review`, `review`), setting `SKILLS_REPO` to an absolute path or the empty string.
 
 All three files are this repo's own skills, so no `make repatch` is needed for this task.
+
+`cd -P` is load-bearing: plain `cd` canonicalises `..` **logically**, so
+`cd "$HOME/.claude/skills/kickoff/../.."` lands in `$HOME/.claude`, while the
+`-f` test in front of it passes because the kernel resolves the symlink
+**physically**. Without `-P` the loop breaks on a wrong root and the judge is
+invoked from a path that has no `scripts/`. `scripts/reviewer.sh` chases
+symlinks and uses `pwd -P` for the same reason.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -596,7 +716,7 @@ SKILLS_REPO=""
 for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
          "$HOME/.claude/skills/kickoff/../.." \
          "$HOME/.codex/skills/kickoff/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd "$c" && pwd -P)" && break
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
 [ -n "$SKILLS_REPO" ] || echo "distro root not found"
 echo "SKILLS_REPO=$SKILLS_REPO"
@@ -613,7 +733,7 @@ SKILLS_REPO=""
 for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
          "$HOME/.claude/skills/plan-review/../.." \
          "$HOME/.codex/skills/plan-review/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd "$c" && pwd -P)" && break
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
 [ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO"
 ```
@@ -627,7 +747,7 @@ SKILLS_REPO=""
 for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
          "$HOME/.claude/skills/review/../.." \
          "$HOME/.codex/skills/review/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd "$c" && pwd -P)" && break
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
 [ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO"
 ```
@@ -727,6 +847,14 @@ test("the hook runs session-start.mjs from the plugin root on SessionStart", () 
   assert.ok(existsSync(resolved), `${resolved} does not exist`);
 });
 
+test("the hook fires on resume too, so a continued session keeps the routing block", () => {
+  // The symlink installer registers its hook with no matcher, i.e. on every
+  // SessionStart source. Dropping `resume` here would lose both the USING.md
+  // block and the pointer file on every resumed session under the plugin.
+  const matcher = read("hooks/hooks.json").hooks.SessionStart[0].matcher;
+  assert.equal(matcher, "startup|clear|compact|resume");
+});
+
 test("the Codex manifest inlines the same hooks as hooks/hooks.json", () => {
   assert.deepEqual(read(".codex-plugin/plugin.json").hooks, read("hooks/hooks.json"));
 });
@@ -749,7 +877,7 @@ Expected: FAIL — `ENOENT` on `.claude-plugin/plugin.json`.
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|clear|compact",
+        "matcher": "startup|clear|compact|resume",
         "hooks": [
           {
             "type": "command",
@@ -830,7 +958,7 @@ Copy the `hooks` value verbatim from `hooks/hooks.json` — the test compares th
     "hooks": {
       "SessionStart": [
         {
-          "matcher": "startup|clear|compact",
+          "matcher": "startup|clear|compact|resume",
           "hooks": [
             {
               "type": "command",
@@ -848,14 +976,30 @@ Copy the `hooks` value verbatim from `hooks/hooks.json` — the test compares th
 - [ ] **Step 7: Run the test to verify it passes**
 
 Run: `node --test tests/plugin.test.mjs`
-Expected: PASS, 6 tests (the last one skipped when `claude` is not on PATH).
+Expected: PASS, 7 tests (the last one skipped when `claude` is not on PATH).
 
-- [ ] **Step 8: Run the whole suite**
+- [ ] **Step 8: Validate the manifests against the real schema**
+
+The field shapes above were copied from plugins installed on this machine, not
+from a published schema, so validate before committing rather than discovering a
+rejection at install time.
+
+Run: `claude plugin validate . --strict --json`
+Expected: exit 0. Paste the JSON report into the task's notes. If it rejects a
+field — `$schema` in `marketplace.json`, `repository` as a string rather than an
+object, `license` in `plugin.json` — fix the manifest it names, re-run
+`node --test tests/plugin.test.mjs`, and validate again until it is clean.
+
+If `claude` is not on PATH on the implementing machine, say so explicitly in the
+task notes instead of skipping silently; the manifests then stay unvalidated
+until the acceptance checklist in Task 8.
+
+- [ ] **Step 9: Run the whole suite**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add .claude-plugin .codex-plugin hooks tests/plugin.test.mjs
@@ -914,6 +1058,15 @@ test("every versioned manifest carries the same version in the repo", () => {
   const versions = Object.values(readVersions(REPO_ROOT));
   assert.equal(new Set(versions).size, 1, `versions disagree: ${JSON.stringify(readVersions(REPO_ROOT))}`);
   assert.match(versions[0], /^\d+\.\d+\.\d+$/);
+});
+
+test("package-lock.json records the same version as the manifests", () => {
+  // npm owns this file; `make release` runs `npm install --package-lock-only`
+  // after the bump. This test is what catches a release that skipped that step.
+  const lock = JSON.parse(readFileSync(path.join(REPO_ROOT, "package-lock.json"), "utf8"));
+  const manifest = Object.values(readVersions(REPO_ROOT))[0];
+  assert.equal(lock.version, manifest);
+  assert.equal(lock.packages[""].version, manifest);
 });
 
 test("nextVersion handles patch, minor, major and an explicit version", () => {
@@ -1042,7 +1195,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `node --test tests/bump-version.test.mjs`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Add the npm script and the release target**
 
@@ -1057,12 +1210,24 @@ In `Makefile`, add after the `vendor-sdk` target:
 ```make
 release:
 	node scripts/bump-version.mjs $(BUMP)
+	npm install --package-lock-only --no-audit --no-fund
 	npm test
 	git commit -am "chore(release): $$(node -p "require('./package.json').version")"
 	claude plugin tag .
 ```
 
 and add `release` to the `.PHONY` list on line 1. `BUMP` defaults to nothing, so `make release` without it prints the usage line and stops; the real call is `make release BUMP=patch`.
+
+`package-lock.json` records the package version twice (its root `version` and
+`packages[""].version`) and npm owns that file, so the target lets npm rewrite it
+with `--package-lock-only` instead of hand-editing those fields. Without this,
+the first `npm install` after a tagged release — which `make deps` runs before
+`install`, `sync` and `test` — would rewrite the lock and leave a dirty tree
+immediately after the tag.
+
+The target stops at the tag: it does not push. Publishing to the marketplace is
+a separate, deliberate `git push --follow-tags`, documented in the README section
+written in Task 8.
 
 - [ ] **Step 6: Run the whole suite**
 
@@ -1103,6 +1268,30 @@ if [ "$1" = "plugin" ] && [ "$2" = "list" ]; then
   exit 0
 fi
 exit 0
+```
+
+Then make the existing installer spawns immune to the new check. `runInstaller`
+inherits the real `PATH`, and eight existing calls pass no `--force`, so every
+one of them would exit 1 the moment the developer actually installs the plugin.
+Point the helper at the stub instead — the file already does this for `codex`
+and `orca`. In `tests/install.test.mjs`, replace the body of `runInstaller`'s
+`env`:
+
+```js
+    env: { ...process.env, HOME: sandboxHome, ...extraEnv },
+```
+
+with:
+
+```js
+    env: {
+      ...process.env,
+      // the stub answers `claude plugin list`; the real CLI must never decide a test
+      PATH: `${path.join(REPO_ROOT, "tests", "fixtures", "fake-bin")}:${process.env.PATH}`,
+      FAKE_CLAUDE_PLUGINS: "",
+      HOME: sandboxHome,
+      ...extraEnv,
+    },
 ```
 
 Append to `tests/install.test.mjs`:
@@ -1217,7 +1406,9 @@ In `main()`, after the `settings.json` validation block and before the `if (opts
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `node --test tests/install.test.mjs`
-Expected: PASS, existing tests plus 4 new ones.
+Expected: PASS, existing tests plus 4 new ones. The eight pre-existing installer
+spawns now reach the stub rather than the real `claude`, so they stay green
+whether or not the plugin is installed on this machine.
 
 - [ ] **Step 6: Document the flag**
 
@@ -1284,9 +1475,13 @@ test("every hand-off names the plugin form of the target skill", () => {
   }
 });
 
-test("USING.md states how skills are addressed under each install", () => {
+test("USING.md states how skills are addressed before it lists any of them", () => {
   const using = readFileSync(new URL("../USING.md", import.meta.url), "utf8");
   assert.match(using, /verus-skills:<name>/);
+  assert.ok(
+    using.indexOf("verus-skills:<name>") < using.indexOf("## The flow"),
+    "the addressing rule must come before the skill lists",
+  );
 });
 ```
 
@@ -1392,10 +1587,20 @@ In branch scope and full mode, then say: "Review done. Using `finishing-a-develo
 
 - [ ] **Step 8: Edit `USING.md`**
 
-Under `## Rules`, add as the first bullet:
+The lists below stay bare — repeating the prefix in all ten lines would double the
+name text in a block that is injected into every session. The rule goes at the
+top instead, where it is read before any list. Replace the opening paragraph:
 
 ```markdown
-- Under the plugin install every skill of this distro is addressed as `verus-skills:<name>`; under the symlink development install, by the bare name. Hand-offs name both forms.
+You have a personal skills distro installed. Before responding to any task, check whether one of these applies and invoke it with the Skill tool; if there is even a small chance a skill applies, invoke it.
+```
+
+with:
+
+```markdown
+You have a personal skills distro installed. Before responding to any task, check whether one of these applies and invoke it with the Skill tool; if there is even a small chance a skill applies, invoke it.
+
+Skills are named below without a prefix. Under the plugin install each one is addressed as `verus-skills:<name>` — `verus-skills:kickoff`, `verus-skills:review` and so on; under the symlink development install, by the bare name.
 ```
 
 - [ ] **Step 9: Run the test to verify it passes**
@@ -1516,9 +1721,16 @@ disagree.
 make release BUMP=patch    # or minor, major, or an explicit X.Y.Z
 ```
 
-It bumps the four manifests, runs the suite, commits, and tags the release with
-`claude plugin tag`, which re-checks that `plugin.json` and the marketplace entry
-agree.
+It bumps the four manifests, lets npm rewrite `package-lock.json`, runs the
+suite, commits, and tags the release with `claude plugin tag`, which re-checks
+that `plugin.json` and the marketplace entry agree.
+
+It stops there. Nothing reaches `claude plugin update` until the tag is pushed,
+which stays a separate, deliberate step:
+
+```bash
+git push --follow-tags
+```
 
 The vendored TypeSafe SDK under `vendor-node/` is what the judge imports inside
 the plugin cache, where `node_modules` does not exist. After changing the
@@ -1526,7 +1738,27 @@ dependency in `package.json`, run `npm install && make vendor-sdk` and commit th
 result; a test compares the vendored version against `package-lock.json`.
 ````
 
-- [ ] **Step 4: Update `CLAUDE.md`**
+- [ ] **Step 4: Document the plugin teardown in the README**
+
+`## Uninstall` currently documents only `make uninstall`, which removes the
+symlinks, the `settings.json` hook and the `AGENTS.md` line. It says nothing
+about the plugin, and nothing removes the pointer file. Add below the existing
+`make uninstall` block:
+
+````markdown
+For the plugin install:
+
+```bash
+claude plugin uninstall verus-skills@verus-skills
+claude plugin marketplace remove verus-skills
+rm -rf ~/.verus-skills
+```
+
+For Codex, also drop the `[marketplaces.verus-skills]` and
+`[plugins."verus-skills@verus-skills"]` sections from `~/.codex/config.toml`.
+````
+
+- [ ] **Step 5: Update `CLAUDE.md`**
 
 Under `## Layout`, add:
 
@@ -1542,7 +1774,7 @@ Under `## Rules`, add:
 - Hand-offs between skills name both the bare and the `verus-skills:` form.
 ```
 
-- [ ] **Step 5: Write the acceptance checklist**
+- [ ] **Step 6: Write the acceptance checklist**
 
 Create `docs/plugin-acceptance.md`:
 
@@ -1581,14 +1813,156 @@ If it did not, the Codex install has no pointer file: note it and open a follow-
 12. `make install` (the symlink path) → succeeds again now that the plugin is gone.
 ```
 
-- [ ] **Step 6: Run the whole suite**
+- [ ] **Step 7: Run the whole suite**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add README.md CLAUDE.md docs/plugin-acceptance.md
 git commit -m "docs: both install paths, the release cycle and the acceptance checklist"
 ```
+
+---
+
+## Plan review decisions (round 1)
+
+Reviewer: fallback (a Claude subagent), not an independent external model — the
+Codex path was unavailable (usage limit). Report:
+`docs/plans/2026-09-22-verus-skills-plugin.review.md`. 13 findings at confidence
+7+, all accepted; two P0s were reproduced independently before triage. Appendix
+findings (confidence below 7) were not acted on and stay in the report.
+
+```
+Решение (Jev): How should the plan handle: the locator's `cd "$c" && pwd -P` returns $HOME/.claude instead of the distro root, because bash canonicalises `..` logically in cd while the preceding -f test resolves the symlink physically?
+  A. Accept  96%
+  C. Reject  4%
+  Выбрано: A, confidence 0.92, данных 0.80 → принято автоматически
+```
+Applied: Task 3 uses `cd -P "$c" && pwd -P` in all three locator snippets, with a
+note on why plain `cd` is wrong.
+
+```
+Решение (Jev): How should the plan handle: the planned test asserting the judge exits 2 with a `judge failed:` line passes TYPESAFE_API_KEY="", but the judge exits at its API-key guard with a different message long before the SDK import?
+  A. Accept                       89%
+  B. Accept with a different fix  11%
+  C. Reject                       0%
+  Выбрано: A, confidence 0.83, данных 0.69 → принято автоматически
+```
+Applied: that test now passes `TYPESAFE_API_KEY: "dummy"`.
+
+```
+Решение (Jev): How should the plan handle: the vendored-SDK fallback — the entire point of Task 1 — has no real test, because the planned no-node_modules test also short-circuits at the API-key guard and so asserts nothing?
+  A. Accept  99%
+  C. Reject  1%
+  Выбрано: A, confidence 0.97, данных 0.82 → принято автоматически
+```
+Applied: replaced by `loadSdk resolves the vendored copy when node_modules is
+absent`, which spawns `node -e` against a copied judge and asserts `function`.
+
+```
+Решение (Jev): How should the plan handle: adding the plugin-installed check to install.mjs breaks eight existing installer tests as soon as the developer actually installs the plugin?
+  A. Accept                       100%
+  B. Accept with a different fix  0%
+  C. Reject                       0%
+  Выбрано: A, confidence 1.00, данных 0.83 → принято автоматически
+```
+Applied: Task 6 points `runInstaller`'s default env at `tests/fixtures/fake-bin`
+with `FAKE_CLAUDE_PLUGINS=""`.
+
+```
+Решение (Jev): How should the plan handle: an existing test spawns session-start.mjs with no HOME override, so after the rewrite `npm test` writes the developer's real ~/.verus-skills/root?
+  A. Accept  100%
+  C. Reject  0%
+  Выбрано: A, confidence 1.00, данных 0.83 → принято автоматически
+```
+Applied: Task 2 gains `tests/install.test.mjs` in its Files, a step giving that
+spawn a throwaway `HOME`, and a step that checks the real pointer file was not
+created.
+
+```
+Решение (Jev): How should the plan handle: the plugin hook's matcher `startup|clear|compact` excludes `resume`, so a plugin install loses the USING.md routing block on every resumed session?
+  A. Accept                       96%
+  B. Accept with a different fix  4%
+  C. Reject                       0%
+  Выбрано: A, confidence 0.94, данных 0.66 → принято автоматически
+```
+Applied: the matcher is `startup|clear|compact|resume` in both manifests, pinned
+by a test.
+
+```
+Решение (Jev): How should the plan handle: package-lock.json also carries the package version twice and is not bumped by the release script, so the first npm install after a tagged release leaves a dirty tree?
+  B. Accept with a different fix  93%
+  A. Accept                       7%
+  C. Reject                       0%
+  Выбрано: B, confidence 0.90, данных 0.66 → принято автоматически
+```
+Applied: the `release` target runs `npm install --package-lock-only` after the
+bump — npm owns that file — and a test asserts the lock agrees with the
+manifests.
+
+```
+Решение (Jev): How should the plan handle: scripts/vendor-sdk.mjs downloads and commits executable third-party code without checking it against the integrity hash in package-lock.json?
+  A. Accept  100%
+  C. Reject  0%
+  Выбрано: A, confidence 1.00, данных 0.87 → принято автоматически
+```
+Applied: `vendor-sdk.mjs` exports `lockedEntry`, `integrityOf` and
+`assertIntegrity`, verifies the packed tarball against the lock's `integrity`
+before extracting, and reads the tarball name from `npm pack --json`. Two tests
+cover the helpers.
+
+```
+Решение (Jev): How should the plan handle: the only real manifest schema validation is a test that skips when the claude binary is absent, and the first deliberate `claude plugin validate` run is deferred to a human checklist eight commits later?
+  A. Accept  80%
+  C. Reject  20%
+  Выбрано: A, confidence 0.61, данных 0.53 → спросить пользователя
+  Ответ пользователя: A — валидация шагом в Task 4
+```
+Applied: Task 4 Step 8 runs `claude plugin validate . --strict --json`, records
+the report and fixes the manifests before the commit.
+
+```
+Решение (Jev): How should the plan handle: USING.md's numbered flow list and its "Outside the flow" list keep bare skill names, while the rule about the verus-skills: prefix is buried as a bullet under ## Rules?
+  A. Accept                       72%
+  B. Accept with a different fix  27%
+  C. Reject                       1%
+  Выбрано: A, confidence 0.59, данных 0.44 → спросить пользователя
+  Ответ пользователя: B — правило в шапку документа, списки остаются голыми
+```
+Applied: Task 7 Step 8 puts the addressing rule in the opening paragraph of
+`USING.md`; a test asserts it appears before the skill lists.
+
+```
+Решение (Jev): How should the plan handle: Task 8 lists README's ## Uninstall as modified but no step touches it?
+  A. Accept  100%
+  C. Reject  0%
+  Выбрано: A, confidence 1.00, данных 0.90 → принято автоматически
+```
+Applied: new Task 8 Step 4 documents the plugin teardown, including
+`rm -rf ~/.verus-skills` and the Codex config sections.
+
+```
+Решение (Jev): How should the plan handle: `make release` bumps, tests, commits and tags entirely locally, so a release that is never pushed ships nothing to `claude plugin update`?
+  B. Accept with a different fix  100%
+  A. Accept                       0%
+  C. Reject                       0%
+  Выбрано: B, confidence 0.99, данных 0.36 → спросить пользователя
+  Ответ пользователя: B — цель остаётся локальной, push документируется
+```
+Applied: the target stops at the tag; Task 5 and the README Release section both
+state the separate `git push --follow-tags`.
+
+```
+Решение (Jev): How should the plan handle: mutual exclusion is enforced only one way — install.mjs refuses when the plugin is present, but nothing notices a plugin installed on top of an existing symlink install?
+  A. Accept                       93%
+  B. Accept with a different fix  7%
+  C. Reject                       0%
+  Выбрано: A, confidence 0.89, данных 0.47 → спросить пользователя
+  Ответ пользователя: A — хук предупреждает о двойной установке
+```
+Applied: Task 2 adds `readPointer`, a `looksLikeDistro` check and a warning line
+in `buildContext` when a different distro owns the pointer; this session's own
+root still wins the pointer. Three tests cover it.
