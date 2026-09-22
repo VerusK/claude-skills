@@ -24,7 +24,7 @@
 | `plan-review` | свой, промпт из garrytan/gstack `plan-eng-review` | ревью плана внешним голосом |
 | `subagent-driven-development` | obra/superpowers, копия с патчем | исполнение плана |
 | `branch-review` | свой, промпт из obra/superpowers `requesting-code-review/code-reviewer.md` | финальное ревью ветки |
-| `finishing-a-development-branch` | obra/superpowers, копия с патчем | merge / PR / оставить |
+| `finishing-a-development-branch` | obra/superpowers, копия | merge / PR / оставить |
 | `test-driven-development` | obra/superpowers, копия | вне флоу, используется имплементаторами |
 | `verification-before-completion` | obra/superpowers, копия | вне флоу |
 | `systematic-debugging` | obra/superpowers, копия | вне флоу |
@@ -74,7 +74,7 @@ Spike-путь и bounded-путь сохраняются из brainstorming: sp
 3. Запуск через `scripts/reviewer.sh` (§5). Код возврата 3 означает «внешний ревьюер недоступен», тогда скилл запускает Claude-агента (`Agent`, `model: opus`) с тем же промптом.
 4. Находки с confidence 7+ превращаются в вопросы с вариантами: принять и внести в план или код, отклонить с обоснованием. Вопросы идут через TypeSafe judge по тем же правилам, что в `kickoff`. Находки ниже 7 попадают в приложение отчёта без действий.
 5. После правок один повторный круг: тому же ревьюеру (в Orca в ту же сессию Codex как follow-up, иначе новый `codex exec`). Стоп, когда нет P0/P1 с confidence 7+ или после второго круга.
-6. Блок «Решение» выводится в чат и дописывается в файл отчёта.
+6. Блок «Решение» выводится в чат и дописывается в план (раздел «Review decisions (round N)»). Файл отчёта ревьюера не редактируется.
 
 ### 2.4. Патчи к копиям superpowers
 
@@ -208,10 +208,10 @@ sources:
 `scripts/sync.mjs`:
 
 1. Для каждого источника скачивает tarball `https://codeload.github.com/<repo>/tar.gz/<ref>` во временную папку, берёт `path`.
-2. Режим по умолчанию: обновляет `vendor/<name>/`. Если `patch: true`, применяет `patches/<name>.patch` через `git apply --3way` в `skills/<name>/`; иначе копирует vendor в `skills/<name>/` как есть. Конфликт: остаются `.rej`, скрипт завершается с кодом 1 после обработки остальных источников.
+2. Режим по умолчанию: трёхстороннее слияние пофайлово через `git merge-file` (base = старый `vendor/<name>`, ours = `skills/<name>`, theirs = новый upstream). Файлы, которые мы не меняли, просто обновляются; изменённые сливаются; конфликт оставляет маркеры `<<<<<<< ours` в `skills/<name>/`, скрипт завершается с кодом 1 после обработки остальных источников. `patches/<name>.patch` при этом только пересобирается как запись наших правок.
 3. Режим `watch`: файл кладётся в `vendor/<name>/`, при смене хеша в лог попадает diff. `skills/` не трогается.
 4. Обновляет `sources.lock.json`: `{name: {commit, hash, syncedAt}}`.
-5. `make repatch`: пересобирает `patches/<name>.patch` как `diff -ruN vendor/<name> skills/<name>` для источников с `patch: true`. Запускается после ручных правок в `skills/`.
+5. `make repatch`: пересобирает `patches/<name>.patch` как `diff -ruN vendor/<name> skills/<name>` для источников с `patch: true`. Запускается после ручных правок в `skills/`; синк делает то же автоматически.
 
 `.github/workflows/sync.yml`: cron раз в неделю плюс `workflow_dispatch`. Шаги: checkout, node 20, `node scripts/sync.mjs`, `peter-evans/create-pull-request` с ветвью `sync/upstream`, заголовком «sync: upstream YYYY-MM-DD» и телом из лога синка. При коде 1 PR всё равно создаётся с лейблом `needs-attention`.
 
