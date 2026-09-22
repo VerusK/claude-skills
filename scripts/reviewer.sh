@@ -29,7 +29,22 @@ REPO="${REPO:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [ -d "$REPO" ] || { echo "not inside a git repo; pass --repo" >&2; exit 1; }
 NODE_BIN="${NODE:-node}"
 ORCA_DISABLED=""
-command -v "$NODE_BIN" >/dev/null 2>&1 || { echo "node not found; Orca path disabled" >&2; ORCA_DISABLED=1; }
+NODE_OK=1
+command -v "$NODE_BIN" >/dev/null 2>&1 || { echo "node not found; Orca path disabled" >&2; ORCA_DISABLED=1; NODE_OK=""; }
+
+# Codex model / reasoning effort: env > config/reviewer.json > hard defaults.
+# NB: without node the file cannot be parsed, so the codex path falls back to
+# env/defaults rather than losing the pinning altogether.
+CFG="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/config/reviewer.json"
+cfg_get() { # cfg_get <key> <default>
+  local v=""
+  if [ -n "$NODE_OK" ] && [ -f "$CFG" ]; then
+    v="$("$NODE_BIN" -e 'const fs=require("fs");let j;try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{process.exit(1)};const v=j&&j[process.argv[2]];if(typeof v!=="string"||!v.trim())process.exit(1);process.stdout.write(v.trim())' "$CFG" "$1" 2>/dev/null)" || v=""
+  fi
+  if [ -n "$v" ]; then printf '%s' "$v"; else printf '%s' "$2"; fi
+}
+CODEX_MODEL="${REVIEWER_CODEX_MODEL:-$(cfg_get codexModel gpt-6-astra)}"
+CODEX_REASONING="${REVIEWER_CODEX_REASONING:-$(cfg_get codexReasoning high)}"
 
 # Stage the prompt inside the repo so a sandboxed Codex can read it.
 mkdir -p "$REPO/.context" "$REPO/$(dirname "$OUTPUT")"
@@ -79,7 +94,7 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
     orca terminal show --terminal "$HANDLE" --json >/dev/null 2>&1 || HANDLE=""
   fi
   if [ -z "$HANDLE" ]; then
-    HANDLE="$(orca terminal create --worktree active --command codex --title "$TITLE" --json 2>/dev/null | find_handle || true)"
+    HANDLE="$(orca terminal create --worktree active --command "codex -m $CODEX_MODEL -c model_reasoning_effort=$CODEX_REASONING" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
     if [ -n "$HANDLE" ]; then
       orca terminal wait --terminal "$HANDLE" --for tui-idle --timeout-ms 90000 --json 2>/dev/null | json_get 'j.result&&j.result.wait&&j.result.wait.satisfied===true' >/dev/null || HANDLE=""
     fi
@@ -103,7 +118,7 @@ fi
 # ---------- 2. codex exec ----------
 if command -v codex >/dev/null 2>&1; then
   LOG="$REPO/.context/${TITLE}-codex.log"
-  ( cd "$REPO" && codex exec -C "$REPO" -s workspace-write --enable web_search_cached -c model_reasoning_effort=high - < "$REPO/$PROMPT_REL" > "$LOG" 2>&1 ) &
+  ( cd "$REPO" && codex exec -C "$REPO" -m "$CODEX_MODEL" -s workspace-write --enable web_search_cached -c model_reasoning_effort="$CODEX_REASONING" - < "$REPO/$PROMPT_REL" > "$LOG" 2>&1 ) &
   PID=$!
   deadline=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
   while kill -0 "$PID" 2>/dev/null; do

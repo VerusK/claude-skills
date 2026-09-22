@@ -28,7 +28,8 @@ function run(dir, bins, opts = {}) {
   writeFileSync(prompt, "Review this.\nWrite the report to docs/reviews/out.md\n");
   const env = { PATH: `${bin}:/usr/bin:/bin`, HOME: dir, FAKE_LOG: log, NODE: process.execPath, ...(opts.env ?? {}) };
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
-  const args = [SCRIPT, "--prompt-file", prompt, "--output", opts.output ?? "docs/reviews/out.md",
+  // opts.script: run a copy of the launcher from elsewhere (e.g. a tree with no config/).
+  const args = [opts.script ?? SCRIPT, "--prompt-file", prompt, "--output", opts.output ?? "docs/reviews/out.md",
     "--title", "t", "--repo", opts.repo ?? dir, "--timeout-min", "1"];
   const r = spawnSync("bash", args, { cwd: opts.cwd ?? dir, encoding: "utf8", env });
   return { ...r, log: existsSync(log) ? readFileSync(log, "utf8") : "" };
@@ -156,6 +157,67 @@ test("never writes info/exclude into the worktree when rev-parse fails", () => {
   assert.match(r.stderr, /could not locate info\/exclude/);
   assert.ok(!existsSync(path.join(dir, "info")), "created <repo>/info inside the working tree");
   assert.ok(!existsSync(path.join(dir, "info/exclude")), "created <repo>/info/exclude inside the working tree");
+});
+
+test("config/reviewer.json holds a non-empty model and reasoning effort", () => {
+  const cfgPath = fileURLToPath(new URL("../config/reviewer.json", import.meta.url));
+  const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+  for (const k of ["codexModel", "codexReasoning"]) {
+    assert.equal(typeof cfg[k], "string", `${k} must be a string`);
+    assert.ok(cfg[k].trim().length > 0, `${k} must not be empty`);
+  }
+});
+
+test("codex exec is pinned to the configured model and reasoning effort", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /codex exec .*-m gpt-6-astra/);
+  assert.match(r.log, /model_reasoning_effort=high/);
+});
+
+test("the Orca codex terminal is pinned to the configured model and reasoning effort", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /terminal create .*--command codex -m gpt-6-astra -c model_reasoning_effort=high/);
+});
+
+test("env overrides the configured model and reasoning effort", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], {
+    env: { REVIEWER_CODEX_MODEL: "gpt-test", REVIEWER_CODEX_REASONING: "low" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /codex exec .*-m gpt-test/);
+  assert.match(r.log, /model_reasoning_effort=low/);
+  assert.doesNotMatch(r.log, /gpt-6-astra/);
+});
+
+test("falls back to the built-in defaults when config/reviewer.json is missing", () => {
+  const dir = repo();
+  const lone = mkdtempSync(path.join(tmpdir(), "rev-nocfg-"));
+  mkdirSync(path.join(lone, "scripts"), { recursive: true });
+  const script = path.join(lone, "scripts/reviewer.sh");
+  copyFileSync(SCRIPT, script);
+  chmodSync(script, 0o755);
+  assert.ok(!existsSync(path.join(lone, "config/reviewer.json")));
+  const r = run(dir, ["codex"], { script });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /codex exec .*-m gpt-6-astra/);
+  assert.match(r.log, /model_reasoning_effort=high/);
+});
+
+test("codex exec stays pinned when node is unavailable", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], {
+    env: { NODE: path.join(tmpdir(), "no-such-node-bin"), REVIEWER_CODEX_MODEL: "gpt-envonly" },
+    shims: { node: NODE_SHIM },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /node not found/);
+  assert.match(r.log, /codex exec .*-m gpt-envonly/);
+  assert.match(r.log, /model_reasoning_effort=high/);
 });
 
 test("rejects an option with no value", () => {
