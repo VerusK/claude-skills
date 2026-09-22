@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
 --- vendor/subagent-driven-development/SKILL.md	2026-09-22 12:12:10
-+++ skills/subagent-driven-development/SKILL.md	2026-09-22 12:26:06
++++ skills/subagent-driven-development/SKILL.md	2026-09-22 13:55:20
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -47,8 +47,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
      "More tasks remain?" [shape=diamond];
 -    "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" [shape=box];
 -    "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals" [shape=box];
-+    "Invoke branch-review <MERGE_BASE>" [shape=box];
-+    "branch-review: judged findings, ONE fix dispatch, one re-review" [shape=box];
++    "Invoke review <MERGE_BASE>" [shape=box];
++    "review: judged findings, ONE fix dispatch, one re-review" [shape=box];
      "Final review clean: delete this plan's workspace" [shape=box];
 -    "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
 +    "Use finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
@@ -84,9 +84,9 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -    "Dispatch final code reviewer (../requesting-code-review/code-reviewer.md)" -> "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals";
 -    "Final findings? ONE fix dispatch, one scoped re-review, adjudicate residuals" -> "Final review clean: delete this plan's workspace";
 -    "Final review clean: delete this plan's workspace" -> "Use superpowers:finishing-a-development-branch";
-+    "More tasks remain?" -> "Invoke branch-review <MERGE_BASE>" [label="no"];
-+    "Invoke branch-review <MERGE_BASE>" -> "branch-review: judged findings, ONE fix dispatch, one re-review";
-+    "branch-review: judged findings, ONE fix dispatch, one re-review" -> "Final review clean: delete this plan's workspace";
++    "More tasks remain?" -> "Invoke review <MERGE_BASE>" [label="no"];
++    "Invoke review <MERGE_BASE>" -> "review: judged findings, ONE fix dispatch, one re-review";
++    "review: judged findings, ONE fix dispatch, one re-review" -> "Final review clean: delete this plan's workspace";
 +    "Final review clean: delete this plan's workspace" -> "Use finishing-a-development-branch";
  }
  ```
@@ -192,7 +192,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -the ledger's deferred-minor and parked lines so it can triage which must be
 -fixed before merge.
 +The final whole-branch review is done by an external reviewer through the
-+`branch-review` skill. After the last task:
++`review` skill. After the last task:
  
 -If the final whole-branch review returns findings, dispatch ONE fix subagent
 -with the complete findings list — not one fixer per finding.
@@ -207,8 +207,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -residual load-bearing findings surface to your human partner when
 -finishing-a-development-branch presents the options.
 +1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
-+2. Invoke the `branch-review` skill with the merge base: `branch-review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round.
-+3. When `branch-review` reports clean (or its second round is done), continue to `finishing-a-development-branch`.
++2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round.
++3. When `review` reports clean (or its second round is done), continue to `finishing-a-development-branch`.
  
 +There is no second fix wave here; residual findings surface to your human
 +partner when finishing-a-development-branch presents the options.
@@ -243,7 +243,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  [After all tasks]
 -[Run review-package PLAN_FILE MERGE_BASE HEAD; dispatch final code-reviewer, most capable model]
-+[Run review-package; invoke branch-review <MERGE_BASE>]
++[Run review-package; invoke review <MERGE_BASE>]
  Final reviewer: All requirements met. Deferred minors triaged: none block merge.
  
  [Delete this plan's workspace — the record now lives in git]

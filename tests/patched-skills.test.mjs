@@ -22,9 +22,9 @@ test("no docs/superpowers paths remain in skills/", () => {
   assert.deepEqual(hits.map((f) => path.relative(root, f)), []);
 });
 
-test("SDD final review routes to branch-review and every prompt pins opus", () => {
+test("SDD final review routes to review and every prompt pins opus", () => {
   const sdd = readFileSync(path.join(root, "subagent-driven-development/SKILL.md"), "utf8");
-  assert.match(sdd, /branch-review/);
+  assert.match(sdd, /Invoke review <MERGE_BASE>/);
   assert.doesNotMatch(sdd, /using-git-worktrees/);
   assert.doesNotMatch(sdd, /executing-plans/);
   assert.doesNotMatch(sdd, /requesting-code-review/);

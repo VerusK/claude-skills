@@ -77,8 +77,8 @@ digraph process {
 
     "Setup: ledger check, read plan, pre-flight review" [shape=box];
     "More tasks remain?" [shape=diamond];
-    "Invoke branch-review <MERGE_BASE>" [shape=box];
-    "branch-review: judged findings, ONE fix dispatch, one re-review" [shape=box];
+    "Invoke review <MERGE_BASE>" [shape=box];
+    "review: judged findings, ONE fix dispatch, one re-review" [shape=box];
     "Final review clean: delete this plan's workspace" [shape=box];
     "Use finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
 
@@ -106,9 +106,9 @@ digraph process {
     "Park findings in ledger with rulings" -> "Append completion to ledger, mark todo complete";
     "Append completion to ledger, mark todo complete" -> "More tasks remain?";
     "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
-    "More tasks remain?" -> "Invoke branch-review <MERGE_BASE>" [label="no"];
-    "Invoke branch-review <MERGE_BASE>" -> "branch-review: judged findings, ONE fix dispatch, one re-review";
-    "branch-review: judged findings, ONE fix dispatch, one re-review" -> "Final review clean: delete this plan's workspace";
+    "More tasks remain?" -> "Invoke review <MERGE_BASE>" [label="no"];
+    "Invoke review <MERGE_BASE>" -> "review: judged findings, ONE fix dispatch, one re-review";
+    "review: judged findings, ONE fix dispatch, one re-review" -> "Final review clean: delete this plan's workspace";
     "Final review clean: delete this plan's workspace" -> "Use finishing-a-development-branch";
 }
 ```
@@ -411,11 +411,11 @@ parked-with-ruling at the cap.
 ## Final Review
 
 The final whole-branch review is done by an external reviewer through the
-`branch-review` skill. After the last task:
+`review` skill. After the last task:
 
 1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
-2. Invoke the `branch-review` skill with the merge base: `branch-review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round.
-3. When `branch-review` reports clean (or its second round is done), continue to `finishing-a-development-branch`.
+2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round.
+3. When `review` reports clean (or its second round is done), continue to `finishing-a-development-branch`.
 
 There is no second fix wave here; residual findings surface to your human
 partner when finishing-a-development-branch presents the options.
@@ -511,7 +511,7 @@ Re-reviewer: Missing progress reporting — ADDRESSED (src/recovery.js:41).
 ...
 
 [After all tasks]
-[Run review-package; invoke branch-review <MERGE_BASE>]
+[Run review-package; invoke review <MERGE_BASE>]
 Final reviewer: All requirements met. Deferred minors triaged: none block merge.
 
 [Delete this plan's workspace — the record now lives in git]
