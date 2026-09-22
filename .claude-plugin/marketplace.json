@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "verus-skills",
+  "description": "A personal skills distro for Claude Code and Codex, assembled from upstream collections with local patches.",
+  "owner": {
+    "name": "VerusK"
+  },
+  "plugins": [
+    {
+      "name": "verus-skills",
+      "source": "./",
+      "version": "1.0.0",
+      "description": "Personal skills distro: kickoff to spec, plan, external plan review, subagent execution, branch review, finish — with multiple-choice decisions judged by TypeSafe.",
+      "category": "workflow",
+      "tags": ["skills", "workflow", "planning", "code-review", "tdd"]
+    }
+  ]
+}

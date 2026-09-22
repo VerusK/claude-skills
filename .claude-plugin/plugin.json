@@ -1,0 +1,19 @@
+{
+  "name": "verus-skills",
+  "description": "Personal skills distro: kickoff to spec, plan, external plan review, subagent execution, branch review, finish — with multiple-choice decisions judged by TypeSafe.",
+  "version": "1.0.0",
+  "author": {
+    "name": "VerusK"
+  },
+  "homepage": "https://github.com/VerusK/claude-skills",
+  "repository": "https://github.com/VerusK/claude-skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "workflow",
+    "planning",
+    "code-review",
+    "tdd",
+    "debugging"
+  ]
+}
