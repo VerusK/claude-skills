@@ -6,8 +6,9 @@ description: Entry point for any new task. Classifies the task (spike / bounded 
 # Kickoff
 
 Turn an idea into a spec through a decision-tree interview. Questions with
-concrete options are judged by TypeSafe first; only low-confidence questions
-reach the user.
+concrete options are judged by TypeSafe first; questions the judge is not
+confident about, and questions whose context did not carry enough facts to
+justify a confident answer, reach the user.
 
 **Announce at start:** "Using kickoff to scope this task."
 
@@ -42,7 +43,7 @@ Work in **rounds**. Each round:
 
 1. List the frontier. A question that depends on another open question waits for the next round.
 2. For each frontier question write 2–6 options with one-line trade-offs and your recommendation.
-3. Run every question that has concrete options through the judge (open-ended, taste and credential questions are asked directly, see `judge.md`) — read `judge.md` in this skill's directory and follow it exactly.
+3. Run every question that has concrete options through the judge (open-ended, taste and credential questions are asked directly, see `judge.md`) — read `judge.md` in this skill's directory and follow it exactly. Build `context` as a structured object, not prose: `goal` (one sentence), `decisions` (everything settled in earlier rounds), `facts` (repo evidence with file paths and short excerpts), `constraints` (the user's rules), `consequences` (per option id: when that option would be the wrong call). Your recommendation goes in `recommended` and is never part of `context` — the judge must not see your pick.
 4. Accepted questions: print their decision blocks, add them to the running **Decisions** list (question, options with percentages, choice, confidence).
 5. Unaccepted questions: ask them all in one message, numbered, each with its decision block, options and your recommendation. Wait for the answers.
 6. Recompute the frontier and repeat. The interview ends when the frontier is empty.
@@ -87,5 +88,6 @@ one line. The Decisions section of the spec is the durable copy.
 | "This question is obvious, skip the judge" | Obvious questions are exactly what the judge is for. Run it. |
 | "The judge said just below the threshold, close enough" | Below threshold means ask. No rounding. |
 | "The judge is down, I'll pick my recommendation" | Judge down means ask the user. Always. |
+| "Confidence was 0.99, the `(мало данных)` note is noise" | It means the judge was sure about a state that did not justify sureness. Add the missing facts or ask. |
 | "Too simple to need approval" | Simple means a short design, not no design. |
 | "I'll batch the accepted decisions later" | Print each block as it happens. |

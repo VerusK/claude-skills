@@ -55,8 +55,8 @@ Parse `## Findings (confidence 7+)`. For each finding, in order of severity:
 Build a judge question:
 - `question`: "How should the plan handle: <finding text>?"
 - options: `A` "Accept: revise the plan as the reviewer proposes", `B` "Accept with a different fix: <your alternative, if you have one>", `C` "Reject: the finding is wrong or out of scope, because <reason>". Omit `B` if you have no alternative. Map each option to the judge's JSON fields: `label` is the text before the colon, `description` is the rest.
-- `context`: the plan's Goal and Architecture lines, the spec's relevant constraint, and the finding verbatim.
-- `recommended`: your pick.
+- `context`: a structured object — `goal` (what the plan delivers, one sentence), `decisions` (findings already triaged in this round), `facts` (the plan's Goal and Architecture lines, the spec's relevant constraint, the finding verbatim, and the relevant plan excerpt), `constraints` (the user's rules and the plan's hard limits), `consequences` (per option id: when that option would be the wrong call). Facts only — a stranger reading `facts` alone must be able to pick.
+- `recommended`: your pick. It is shown to the user and never sent to the judge.
 
 Run the judge exactly as `judge.md` says. Accepted → apply the decision; unaccepted or any non-zero judge exit → ask the user with the decision block. Print every decision block in chat as it happens.
 
