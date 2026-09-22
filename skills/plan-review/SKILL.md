@@ -32,8 +32,11 @@ Say nothing about models or reasoning effort in the prompt — the launcher pins
 Substitute the real paths for the two placeholders before running:
 
 ```bash
-for d in "${CLAUDE_SKILL_DIR:-}" "$HOME/.claude/skills/plan-review" "$HOME/.codex/skills/plan-review"; do
-  [ -n "$d" ] && [ -e "$d/SKILL.md" ] && SKILLS_REPO="$(cd "$(dirname "$(realpath "$d")")/.." && pwd)" && break
+SKILLS_REPO=""
+for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
+         "$HOME/.claude/skills/plan-review/../.." \
+         "$HOME/.codex/skills/plan-review/../.."; do
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
 [ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO"
 
