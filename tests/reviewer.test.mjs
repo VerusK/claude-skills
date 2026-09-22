@@ -1,6 +1,6 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,14 +9,24 @@ import { spawnSync, execFileSync } from "node:child_process";
 const SCRIPT = fileURLToPath(new URL("../scripts/reviewer.sh", import.meta.url));
 const FIX = fileURLToPath(new URL("./fixtures/fake-bin/", import.meta.url));
 
+const TEMP_DIRS = [];
+function tmp(prefix) {
+  const d = mkdtempSync(path.join(tmpdir(), prefix));
+  TEMP_DIRS.push(d);
+  return d;
+}
+after(() => {
+  for (const d of TEMP_DIRS) rmSync(d, { recursive: true, force: true });
+});
+
 function repo() {
-  const dir = mkdtempSync(path.join(tmpdir(), "rev-"));
+  const dir = tmp("rev-");
   execFileSync("git", ["init", "-q"], { cwd: dir });
   return dir;
 }
 
 function run(dir, bins, opts = {}) {
-  const bin = mkdtempSync(path.join(tmpdir(), "bin-"));
+  const bin = tmp("bin-");
   for (const b of bins) { copyFileSync(path.join(FIX, b), path.join(bin, b)); chmodSync(path.join(bin, b), 0o755); }
   // opts.shims: { name: "<script body>" } — throwaway executables written into the temp bin dir.
   for (const [name, body] of Object.entries(opts.shims ?? {})) {
@@ -64,7 +74,7 @@ test("exits 3 when nothing is available", () => {
 });
 
 test("exits 1 on missing args", () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "rev-noargs-"));
+  const dir = tmp("rev-noargs-");
   const r = spawnSync("bash", [SCRIPT], {
     cwd: dir, encoding: "utf8",
     env: { PATH: "/usr/bin:/bin", HOME: dir, NODE: process.execPath },
@@ -102,7 +112,7 @@ test("a codex usage-limit failure is reported verbatim", () => {
 test("excludes .context in a linked worktree", () => {
   const main = repo();
   execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: main });
-  const wt = path.join(mkdtempSync(path.join(tmpdir(), "revwt-")), "wt");
+  const wt = path.join(tmp("revwt-"), "wt");
   execFileSync("git", ["worktree", "add", "-q", wt, "-b", "wt-branch"], { cwd: main });
   const r = run(main, ["codex"], { repo: wt, cwd: wt });
   assert.equal(r.status, 0, r.stderr);
@@ -206,7 +216,7 @@ test("env overrides the configured model and reasoning effort", () => {
 
 test("falls back to the built-in defaults when config/reviewer.json is missing", () => {
   const dir = repo();
-  const lone = mkdtempSync(path.join(tmpdir(), "rev-nocfg-"));
+  const lone = tmp("rev-nocfg-");
   mkdirSync(path.join(lone, "scripts"), { recursive: true });
   const script = path.join(lone, "scripts/reviewer.sh");
   copyFileSync(SCRIPT, script);
@@ -222,7 +232,7 @@ test("falls back to the built-in defaults when config/reviewer.json is missing",
 // Values differ from the repo's own config so the assertions below can only pass
 // if the file was actually read (and not the hard-coded defaults).
 function cfgTree(cfg) {
-  const root = mkdtempSync(path.join(tmpdir(), "rev-cfg-"));
+  const root = tmp("rev-cfg-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
   mkdirSync(path.join(root, "config"), { recursive: true });
   const script = path.join(root, "scripts/reviewer.sh");
@@ -254,7 +264,7 @@ test("the Orca terminal uses the model and reasoning effort from config/reviewer
 test("finds config/reviewer.json when launched through a symlink", () => {
   const dir = repo();
   const { script } = cfgTree({ codexModel: "link-model", codexReasoning: "minimal" });
-  const linkDir = mkdtempSync(path.join(tmpdir(), "rev-link-"));
+  const linkDir = tmp("rev-link-");
   const link = path.join(linkDir, "reviewer-link.sh");
   symlinkSync(path.relative(linkDir, script), link); // relative target on purpose
   const r = run(dir, ["codex"], { script: link });
@@ -345,7 +355,7 @@ test("leaves info/exclude alone when .context is already git-ignored", () => {
 });
 
 test("rejects an option with no value", () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "rev-noval-"));
+  const dir = tmp("rev-noval-");
   const r = spawnSync("bash", [SCRIPT, "--prompt-file"], {
     cwd: dir, encoding: "utf8",
     env: { PATH: "/usr/bin:/bin", HOME: dir, NODE: process.execPath },

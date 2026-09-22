@@ -1,13 +1,23 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { parseSources, syncSource, repatch, readLock, summarize, hasBlockingResults } from "../scripts/sync.mjs";
 
+const TEMP_DIRS = [];
+function tmp(prefix) {
+  const d = mkdtempSync(path.join(tmpdir(), prefix));
+  TEMP_DIRS.push(d);
+  return d;
+}
+after(() => {
+  for (const d of TEMP_DIRS) rmSync(d, { recursive: true, force: true });
+});
+
 function setupRoot() {
-  const root = mkdtempSync(path.join(tmpdir(), "sync-"));
+  const root = tmp("sync-");
   execFileSync("git", ["init", "-q"], { cwd: root });
   mkdirSync(path.join(root, "skills"));
   mkdirSync(path.join(root, "vendor"));
@@ -16,7 +26,7 @@ function setupRoot() {
 }
 
 function upstream(files) {
-  const dir = mkdtempSync(path.join(tmpdir(), "up-"));
+  const dir = tmp("up-");
   for (const [rel, content] of Object.entries(files)) {
     mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
     writeFileSync(path.join(dir, rel), content);
@@ -204,7 +214,7 @@ test("merge error messages carry repo-relative paths, not absolute ones", async 
 
 test("watch diff keeps a/ b/ prefixes even when git config disables them", async () => {
   const root = setupRoot();
-  const cfgDir = mkdtempSync(path.join(tmpdir(), "gitcfg-"));
+  const cfgDir = tmp("gitcfg-");
   const cfg = path.join(cfgDir, "config");
   writeFileSync(cfg, "[diff]\n\tnoprefix = true\n\tmnemonicPrefix = true\n");
   const prevGlobal = process.env.GIT_CONFIG_GLOBAL;
