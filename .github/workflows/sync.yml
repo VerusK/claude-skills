@@ -1,0 +1,37 @@
+name: sync upstream skills
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --no-audit --no-fund
+      - id: sync
+        run: |
+          set +e
+          node scripts/sync.mjs
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - run: npm test
+        continue-on-error: true
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          branch: sync/upstream
+          title: "sync: upstream ${{ steps.sync.outputs.date }}"
+          commit-message: "chore(sync): upstream skills ${{ steps.sync.outputs.date }}"
+          body-path: .sync-report.md
+          labels: ${{ steps.sync.outputs.exit == '1' && 'sync,needs-attention' || 'sync' }}
+          add-paths: |
+            vendor
+            skills
+            patches
+            sources.lock.json
