@@ -219,7 +219,7 @@ Stop after round 2.
 
 Report to the user: scope reviewed, rounds run, reviewer path used, findings fixed/rejected/asked, path of every report written (round 1 and, if it ran, round 2), and suite status.
 
-In branch scope and full mode, then say: "Review done. Using `finishing-a-development-branch`." and invoke it. Path scope, codebase scope and report-only mode end with the summary — there is no branch to finish.
+In branch scope and full mode, then say: "Review done. Using `finishing-a-development-branch`." and invoke `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin). Path scope, codebase scope and report-only mode end with the summary — there is no branch to finish.
 
 ## Rules
 

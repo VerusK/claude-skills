@@ -84,7 +84,7 @@ Stop after round 2.
 
 ## 6. Hand off
 
-Report to the user: rounds run, reviewer path used, findings accepted/rejected/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then say: "Plan review done. Next: `subagent-driven-development` on `<PLAN>`." and invoke it.
+Report to the user: rounds run, reviewer path used, findings accepted/rejected/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then say: "Plan review done. Next: `subagent-driven-development` on `<PLAN>`." and invoke `subagent-driven-development` (`verus-skills:subagent-driven-development` when installed as a plugin).
 
 ## Rules
 

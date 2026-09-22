@@ -1,6 +1,6 @@
 diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
---- vendor/writing-plans/SKILL.md	2026-09-22 12:12:09
-+++ skills/writing-plans/SKILL.md	2026-09-22 12:26:07
+--- vendor/writing-plans/SKILL.md	2026-09-22 18:01:01
++++ skills/writing-plans/SKILL.md	2026-09-22 20:34:09
 @@ -13,9 +13,9 @@
  
  **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
@@ -52,4 +52,4 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
 -
 -**If Native chosen:**
 -- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
-+Then invoke the `plan-review` skill with the plan path. Do not start implementation before the plan review reports clean.
++Then invoke the `plan-review` (`verus-skills:plan-review` when installed as a plugin) skill with the plan path. Do not start implementation before the plan review reports clean.

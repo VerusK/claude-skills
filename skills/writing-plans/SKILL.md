@@ -170,4 +170,4 @@ After saving the plan, say:
 
 **"Plan complete and saved to `docs/plans/<filename>.md`. Next step: `plan-review` (external reviewer via Codex), then `subagent-driven-development`."**
 
-Then invoke the `plan-review` skill with the plan path. Do not start implementation before the plan review reports clean.
+Then invoke the `plan-review` (`verus-skills:plan-review` when installed as a plugin) skill with the plan path. Do not start implementation before the plan review reports clean.
