@@ -26,8 +26,24 @@ test("SDD final review routes to branch-review and every prompt pins opus", () =
   const sdd = readFileSync(path.join(root, "subagent-driven-development/SKILL.md"), "utf8");
   assert.match(sdd, /branch-review/);
   assert.doesNotMatch(sdd, /using-git-worktrees/);
+  assert.doesNotMatch(sdd, /executing-plans/);
+  assert.doesNotMatch(sdd, /requesting-code-review/);
+  assert.doesNotMatch(sdd, /more capable model/);
   assert.match(sdd, /unnamed/);
   for (const f of ["implementer-prompt.md", "task-reviewer-prompt.md", "re-review-prompt.md"]) {
     assert.match(readFileSync(path.join(root, "subagent-driven-development", f), "utf8"), /model: opus/);
   }
+});
+
+test("no model-tier escalation advice remains in SDD prompts", () => {
+  for (const f of ["implementer-prompt.md", "task-reviewer-prompt.md", "re-review-prompt.md"]) {
+    const body = readFileSync(path.join(root, "subagent-driven-development", f), "utf8");
+    assert.doesNotMatch(body, /more capable model/);
+  }
+});
+
+test("writing-plans routes to docs/plans/ and plan-review", () => {
+  const wp = readFileSync(path.join(root, "writing-plans/SKILL.md"), "utf8");
+  assert.match(wp, /docs\/plans\//);
+  assert.match(wp, /plan-review/);
 });
