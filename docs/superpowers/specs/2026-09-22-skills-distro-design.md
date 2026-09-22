@@ -140,8 +140,8 @@ claude-skills/
 }
 ```
 
-- Вызов SDK: `client.systemOne({ state: { question, context, recommended }, questions: { answer: choice(question, {A: description, B: description}) } })`. Точная форма чтения вероятностей уточняется по `types.ts` SDK v0.6.0 на этапе плана.
-- `confidence` считается по формуле из документации TypeSafe: `(n * p_max - 1) / (n - 1)` для `n` вариантов.
+- Вызов SDK: `client.systemOne({ state: { question, context, recommended }, questions: { answer: choice(question, {A: description, B: description}) } })`.
+- Ответ SDK v0.6.0 (`ChoiceResponse`): поля `choice`, `confidence` и `probabilities` по меткам. Скрипт пробрасывает их как есть, ничего не пересчитывает.
 - `accepted = confidence >= threshold`. Порог из `config/judge.json`, по умолчанию `0.7`, переопределяется флагом `--threshold`.
 - Ключ из `TYPESAFE_API_KEY`. Пользователь кладёт его в блок `env` глобального `~/.claude/settings.json`; для Codex в `~/.zshenv`.
 - Ошибка сети, отсутствие ключа или пустой ответ: код возврата 2, скилл показывает вопрос пользователю как обычно и пишет, что judge недоступен. Автопринятие без judge запрещено.
