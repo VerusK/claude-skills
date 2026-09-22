@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
 --- vendor/subagent-driven-development/SKILL.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/SKILL.md	2026-09-22 20:34:09
++++ skills/subagent-driven-development/SKILL.md	2026-09-22 20:40:24
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -216,17 +216,16 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -484,7 +436,8 @@
+@@ -484,7 +436,7 @@
  the record now. Sibling directories belong to other plans; leave them
  alone.
  
 -Use superpowers:finishing-a-development-branch.
-+`review` invokes finishing-a-development-branch itself; invoke it here only if
-+`review` stopped without handing off.
++`review` invokes `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself; invoke it here only if `review` stopped without handing off.
  
  ## Common Rationalizations
  
-@@ -505,9 +458,9 @@
+@@ -505,9 +457,9 @@
  ```
  You: I'm using Subagent-Driven Development to execute this plan.
  
@@ -239,7 +238,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  [Create todos for all tasks]
  
  Task 1: Hook installation script
-@@ -559,10 +512,10 @@
+@@ -559,10 +511,10 @@
  ...
  
  [After all tasks]

@@ -436,8 +436,7 @@ delete this plan's workspace (`rm -rf <workspace>`) — the git history is
 the record now. Sibling directories belong to other plans; leave them
 alone.
 
-`review` invokes finishing-a-development-branch itself; invoke it here only if
-`review` stopped without handing off.
+`review` invokes `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself; invoke it here only if `review` stopped without handing off.
 
 ## Common Rationalizations
 
