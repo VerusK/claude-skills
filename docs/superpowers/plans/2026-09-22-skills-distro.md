@@ -1668,7 +1668,9 @@ argument-hint: "[merge-base commit or base branch, default main]"
 - `ROUND`: 1.
 - Locate the repo and read the judge protocol from `skills/kickoff/judge.md` (replace `kickoff` with `branch-review` in the locator).
 
-Refuse to run on a dirty working tree: `git status --porcelain` must be empty; ask the user to commit or discard first.
+Mode depends on the working tree:
+- `git status --porcelain` empty → **full mode**: review `BASE..HEAD`, fix wave, re-review, hand-off.
+- dirty → **report-only mode**: review `git diff BASE` (working tree incl. uncommitted changes) so the skill is usable mid-task; the report header says `(includes uncommitted changes)`; findings are still judged and printed as decision blocks, but no fix subagent is dispatched and nothing is committed. End with the list of accepted findings for the user to apply, then stop (no hand-off to finishing-a-development-branch).
 
 ## 1. Build the prompt
 
@@ -1678,7 +1680,7 @@ Temp file containing, in order:
 2. `WHAT WAS IMPLEMENTED:` a 3–6 line summary you write from the plan and `git log --oneline BASE..HEAD`.
 3. `PLAN: <path>` and `SPEC: <path>`.
 4. `Ledger lines:` the plan's deferred-minor and parked lines, if the plan has a ledger; else `none`.
-5. `DIFF:` followed by `git diff BASE..HEAD` in a fenced block. If the diff exceeds 6000 lines, include `git diff --stat BASE..HEAD` instead plus the sentence `Run git diff <BASE>..HEAD yourself; it is too large to embed.`
+5. `DIFF:` followed by `git diff BASE..HEAD` (full mode) or `git diff BASE` (report-only mode) in a fenced block. If the diff exceeds 6000 lines, include the `--stat` form instead plus the sentence `Run git diff <BASE> yourself; it is too large to embed.`
 6. `Write the report to <REPORT>` on its own line.
 
 Round 2 adds the previous report and: `Only report findings still present after the fixes; mark fixed ones as resolved.`
@@ -1698,7 +1700,9 @@ For each finding under `## Findings (confidence 7+)`, most severe first, build a
 
 `## Ledger triage` lines marked BLOCKS MERGE are treated as P1 findings and go through the same triage.
 
-## 4. Fix wave
+## 4. Fix wave (full mode only)
+
+In report-only mode skip this section and section 5: print the accepted findings as a checklist and stop.
 
 Collect every accepted finding into one list and dispatch ONE unnamed background fix subagent (`general-purpose`, `model: opus`): give it the list, the spec path, the repo test command, and the rule "fix all, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
 
@@ -1723,6 +1727,7 @@ Tell the user: rounds, reviewer path, findings fixed/rejected/asked, report path
 
 - Never edit `REPORT`.
 - Exactly one fix subagent per round; never one per finding.
+- Report-only mode never commits, never dispatches a fix subagent, never hands off.
 - Maximum two rounds; residual P2/P3 are listed as deferred in the plan section above so finishing-a-development-branch can show them.
 ```
 
