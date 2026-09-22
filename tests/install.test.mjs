@@ -1,14 +1,16 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readlinkSync, symlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readlinkSync, symlinkSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { linkSkills, unlinkSkills, ensureHook, removeHook, ensureAgentsLine, removeAgentsLine, HOOK_MARKER, REPO_ROOT } from "../scripts/install.mjs";
 
 const TEMP_DIRS = [];
+// realpath, so a checkout under a symlinked $TMPDIR (macOS: /var -> /private/var)
+// matches the path Node resolves for a script run out of it.
 function tmp(prefix) {
-  const d = mkdtempSync(path.join(tmpdir(), prefix));
+  const d = realpathSync(mkdtempSync(path.join(tmpdir(), prefix)));
   TEMP_DIRS.push(d);
   return d;
 }
@@ -317,6 +319,84 @@ test("ensureHook/removeHook preserve every other settings key and hook event", (
 
   removeHook(settings, root);
   assert.deepEqual(JSON.parse(readFileSync(settings, "utf8")), original);
+});
+
+// --- finding I-1: a re-install from another checkout of this distro ------------
+
+// A self-contained distro checkout: what `isDistroCheckout` looks for
+// (sources.yaml + scripts/install.mjs) plus a runnable installer.
+function distroRepo() {
+  const root = tmp("distro-");
+  mkdirSync(path.join(root, "scripts"), { recursive: true });
+  copyFileSync(INSTALLER, path.join(root, "scripts", "install.mjs"));
+  writeFileSync(path.join(root, "sources.yaml"), "sources: []\n");
+  writeFileSync(path.join(root, "USING.md"), "# using\n");
+  for (const s of ["kickoff", "plan-review"]) {
+    mkdirSync(path.join(root, "skills", s), { recursive: true });
+    writeFileSync(path.join(root, "skills", s, "SKILL.md"), `---\nname: ${s}\n---\n`);
+  }
+  return root;
+}
+
+function runInstallerFrom(root, args) {
+  const sandboxHome = tmp("sandbox-home-");
+  return spawnSync(process.execPath, [path.join(root, "scripts", "install.mjs"), ...args], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: sandboxHome },
+  });
+}
+
+function assertSingleInstallOf(home, root) {
+  for (const dir of [".claude", ".codex"]) {
+    for (const s of ["kickoff", "plan-review"]) {
+      assert.equal(readlinkSync(path.join(home, dir, "skills", s)), path.join(root, "skills", s));
+    }
+  }
+  const settings = JSON.parse(readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
+  const ours = settings.hooks.SessionStart.filter((g) => g.hooks.some((h) => h.command.includes(HOOK_MARKER)));
+  assert.equal(ours.length, 1, "exactly one SessionStart hook of ours");
+  assert.ok(ours[0].hooks[0].command.includes(root), "the hook points at the current checkout");
+  const lines = readFileSync(path.join(home, ".codex", "AGENTS.md"), "utf8").split("\n").filter((l) => l.includes("USING.md"));
+  assert.equal(lines.length, 1, "exactly one AGENTS.md line of ours");
+  assert.ok(lines[0].includes(root), "the AGENTS.md line points at the current checkout");
+}
+
+test("installing from a second distro checkout re-points links, hook and AGENTS line", () => {
+  const home = tmp("home-");
+  const a = distroRepo();
+  const b = distroRepo();
+  const ra = runInstallerFrom(a, ["--home", home, "--skip-plugin"]);
+  assert.equal(ra.status, 0, ra.stderr);
+  const rb = runInstallerFrom(b, ["--home", home, "--skip-plugin"]);
+  assert.equal(rb.status, 0, rb.stderr);
+  assert.match(rb.stdout, new RegExp(`re-pointed from ${a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.doesNotMatch(rb.stdout, /SKIPPED/);
+  assertSingleInstallOf(home, b);
+});
+
+test("installing from a new checkout after the old one is gone re-points everything", () => {
+  const home = tmp("home-");
+  const a = distroRepo();
+  const b = distroRepo();
+  const ra = runInstallerFrom(a, ["--home", home, "--skip-plugin"]);
+  assert.equal(ra.status, 0, ra.stderr);
+  rmSync(a, { recursive: true, force: true });
+  const rb = runInstallerFrom(b, ["--home", home, "--skip-plugin"]);
+  assert.equal(rb.status, 0, rb.stderr);
+  assert.doesNotMatch(rb.stdout, /SKIPPED/);
+  assertSingleInstallOf(home, b);
+});
+
+test("linkSkills still skips a foreign link that is not a distro checkout", () => {
+  const root = distroRepo();
+  const foreign = tmp("foreign-");
+  mkdirSync(path.join(foreign, "skills", "kickoff"), { recursive: true });
+  const target = tmp("skills-");
+  symlinkSync(path.join(foreign, "skills", "kickoff"), path.join(target, "kickoff"));
+  const r = linkSkills(root, target);
+  assert.deepEqual(r.skipped, ["kickoff"]);
+  assert.deepEqual(r.repointed, []);
+  assert.equal(readlinkSync(path.join(target, "kickoff")), path.join(foreign, "skills", "kickoff"));
 });
 
 test("session-start.mjs prints a parseable SessionStart hook payload", () => {

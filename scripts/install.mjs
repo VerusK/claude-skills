@@ -23,6 +23,22 @@ function isUnder(target, dir) {
   return typeof target === "string" && target.startsWith(base);
 }
 
+// Another checkout of THIS distro — the thing a re-install is allowed to take
+// over from. A directory that is simply gone counts: only our own installer
+// leaves `<X>/skills/<name>` links behind, and a dangling one is always stale.
+export function isDistroCheckout(dir) {
+  if (typeof dir !== "string" || !dir) return false;
+  if (!existsSync(dir)) return true;
+  return existsSync(path.join(dir, "sources.yaml")) && existsSync(path.join(dir, "scripts", "install.mjs"));
+}
+
+// `<X>/skills/<name>` -> `<X>`; anything else -> null.
+function distroRootOfLink(target, name) {
+  const tail = path.sep + path.join("skills", name);
+  if (typeof target !== "string" || !target.endsWith(tail)) return null;
+  return target.slice(0, -tail.length) || null;
+}
+
 export function skillDirs(repoRoot) {
   const base = path.join(repoRoot, "skills");
   return readdirSync(base).filter((d) => existsSync(path.join(base, d, "SKILL.md"))).sort();
@@ -30,19 +46,24 @@ export function skillDirs(repoRoot) {
 
 export function linkSkills(repoRoot, targetDir) {
   mkdirSync(targetDir, { recursive: true });
-  const linked = [], skipped = [];
+  const linked = [], skipped = [], repointed = [];
   for (const name of skillDirs(repoRoot)) {
     const src = path.join(repoRoot, "skills", name);
     const dst = path.join(targetDir, name);
     if (isSymlink(dst)) {
-      if (readlinkSync(dst) === src) { linked.push(name); continue; }
-      if (isUnder(readlinkSync(dst), repoRoot)) unlinkSync(dst);
-      else { skipped.push(name); continue; }
+      const target = readlinkSync(dst);
+      if (target === src) { linked.push(name); continue; }
+      if (isUnder(target, repoRoot)) unlinkSync(dst);
+      else {
+        const from = distroRootOfLink(target, name);
+        if (from && isDistroCheckout(from)) { unlinkSync(dst); repointed.push({ name, from }); }
+        else { skipped.push(name); continue; }
+      }
     } else if (existsSync(dst)) { skipped.push(name); continue; }
     symlinkSync(src, dst);
     linked.push(name);
   }
-  return { linked, skipped };
+  return { linked, skipped, repointed };
 }
 
 export function unlinkSkills(repoRoot, targetDir) {
@@ -65,10 +86,21 @@ function writeJson(p, obj) {
 function hookCommand(repoRoot) {
   return `node "${path.join(repoRoot, "scripts", "session-start.mjs")}"`;
 }
-// With repoRoot: match only this checkout's hook. Without: marker-only fallback.
+const HOOK_PATH_RE = /([^\s"'`]+)\/scripts\/session-start\.mjs/;
+// With repoRoot: this checkout's hook, plus one left by another checkout of the
+// distro (or by a checkout that no longer exists) — otherwise a re-install from
+// a fresh clone would stack a second hook on top of the stale one. Without
+// repoRoot: marker-only fallback.
 function ourHookMatcher(repoRoot) {
   const needle = repoRoot ? hookCommand(repoRoot) : HOOK_MARKER;
-  return (h) => typeof h?.command === "string" && h.command.includes(needle);
+  return (h) => {
+    const cmd = h?.command;
+    if (typeof cmd !== "string" || !cmd.includes(HOOK_MARKER)) return false;
+    if (cmd.includes(needle)) return true;
+    if (!repoRoot) return false;
+    const m = cmd.match(HOOK_PATH_RE);
+    return Boolean(m && isDistroCheckout(m[1]));
+  };
 }
 
 // Filter at hook level: siblings sharing a group (and the group's `matcher`)
@@ -107,10 +139,15 @@ function agentsLine(repoRoot) {
   return `- Read \`${path.join(repoRoot, "USING.md")}\` for the skills workflow before starting any task. ${AGENTS_MARKER}`;
 }
 
-// With repoRoot: match only this checkout's line. Without: marker-only fallback.
+const AGENTS_PATH_RE = /([^\s"'`]+)\/USING\.md/;
+// With repoRoot: this checkout's line, plus one left by another checkout of the
+// distro (or by a checkout that no longer exists). Without: marker-only fallback.
 function isOurAgentsLine(line, repoRoot) {
   if (!line.includes(AGENTS_MARKER)) return false;
-  return repoRoot ? line === agentsLine(repoRoot) : true;
+  if (!repoRoot) return true;
+  if (line === agentsLine(repoRoot)) return true;
+  const m = line.match(AGENTS_PATH_RE);
+  return Boolean(m && isDistroCheckout(m[1]));
 }
 
 export function ensureAgentsLine(agentsPath, repoRoot) {
@@ -210,6 +247,10 @@ function main() {
   for (const [label, dir] of [["claude", claudeSkills], ["codex", codexSkills]]) {
     const r = linkSkills(REPO_ROOT, dir);
     console.log(`${label}: linked ${r.linked.join(", ")}`);
+    for (const from of [...new Set(r.repointed.map((x) => x.from))]) {
+      const names = r.repointed.filter((x) => x.from === from).map((x) => x.name);
+      console.log(`${label}: re-pointed from ${from}: ${names.join(", ")}`);
+    }
     if (r.skipped.length) console.log(`${label}: SKIPPED (name taken by a foreign entry): ${r.skipped.join(", ")}`);
   }
   ensureHook(settings, REPO_ROOT);
