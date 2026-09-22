@@ -2455,7 +2455,7 @@ make sync      # fetch upstreams, 3-way merge into skills/, refresh patches/ and
 make repatch   # after editing a vendored skill by hand, re-record the diff in patches/
 ```
 
-The `sync upstream skills` workflow does the same weekly and opens a PR on `sync/upstream`. Conflicts leave `<<<<<<< ours` markers in `skills/` and the PR gets the `needs-attention` label; resolve, run `make repatch`, merge.
+The `sync upstream skills` workflow does the same weekly and opens a PR on `sync/upstream`. One-time repo setting: enable *Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests*, or the PR step fails. PRs opened with the default token do not trigger the `test` workflow, so the sync job runs `npm test` itself and records the result in the PR body (`## Tests`) and the `tests-failing` label. Conflicts leave `<<<<<<< ours` markers in `skills/` and the PR gets the `needs-attention` label; resolve, run `make repatch`, merge.
 
 Watch-only sources (`mode: watch` in `sources.yaml`) are tracked in `vendor/` and their diffs appear in the PR body; our own prompts derived from them are updated by hand.
 
