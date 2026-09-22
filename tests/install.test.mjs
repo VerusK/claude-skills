@@ -400,7 +400,7 @@ test("linkSkills still skips a foreign link that is not a distro checkout", () =
 });
 
 test("session-start.mjs prints a parseable SessionStart hook payload", () => {
-  const r = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8", env: { ...process.env, HOME: tmp("home-") } });
   assert.equal(r.status, 0, r.stderr);
   const payload = JSON.parse(r.stdout);
   assert.equal(payload.hookSpecificOutput.hookEventName, "SessionStart");
