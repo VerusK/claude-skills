@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fake Orca CLI: records calls, writes the report when a prompt is sent.
+echo "orca $*" >> "${FAKE_LOG:?}"
+case "$1 $2" in
+  "status "*) echo '{"ok":true,"result":{"runtime":{"reachable":true}}}';;
+  "terminal create") echo '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}';;
+  "terminal show") echo '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}';;
+  "terminal wait") echo '{"ok":true,"result":{"wait":{"satisfied":true}}}';;
+  "terminal send")
+    # extract the report path from the prompt text and create it
+    out=$(printf '%s\n' "$@" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
+    [ -n "$out" ] && { mkdir -p "$(dirname "$out")"; echo "orca report" > "$out"; }
+    echo '{"ok":true,"result":{"accepted":true}}';;
+  *) echo '{"ok":true}';;
+esac

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+echo "codex $*" >> "${FAKE_LOG:?}"
+prompt=$(cat)
+out=$(printf '%s\n' "$prompt" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
+[ -n "$out" ] && { mkdir -p "$(dirname "$out")"; echo "codex report" > "$out"; }
