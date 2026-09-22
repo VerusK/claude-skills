@@ -37,8 +37,12 @@ if [ -d "$REPO/.git" ] || [ -f "$REPO/.git" ]; then
   # NB: in a linked worktree git reads <common-dir>/info/exclude, not <gitdir>/info/exclude.
   EXCL="$(cd "$REPO" && git rev-parse --path-format=absolute --git-path info/exclude 2>/dev/null)"
   if [ -z "$EXCL" ]; then # git < 2.31 has no --path-format
-    COMMON="$(cd "$REPO" && cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .)" && pwd)"
-    [ -n "$COMMON" ] && EXCL="$COMMON/info/exclude"
+    # NB: never default the common dir to "." — a failing rev-parse would then
+    # create <repo>/info/exclude inside the working tree.
+    COMMON=""
+    GCD="$(cd "$REPO" && git rev-parse --git-common-dir 2>/dev/null)"
+    [ -n "$GCD" ] && COMMON="$(cd "$REPO" && cd "$GCD" 2>/dev/null && pwd)"
+    [ -n "${COMMON:-}" ] && EXCL="$COMMON/info/exclude"
   fi
   if [ -n "$EXCL" ]; then
     mkdir -p "$(dirname "$EXCL")"

@@ -18,6 +18,11 @@ function repo() {
 function run(dir, bins, opts = {}) {
   const bin = mkdtempSync(path.join(tmpdir(), "bin-"));
   for (const b of bins) { copyFileSync(path.join(FIX, b), path.join(bin, b)); chmodSync(path.join(bin, b), 0o755); }
+  // opts.shims: { name: "<script body>" } — throwaway executables written into the temp bin dir.
+  for (const [name, body] of Object.entries(opts.shims ?? {})) {
+    writeFileSync(path.join(bin, name), body);
+    chmodSync(path.join(bin, name), 0o755);
+  }
   const log = path.join(dir, "calls.log");
   const prompt = path.join(dir, "prompt.md");
   writeFileSync(prompt, "Review this.\nWrite the report to docs/reviews/out.md\n");
@@ -104,9 +109,18 @@ test("rejects an absolute --output", () => {
   assert.match(r.stderr, /--output must be repo-relative/);
 });
 
+// A `node` on PATH that really works: the node-preflight test must not depend on
+// the ambient PATH happening to lack node.
+const NODE_SHIM = `#!/bin/bash\nexec ${process.execPath} "$@"\n`;
+// A `git` on PATH whose every `rev-parse` fails; everything else is the real git.
+const GIT_SHIM = `#!/bin/bash\nfor a in "$@"; do [ "$a" = "rev-parse" ] && exit 128; done\nexec /usr/bin/git "$@"\n`;
+
 test("skips Orca when node is unavailable", () => {
   const dir = repo();
-  const r = run(dir, ["orca", "codex"], { env: { NODE: undefined } });
+  const r = run(dir, ["orca", "codex"], {
+    env: { NODE: path.join(tmpdir(), "no-such-node-bin") },
+    shims: { node: NODE_SHIM },
+  });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /node not found/);
   assert.match(r.stdout, /reviewer: codex-exec/);
@@ -132,6 +146,16 @@ test("reuses an existing Orca session", () => {
   assert.match(r.log, /terminal show/);
   assert.doesNotMatch(r.log, /terminal create/);
   assert.equal(readFileSync(path.join(dir, ".context/t-session"), "utf8").trim(), "term-1");
+});
+
+test("never writes info/exclude into the worktree when rev-parse fails", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], { shims: { git: GIT_SHIM } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.stderr, /could not locate info\/exclude/);
+  assert.ok(!existsSync(path.join(dir, "info")), "created <repo>/info inside the working tree");
+  assert.ok(!existsSync(path.join(dir, "info/exclude")), "created <repo>/info/exclude inside the working tree");
 });
 
 test("rejects an option with no value", () => {
