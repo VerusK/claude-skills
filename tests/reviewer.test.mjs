@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -206,6 +206,51 @@ test("falls back to the built-in defaults when config/reviewer.json is missing",
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.log, /codex exec .*-m gpt-6-astra/);
   assert.match(r.log, /model_reasoning_effort=high/);
+});
+
+// A standalone launcher tree: <root>/scripts/reviewer.sh + <root>/config/reviewer.json.
+// Values differ from the repo's own config so the assertions below can only pass
+// if the file was actually read (and not the hard-coded defaults).
+function cfgTree(cfg) {
+  const root = mkdtempSync(path.join(tmpdir(), "rev-cfg-"));
+  mkdirSync(path.join(root, "scripts"), { recursive: true });
+  mkdirSync(path.join(root, "config"), { recursive: true });
+  const script = path.join(root, "scripts/reviewer.sh");
+  copyFileSync(SCRIPT, script);
+  chmodSync(script, 0o755);
+  writeFileSync(path.join(root, "config/reviewer.json"), JSON.stringify(cfg));
+  return { root, script };
+}
+
+test("codex exec uses the model and reasoning effort from config/reviewer.json", () => {
+  const dir = repo();
+  const { script } = cfgTree({ codexModel: "cfg-model", codexReasoning: "minimal" });
+  const r = run(dir, ["codex"], { script });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /codex exec .*-m cfg-model/);
+  assert.match(r.log, /model_reasoning_effort=minimal/);
+  assert.doesNotMatch(r.log, /gpt-6-astra/);
+});
+
+test("the Orca terminal uses the model and reasoning effort from config/reviewer.json", () => {
+  const dir = repo();
+  const { script } = cfgTree({ codexModel: "cfg-model", codexReasoning: "minimal" });
+  const r = run(dir, ["orca", "codex"], { script });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /terminal create .*--command codex -m cfg-model -c model_reasoning_effort=minimal/);
+  assert.doesNotMatch(r.log, /gpt-6-astra/);
+});
+
+test("finds config/reviewer.json when launched through a symlink", () => {
+  const dir = repo();
+  const { script } = cfgTree({ codexModel: "link-model", codexReasoning: "minimal" });
+  const linkDir = mkdtempSync(path.join(tmpdir(), "rev-link-"));
+  const link = path.join(linkDir, "reviewer-link.sh");
+  symlinkSync(path.relative(linkDir, script), link); // relative target on purpose
+  const r = run(dir, ["codex"], { script: link });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /codex exec .*-m link-model/);
+  assert.match(r.log, /model_reasoning_effort=minimal/);
 });
 
 test("codex exec stays pinned when node is unavailable", () => {

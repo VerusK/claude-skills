@@ -35,7 +35,20 @@ command -v "$NODE_BIN" >/dev/null 2>&1 || { echo "node not found; Orca path disa
 # Codex model / reasoning effort: env > config/reviewer.json > hard defaults.
 # NB: without node the file cannot be parsed, so the codex path falls back to
 # env/defaults rather than losing the pinning altogether.
-CFG="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/config/reviewer.json"
+# Locate this script: BASH_SOURCE survives sourcing, and symlinks (including
+# relative ones, and chains of them) are followed before taking the dirname.
+SELF="${BASH_SOURCE[0]:-$0}"
+HOPS=0
+while [ -L "$SELF" ] && [ "$HOPS" -lt 40 ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK";;
+    *) SELF="$(dirname "$SELF")/$LINK";;
+  esac
+  HOPS=$(( HOPS + 1 ))
+done
+SELF_DIR="$(cd "$(dirname "$SELF")" 2>/dev/null && pwd -P)"
+CFG="${SELF_DIR:-.}/../config/reviewer.json"
 cfg_get() { # cfg_get <key> <default>
   local v=""
   if [ -n "$NODE_OK" ] && [ -f "$CFG" ]; then
