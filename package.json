@@ -9,6 +9,7 @@
     "sync": "node scripts/sync.mjs",
     "repatch": "node scripts/sync.mjs --repatch",
     "vendor-sdk": "node scripts/vendor-sdk.mjs",
+    "bump-version": "node scripts/bump-version.mjs",
     "install-skills": "node scripts/install.mjs",
     "uninstall-skills": "node scripts/install.mjs --uninstall"
   },

@@ -1,4 +1,4 @@
-.PHONY: install uninstall sync repatch vendor-sdk cleanup test deps
+.PHONY: install uninstall sync repatch vendor-sdk release cleanup test deps
 
 deps:
 	npm install --no-audit --no-fund
@@ -17,6 +17,13 @@ repatch:
 
 vendor-sdk:
 	node scripts/vendor-sdk.mjs
+
+release:
+	node scripts/bump-version.mjs $(BUMP)
+	npm install --package-lock-only --no-audit --no-fund
+	npm test
+	git commit -am "chore(release): $$(node -p "require('./package.json').version")"
+	claude plugin tag .
 
 cleanup:
 	bash scripts/cleanup.sh
