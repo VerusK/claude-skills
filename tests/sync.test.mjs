@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { parseSources, syncSource, repatch, readLock } from "../scripts/sync.mjs";
+import { parseSources, syncSource, repatch, readLock, summarize } from "../scripts/sync.mjs";
 
 function setupRoot() {
   const root = mkdtempSync(path.join(tmpdir(), "sync-"));
@@ -82,6 +82,10 @@ test("watch mode updates vendor only and returns a diff", async () => {
   assert.equal(r.changed, true);
   assert.match(r.diff, /-one/);
   assert.match(r.diff, /\+two/);
+  assert.match(r.diff, /a\/vendor\/f\.md/);
+  assert.match(r.diff, /b\/upstream\/f\.md/);
+  assert.ok(!r.diff.includes(tmpdir()), `diff leaked a temp path:\n${r.diff}`);
+  assert.ok(!r.diff.includes(root), `diff leaked the root path:\n${r.diff}`);
   assert.ok(!existsSync(path.join(root, "skills/w")));
   assert.equal(readFileSync(path.join(root, "vendor/w/f.md"), "utf8"), "two\n");
 });
@@ -94,4 +98,71 @@ test("repatch writes a diff when skills differ from vendor, removes it when iden
   const p = repatch(src, { root });
   assert.equal(p, path.join(root, "patches/demo.patch"));
   assert.match(readFileSync(p, "utf8"), /\+y/);
+});
+
+// --- fix round 1 -------------------------------------------------------------
+
+function binary(marker) {
+  return Buffer.concat([Buffer.from([0x00, 0x01, 0x02]), Buffer.from(marker), Buffer.from([0x00, 0xff])]);
+}
+
+test("lock entry records repo, ref, path, commit, hash and syncedAt", async () => {
+  const root = setupRoot();
+  await syncSource(src, { root, fetchSource: fetcher(upstream({ "skills/demo/SKILL.md": "v1\n" }), "aaa") });
+  const entry = readLock(root).demo;
+  assert.deepEqual(Object.keys(entry).sort(), ["commit", "hash", "path", "ref", "repo", "syncedAt"]);
+  assert.equal(entry.repo, "x/y");
+  assert.equal(entry.ref, "main");
+  assert.equal(entry.path, "skills/demo");
+  assert.equal(entry.commit, "aaa");
+  assert.match(entry.hash, /^[0-9a-f]{64}$/);
+  assert.ok(!Number.isNaN(Date.parse(entry.syncedAt)));
+});
+
+test("summarize reports conflicts and merge errors on separate lines", () => {
+  const out = summarize([
+    { name: "demo", commit: "abcdef1234", changed: true, conflicts: ["SKILL.md"], added: [], removed: [], kept: [], mergeErrors: [] },
+    { name: "bin", commit: "1234567890", changed: true, conflicts: [], added: [], removed: [], kept: ["logo.png"], mergeErrors: ["logo.png — Cannot merge binary files"] },
+  ]);
+  assert.match(out, /## demo — CONFLICTS \(abcdef1\)/);
+  assert.match(out, /- conflicts \(markers left in skills\/demo\): SKILL\.md/);
+  assert.match(out, /- merge error, local copy kept: logo\.png — Cannot merge binary files/);
+});
+
+test("summarize tolerates results without mergeErrors", () => {
+  const out = summarize([{ name: "x", commit: "0000000", changed: false, conflicts: [], added: [], removed: [], kept: [] }]);
+  assert.match(out, /## x — unchanged/);
+});
+
+test("unmergeable binary file is reported as a merge error and the local copy is kept", async () => {
+  const root = setupRoot();
+  const ours = binary("OURS");
+  await syncSource(src, { root, fetchSource: fetcher(upstream({ "skills/demo/bin.dat": binary("BASE") }), "a") });
+  writeFileSync(path.join(root, "skills/demo/bin.dat"), ours);
+  const r = await syncSource(src, { root, fetchSource: fetcher(upstream({ "skills/demo/bin.dat": binary("THEIRS") }), "b") });
+
+  assert.deepEqual(r.conflicts, []);
+  assert.equal(r.mergeErrors.length, 1);
+  assert.match(r.mergeErrors[0], /^bin\.dat — /);
+  assert.match(r.mergeErrors[0], /binary/i);
+  assert.deepEqual(r.kept, ["bin.dat"]);
+  assert.ok(readFileSync(path.join(root, "skills/demo/bin.dat")).equals(ours), "local copy must be left untouched");
+  assert.ok(readFileSync(path.join(root, "vendor/demo/bin.dat")).equals(binary("THEIRS")), "vendor must advance to upstream");
+});
+
+test("dangling symlinks in upstream are skipped instead of crashing the sync", async () => {
+  const root = setupRoot();
+  const up = upstream({ "skills/demo/SKILL.md": "s\n" });
+  symlinkSync("nowhere.md", path.join(up, "skills/demo/dead.md"));
+  const r = await syncSource(src, { root, fetchSource: fetcher(up, "a") });
+  assert.deepEqual(r.added, ["SKILL.md"]);
+  assert.equal(readFileSync(path.join(root, "skills/demo/SKILL.md"), "utf8"), "s\n");
+});
+
+test("vendor swap leaves no temporary directories behind", async () => {
+  const root = setupRoot();
+  await syncSource(src, { root, fetchSource: fetcher(upstream({ "skills/demo/SKILL.md": "v1\n" }), "a") });
+  await syncSource(src, { root, fetchSource: fetcher(upstream({ "skills/demo/SKILL.md": "v2\n" }), "b") });
+  assert.deepEqual(readdirSync(path.join(root, "vendor")), ["demo"]);
+  assert.equal(readFileSync(path.join(root, "vendor/demo/SKILL.md"), "utf8"), "v2\n");
 });

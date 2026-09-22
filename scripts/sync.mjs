@@ -3,7 +3,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, cpSync,
-  readdirSync, statSync, unlinkSync,
+  readdirSync, statSync, lstatSync, renameSync, unlinkSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -34,13 +34,21 @@ export function writeLock(root, lock) {
   writeFileSync(path.join(root, "sources.lock.json"), JSON.stringify(lock, null, 2) + "\n");
 }
 
+// Regular files only. `lstatSync` keeps a dangling symlink from throwing, and
+// symlinks/sockets/fifos/devices are not distro content, so they are skipped.
 function listFiles(dir, base = dir) {
   if (!existsSync(dir)) return [];
   const out = [];
   for (const entry of readdirSync(dir)) {
     const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...listFiles(full, base));
-    else out.push(path.relative(base, full));
+    let st;
+    try {
+      st = lstatSync(full);
+    } catch {
+      continue; // vanished between readdir and lstat
+    }
+    if (st.isDirectory()) out.push(...listFiles(full, base));
+    else if (st.isFile()) out.push(path.relative(base, full));
   }
   return out.sort();
 }
@@ -64,31 +72,56 @@ function copyFile(from, to) {
   cpSync(from, to);
 }
 
-// Returns number of conflicts (0 = clean). Writes result into `ours`.
+// Returns the number of conflicts (0 = clean merge) and writes the result into `ours`.
+// Throws when git could not merge at all — e.g. `error: Cannot merge binary files` exits
+// 255. Those are errors, not conflicts: nothing was written and no markers exist.
 function mergeFile(ours, base, theirs) {
-  const r = spawnSync("git", ["merge-file", "-L", "ours", "-L", "base", "-L", "upstream", ours, base, theirs]);
-  if (r.status === null || r.status < 0) throw new Error(`git merge-file failed: ${r.stderr}`);
+  const r = spawnSync("git", ["merge-file", "-L", "ours", "-L", "base", "-L", "upstream", ours, base, theirs], { encoding: "utf8" });
+  if (r.error) throw new Error(`git merge-file could not run: ${r.error.message}`);
+  const stderr = (r.stderr ?? "").trim();
+  const failed = r.status === null || r.status < 0 || r.status >= 128 || (r.status !== 0 && stderr.startsWith("error:"));
+  if (failed) throw new Error(stderr.replace(/^error:\s*/, "") || `git merge-file exited with status ${r.status}`);
   return r.status; // git returns the number of conflicts
 }
 
-function diffDirs(a, b) {
-  const r = spawnSync("git", ["diff", "--no-index", "--", a, b], { encoding: "utf8" });
-  return r.stdout ?? "";
+// Diff two trees through a scratch parent holding `vendor/` and `upstream/`, so the
+// headers read `a/vendor/<file>` / `b/upstream/<file>` instead of absolute temp paths.
+function diffDirs(vendorDir, stagedDir) {
+  const parent = mkdtempSync(path.join(tmpdir(), "sync-diff-"));
+  try {
+    cpSync(vendorDir, path.join(parent, "vendor"), { recursive: true });
+    cpSync(stagedDir, path.join(parent, "upstream"), { recursive: true });
+    const r = spawnSync("git", ["diff", "--no-index", "--", "vendor", "upstream"], { cwd: parent, encoding: "utf8" });
+    return r.stdout ?? "";
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
 }
 
 // Default fetcher: resolve ref to a commit, download tarball, extract.
+// Returns { dir, commit, cleanup } — `cleanup` removes the extracted tree, and
+// `syncSource` calls it once it is done with `dir`.
 export async function fetchFromGitHub(source) {
-  const ls = execFileSync("git", ["ls-remote", `https://github.com/${source.repo}.git`, source.ref], { encoding: "utf8" });
+  const ls = execFileSync("git", ["ls-remote", `https://github.com/${source.repo}.git`, source.ref], {
+    encoding: "utf8",
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
   const commit = ls.trim().split(/\s+/)[0] || source.ref;
   const work = mkdtempSync(path.join(tmpdir(), `skills-${source.name}-`));
-  const tar = path.join(work, "src.tar.gz");
-  const res = await fetch(`https://codeload.github.com/${source.repo}/tar.gz/${commit}`);
-  if (!res.ok) throw new Error(`download failed for ${source.repo}@${commit}: ${res.status}`);
-  writeFileSync(tar, Buffer.from(await res.arrayBuffer()));
-  const dir = path.join(work, "tree");
-  mkdirSync(dir);
-  execFileSync("tar", ["-xzf", tar, "-C", dir, "--strip-components=1"]);
-  return { dir, commit };
+  const cleanup = () => rmSync(work, { recursive: true, force: true });
+  try {
+    const tar = path.join(work, "src.tar.gz");
+    const res = await fetch(`https://codeload.github.com/${source.repo}/tar.gz/${commit}`);
+    if (!res.ok) throw new Error(`download failed for ${source.repo}@${commit}: ${res.status}`);
+    writeFileSync(tar, Buffer.from(await res.arrayBuffer()));
+    const dir = path.join(work, "tree");
+    mkdirSync(dir);
+    execFileSync("tar", ["-xzf", tar, "-C", dir, "--strip-components=1"]);
+    return { dir, commit, cleanup };
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
 }
 
 // Stage the upstream `path` into a fresh dir shaped like vendor/<name>.
@@ -103,57 +136,83 @@ function stageUpstream(source, fetched) {
 
 export async function syncSource(source, { root = REPO_ROOT, fetchSource = fetchFromGitHub } = {}) {
   const fetched = await fetchSource(source);
-  const staged = stageUpstream(source, fetched);
-  const vendorDir = path.join(root, "vendor", source.name);
-  const skillDir = path.join(root, "skills", source.name);
-  const result = { name: source.name, commit: fetched.commit, mode: source.mode, changed: false, conflicts: [], added: [], removed: [], kept: [] };
+  let staged = null;
+  try {
+    staged = stageUpstream(source, fetched);
+    const vendorDir = path.join(root, "vendor", source.name);
+    const skillDir = path.join(root, "skills", source.name);
+    const result = {
+      name: source.name, commit: fetched.commit, mode: source.mode, changed: false,
+      conflicts: [], mergeErrors: [], added: [], removed: [], kept: [],
+    };
 
-  const oldHash = existsSync(vendorDir) ? hashTree(vendorDir) : null;
-  const newHash = hashTree(staged);
-  result.changed = oldHash !== newHash;
+    const oldHash = existsSync(vendorDir) ? hashTree(vendorDir) : null;
+    const newHash = hashTree(staged);
+    result.changed = oldHash !== newHash;
 
-  if (source.mode === "watch") {
-    if (result.changed && oldHash) result.diff = diffDirs(vendorDir, staged);
-  } else {
-    const newFiles = listFiles(staged);
-    const oldFiles = listFiles(vendorDir);
-    for (const rel of newFiles) {
-      const theirs = path.join(staged, rel);
-      const base = path.join(vendorDir, rel);
-      const ours = path.join(skillDir, rel);
-      if (!existsSync(ours)) {
-        copyFile(theirs, ours);
-        result.added.push(rel);
-      } else if (!existsSync(base)) {
-        result.kept.push(rel); // local file with no upstream history: keep ours
-      } else if (sameContent(base, theirs)) {
-        // upstream unchanged
-      } else if (sameContent(base, ours)) {
-        copyFile(theirs, ours); // we never modified it
-      } else if (mergeFile(ours, base, theirs) > 0) {
-        result.conflicts.push(rel);
+    if (source.mode === "watch") {
+      if (result.changed && oldHash) result.diff = diffDirs(vendorDir, staged);
+    } else {
+      const newFiles = listFiles(staged);
+      const oldFiles = listFiles(vendorDir);
+      for (const rel of newFiles) {
+        const theirs = path.join(staged, rel);
+        const base = path.join(vendorDir, rel);
+        const ours = path.join(skillDir, rel);
+        if (!existsSync(ours)) {
+          copyFile(theirs, ours);
+          result.added.push(rel);
+        } else if (!existsSync(base)) {
+          result.kept.push(rel); // local file with no upstream history: keep ours
+        } else if (sameContent(base, theirs)) {
+          // upstream unchanged
+        } else if (sameContent(base, ours)) {
+          copyFile(theirs, ours); // we never modified it
+        } else {
+          try {
+            if (mergeFile(ours, base, theirs) > 0) result.conflicts.push(rel);
+          } catch (err) {
+            // git could not merge this file at all: leave our copy exactly as it is.
+            result.mergeErrors.push(`${rel} — ${err.message}`);
+            result.kept.push(rel);
+          }
+        }
+      }
+      for (const rel of oldFiles) {
+        if (newFiles.includes(rel)) continue;
+        const ours = path.join(skillDir, rel);
+        if (!existsSync(ours)) continue;
+        if (sameContent(path.join(vendorDir, rel), ours)) {
+          unlinkSync(ours);
+          result.removed.push(rel);
+        } else {
+          result.kept.push(rel);
+        }
       }
     }
-    for (const rel of oldFiles) {
-      if (newFiles.includes(rel)) continue;
-      const ours = path.join(skillDir, rel);
-      if (!existsSync(ours)) continue;
-      if (sameContent(path.join(vendorDir, rel), ours)) {
-        unlinkSync(ours);
-        result.removed.push(rel);
-      } else {
-        result.kept.push(rel);
-      }
+
+    // Swap vendor in one rename so an interrupted run never leaves a half-copied tree.
+    const tmpVendor = path.join(root, "vendor", `${source.name}.tmp-${process.pid}`);
+    mkdirSync(path.dirname(vendorDir), { recursive: true });
+    rmSync(tmpVendor, { recursive: true, force: true });
+    try {
+      cpSync(staged, tmpVendor, { recursive: true });
+      rmSync(vendorDir, { recursive: true, force: true });
+      renameSync(tmpVendor, vendorDir);
+    } catch (err) {
+      rmSync(tmpVendor, { recursive: true, force: true });
+      throw err;
     }
+
+    // Only once vendor really is the new tree does the lock get to claim it.
+    const lock = readLock(root);
+    lock[source.name] = { repo: source.repo, ref: source.ref, path: source.path, commit: fetched.commit, hash: newHash, syncedAt: new Date().toISOString() };
+    writeLock(root, lock);
+    return result;
+  } finally {
+    if (staged) rmSync(staged, { recursive: true, force: true });
+    await fetched?.cleanup?.();
   }
-
-  rmSync(vendorDir, { recursive: true, force: true });
-  cpSync(staged, vendorDir, { recursive: true });
-
-  const lock = readLock(root);
-  lock[source.name] = { repo: source.repo, ref: source.ref, path: source.path, commit: fetched.commit, hash: newHash, syncedAt: new Date().toISOString() };
-  writeLock(root, lock);
-  return result;
 }
 
 export function repatch(source, { root = REPO_ROOT } = {}) {
@@ -171,7 +230,7 @@ export function repatch(source, { root = REPO_ROOT } = {}) {
   return out;
 }
 
-function summarize(results) {
+export function summarize(results) {
   const lines = ["# Sync report", ""];
   for (const r of results) {
     const state = r.conflicts.length ? "CONFLICTS" : r.changed ? "updated" : "unchanged";
@@ -180,6 +239,7 @@ function summarize(results) {
     if (r.removed.length) lines.push(`- removed: ${r.removed.join(", ")}`);
     if (r.kept.length) lines.push(`- kept local (upstream deleted or unknown): ${r.kept.join(", ")}`);
     if (r.conflicts.length) lines.push(`- conflicts (markers left in skills/${r.name}): ${r.conflicts.join(", ")}`);
+    for (const e of r.mergeErrors ?? []) lines.push(`- merge error, local copy kept: ${e}`);
     if (r.diff) lines.push("", "```diff", r.diff.trim(), "```");
     lines.push("");
   }
@@ -206,15 +266,18 @@ async function main() {
       results.push(r);
       if (s.patch) repatch(s, { root: REPO_ROOT });
     } catch (err) {
-      results.push({ name: s.name, commit: "-", changed: false, conflicts: [`sync error: ${err.message}`], added: [], removed: [], kept: [] });
+      results.push({ name: s.name, commit: "-", changed: false, conflicts: [`sync error: ${err.message}`], mergeErrors: [], added: [], removed: [], kept: [] });
     }
   }
   const report = summarize(results);
   writeFileSync(path.join(REPO_ROOT, ".sync-report.md"), report);
   console.log(report);
-  process.exit(results.some((r) => r.conflicts.length) ? 1 : 0);
+  process.exitCode = results.some((r) => r.conflicts.length) ? 1 : 0;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main();
+  main().catch((e) => {
+    console.error(`sync failed: ${e.message}`);
+    process.exit(1);
+  });
 }
