@@ -131,3 +131,39 @@ test("the hook runs when started through a symlinked path", () => {
   assert.equal(JSON.parse(res.stdout).hookSpecificOutput.hookEventName, "SessionStart");
   assert.equal(readFileSync(pointerPath(home), "utf8"), ROOT + "\n");
 });
+
+function cacheDistro(base, agentDir, version) {
+  const root = path.join(base, agentDir, "plugins", "cache", "verus-skills", "verus-skills", version);
+  mkdirSync(path.join(root, "scripts"), { recursive: true });
+  writeFileSync(path.join(root, "scripts", "typesafe-judge.mjs"), "// stub\n");
+  writeFileSync(path.join(root, "USING.md"), "# routing\n\nuse the skills\n");
+  return root;
+}
+
+test("buildContext does not warn when both roots are plugin-cache copies", () => {
+  const base = tmp("cache-home-");
+  const claude = cacheDistro(base, ".claude", "0.2.0");
+  const codex = cacheDistro(base, ".codex", "0.2.0");
+  assert.doesNotMatch(buildContext(claude, codex), /two installs/);
+  assert.doesNotMatch(buildContext(codex, claude), /two installs/);
+  const older = cacheDistro(base, ".claude", "0.1.0");
+  assert.doesNotMatch(buildContext(claude, older), /two installs/);
+  assert.doesNotMatch(buildContext(older, claude), /two installs/);
+});
+
+test("buildContext warns when a checkout and a plugin-cache copy share the pointer", () => {
+  const base = tmp("cache-home-");
+  const cached = cacheDistro(base, ".claude", "0.2.0");
+  const checkout = fakeDistro();
+  assert.match(buildContext(cached, checkout), /two installs of this distro are active/);
+  assert.match(buildContext(checkout, cached), /two installs of this distro are active/);
+});
+
+test("buildContext matches the plugin cache on whole path segments only", () => {
+  const base = tmp("cache-home-");
+  const cached = cacheDistro(base, ".claude", "0.2.0");
+  const lookalike = path.join(base, "myplugins", "cache", "verus-skills-old", "verus-skills", "0.2.0");
+  mkdirSync(path.join(lookalike, "scripts"), { recursive: true });
+  writeFileSync(path.join(lookalike, "scripts", "typesafe-judge.mjs"), "// stub\n");
+  assert.match(buildContext(cached, lookalike), /two installs of this distro are active/);
+});

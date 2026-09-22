@@ -65,7 +65,7 @@ Outside the flow: `systematic-debugging`, `test-driven-development`, `verificati
 |---|---|
 | *(none)* | the branch diff against the merge base with `main` (or against a commit passed as the argument) |
 | `<paths\|globs>` | those tracked files, reviewed whole, no diff |
-| `all` | every tracked text file, minus `vendor/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles |
+| `all` | every tracked text file, minus `vendor/`, `vendor-node/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles |
 
 A **clean** working tree gives full mode: review → findings judged → at most one fix wave and one re-review; each round's report is committed as soon as it is written. In branch scope it then hands off to `finishing-a-development-branch`; path and codebase scope end with the summary. A **dirty** working tree gives report-only mode, so the skill is usable mid-task: findings are still judged and printed, but no fix subagent runs and nothing is committed.
 

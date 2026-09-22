@@ -47,6 +47,14 @@ const looksLikeDistro = (dir) => {
 // The plugin manager cannot consult the symlink install, so this is the only
 // place the two meet. A warning, not a refusal: our own root still wins the
 // pointer, because these are the skills the session actually loaded.
+// A plugin install lives under .../plugins/cache/verus-skills/ (one copy per agent and
+// version). Matched on whole path segments, so "myplugins/cache/verus-skills-old" is not one.
+const CACHE_SEGMENTS = ["plugins", "cache", "verus-skills"];
+const inPluginCache = (dir) => {
+  const parts = path.resolve(dir).split(path.sep);
+  return parts.some((_, i) => CACHE_SEGMENTS.every((seg, j) => parts[i + j] === seg));
+};
+
 export function buildContext(root, other = null) {
   let text;
   try {
@@ -54,8 +62,10 @@ export function buildContext(root, other = null) {
   } catch (err) {
     text = `verus-skills: could not read USING.md (${err.message})`;
   }
+  // Two plugin-cache copies (Claude Code and Codex, or an old version kept after an
+  // update) are one install; only a symlink checkout next to another root is a conflict.
   const warning =
-    other && other !== root && looksLikeDistro(other)
+    other && other !== root && looksLikeDistro(other) && !(inPluginCache(root) && inPluginCache(other))
       ? `WARNING: two installs of this distro are active — this session runs ${root}, while ${other} wrote the pointer file. Keep one: \`claude plugin uninstall verus-skills@verus-skills\`, or \`make uninstall\` run from ${other}.\n\n`
       : "";
   return `<EXTREMELY_IMPORTANT>\nYou have a personal skills distro.\n\n${warning}Distro root: ${root}\n\n${text}\n</EXTREMELY_IMPORTANT>`;

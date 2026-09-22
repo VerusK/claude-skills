@@ -85,7 +85,7 @@ else
   FILELIST="$(mktemp "${TMPDIR:-/tmp}/review-files.XXXXXX")"
   if [ "$KIND" = "codebase" ]; then
     git grep -Il '' -- . \
-      ':(exclude)vendor' ':(exclude)node_modules' ':(exclude)docs/reviews' \
+      ':(exclude)vendor' ':(exclude)vendor-node' ':(exclude)node_modules' ':(exclude)docs/reviews' \
       ':(exclude).superpowers' ':(exclude).context' \
       ':(exclude)*package-lock.json' ':(exclude)*yarn.lock' ':(exclude)*pnpm-lock.yaml' \
       ':(exclude)*Cargo.lock' ':(exclude)*poetry.lock' ':(exclude)*composer.lock' \
@@ -99,7 +99,7 @@ else
 fi
 ```
 
-`git grep -Il ''` lists tracked text files only, so binaries never reach the prompt. Codebase scope additionally excludes vendored and generated material — `vendor/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles — none of which is this repo's own code; path scope reviews exactly the paths the user named, with no exclusions.
+`git grep -Il ''` lists tracked text files only, so binaries never reach the prompt. Codebase scope additionally excludes vendored and generated material — `vendor/`, `vendor-node/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles — none of which is this repo's own code; path scope reviews exactly the paths the user named, with no exclusions.
 
 Mode depends on the working tree, ignoring this skill's and the launcher's own artifacts (`docs/reviews/`, `.context/`) — a report left behind by an earlier run must not flip the next run into report-only:
 

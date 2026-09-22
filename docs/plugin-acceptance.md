@@ -18,7 +18,7 @@ first, and remember where it came from so the Teardown can put it back.
 
    It prints `<checkout>/skills/kickoff`. Record `<checkout>`: ______
 
-   If it prints nothing, there is no symlink install. Skip steps 2–4 and step 16.
+   If it prints nothing, there is no symlink install. Skip steps 2–4 and step 17.
 
 2. Uninstall the symlink install from that checkout, then clear the pointer file it may have left behind. A stale pointer would make the plugin's first session report two installs.
 
@@ -51,8 +51,17 @@ Run these from the checkout under test.
 8. Start a new session. The context carries the `USING.md` routing block and a `Distro root:` line, and no `WARNING: two installs` line.
 9. `cat ~/.verus-skills/root` → an existing directory under `~/.claude/plugins/cache/verus-skills/verus-skills/<version>`.
 10. Run the locator snippet from `skills/kickoff/judge.md` in a shell call → `SKILLS_REPO` is that directory.
-11. `claude plugin details verus-skills@verus-skills` → lists all ten skills.
-12. Invoke the kickoff skill on a throwaway task → it announces itself and reaches its first question.
+11. Run the "Call the judge" block from `skills/kickoff/judge.md` in one shell call. Fill the placeholders with a trivial two-option question, for example "Name the throwaway branch `tmp-a` or `tmp-b`?", and append these two checks to the same call:
+
+    ```bash
+    [ -e "$SKILLS_REPO/node_modules" ] && echo "node_modules present" || echo "no node_modules"
+    [ -f "$SKILLS_REPO/scripts/reviewer.sh" ] && echo "reviewer.sh found" || echo "reviewer.sh missing"
+    ```
+
+    → `judge_exit=0`, `no node_modules` (so the judge loaded the vendored SDK from `vendor-node/`), and `reviewer.sh found`. Record `judge_exit`: ______
+
+12. `claude plugin details verus-skills@verus-skills` → lists all ten skills.
+13. Invoke the kickoff skill on a throwaway task → it announces itself and reaches its first question.
 
 Record: **does a bare skill name resolve inside the plugin, or is the `verus-skills:` prefix required?** ______
 
@@ -60,8 +69,8 @@ Record: **is the slash command `/kickoff` or `/verus-skills:kickoff`?** ______
 
 ## Codex
 
-13. Add the `[marketplaces.verus-skills]` and `[plugins."verus-skills@verus-skills"]` sections to `~/.codex/config.toml`, then start `codex`.
-14. The skills are listed, and `~/.verus-skills/root` points into `~/.codex/plugins/cache/`.
+14. Add the `[marketplaces.verus-skills]` and `[plugins."verus-skills@verus-skills"]` sections to `~/.codex/config.toml`, then start `codex`.
+15. The skills are listed, and `~/.verus-skills/root` points into `~/.codex/plugins/cache/`.
 
 Record: **did the inline `hooks` block in `.codex-plugin/plugin.json` fire the SessionStart hook?** ______
 
@@ -69,7 +78,7 @@ If it did not, the Codex install has no pointer file. Note it and open a follow-
 
 ## Teardown
 
-15. Remove the plugin install:
+16. Remove the plugin install:
 
     ```bash
     claude plugin uninstall verus-skills@verus-skills
@@ -79,7 +88,7 @@ If it did not, the Codex install has no pointer file. Note it and open a follow-
 
     Also drop the `[marketplaces.verus-skills]` and `[plugins."verus-skills@verus-skills"]` sections from `~/.codex/config.toml`. The symlink installer treats the plugin section alone as an install, and refuses while it is there.
 
-16. Restore the symlink install from the checkout recorded in step 1, not from the checkout under test. Running it from any other checkout re-points the symlinks there.
+17. Restore the symlink install from the checkout recorded in step 1, not from the checkout under test. Running it from any other checkout re-points the symlinks there.
 
     ```bash
     (cd <checkout> && make install)
