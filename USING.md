@@ -2,6 +2,8 @@
 
 You have a personal skills distro installed. Before responding to any task, check whether one of these applies and invoke it with the Skill tool; if there is even a small chance a skill applies, invoke it.
 
+Skills are named below without a prefix. Under the plugin install each one is addressed as `verus-skills:<name>` — `verus-skills:kickoff`, `verus-skills:review` and so on; under the symlink development install, by the bare name.
+
 ## The flow for any non-trivial change
 
 1. `kickoff` — always first for a new task: classifies (spike / bounded / architectural), interviews via a decision tree, auto-answers multiple-choice questions through the TypeSafe judge, writes the spec to `docs/specs/`.

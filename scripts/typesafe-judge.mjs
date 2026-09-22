@@ -8,13 +8,30 @@
 // exit 0 ok; exit 2 judge unavailable or invalid input (caller must ask the user).
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, "..");
 
 export function loadConfig(configPath = path.join(REPO_ROOT, "config", "judge.json")) {
   return JSON.parse(readFileSync(configPath, "utf8"));
+}
+
+export function vendoredSdkUrl(root = REPO_ROOT) {
+  const dir = path.join(root, "vendor-node", "@typesafe-ai", "sdk");
+  const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8"));
+  const entry = pkg.exports?.["."]?.import?.default ?? pkg.module ?? pkg.main;
+  if (!entry) throw new Error("vendored @typesafe-ai/sdk has no ESM entry");
+  return pathToFileURL(path.join(dir, entry)).href;
+}
+
+// node_modules exists in a development checkout and never in the plugin cache.
+export async function loadSdk(root = REPO_ROOT) {
+  try {
+    return await import("@typesafe-ai/sdk");
+  } catch {
+    return await import(vendoredSdkUrl(root));
+  }
 }
 
 export function validate(input) {
@@ -228,7 +245,7 @@ async function main() {
     process.exit(2);
   }
   try {
-    const { TypeSafeClient, choice, noul } = await import("@typesafe-ai/sdk");
+    const { TypeSafeClient, choice, noul } = await loadSdk();
     const client = new TypeSafeClient();
     const result = await judge(input, { client, choice, noul, threshold, sufficiencyThreshold });
     process.stdout.write(JSON.stringify(result) + "\n");

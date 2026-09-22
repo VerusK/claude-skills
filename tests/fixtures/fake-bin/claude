@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Fake claude CLI. Env knobs:
+#   FAKE_CLAUDE_PLUGINS=<text>  -> printed by `claude plugin list`
+if [ "$1" = "plugin" ] && [ "$2" = "list" ]; then
+  printf '%s\n' "${FAKE_CLAUDE_PLUGINS:-}"
+  exit 0
+fi
+exit 0

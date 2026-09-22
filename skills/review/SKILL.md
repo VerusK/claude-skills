@@ -85,7 +85,7 @@ else
   FILELIST="$(mktemp "${TMPDIR:-/tmp}/review-files.XXXXXX")"
   if [ "$KIND" = "codebase" ]; then
     git grep -Il '' -- . \
-      ':(exclude)vendor' ':(exclude)node_modules' ':(exclude)docs/reviews' \
+      ':(exclude)vendor' ':(exclude)vendor-node' ':(exclude)node_modules' ':(exclude)docs/reviews' \
       ':(exclude).superpowers' ':(exclude).context' \
       ':(exclude)*package-lock.json' ':(exclude)*yarn.lock' ':(exclude)*pnpm-lock.yaml' \
       ':(exclude)*Cargo.lock' ':(exclude)*poetry.lock' ':(exclude)*composer.lock' \
@@ -99,7 +99,7 @@ else
 fi
 ```
 
-`git grep -Il ''` lists tracked text files only, so binaries never reach the prompt. Codebase scope additionally excludes vendored and generated material — `vendor/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles — none of which is this repo's own code; path scope reviews exactly the paths the user named, with no exclusions.
+`git grep -Il ''` lists tracked text files only, so binaries never reach the prompt. Codebase scope additionally excludes vendored and generated material — `vendor/`, `vendor-node/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles — none of which is this repo's own code; path scope reviews exactly the paths the user named, with no exclusions.
 
 Mode depends on the working tree, ignoring this skill's and the launcher's own artifacts (`docs/reviews/`, `.context/`) — a report left behind by an earlier run must not flip the next run into report-only:
 
@@ -142,8 +142,11 @@ Say nothing about models or reasoning effort in the prompt — the launcher pins
 Substitute the real paths for the two placeholders before running:
 
 ```bash
-for d in "${CLAUDE_SKILL_DIR:-}" "$HOME/.claude/skills/review" "$HOME/.codex/skills/review"; do
-  [ -n "$d" ] && [ -e "$d/SKILL.md" ] && SKILLS_REPO="$(cd "$(dirname "$(realpath "$d")")/.." && pwd)" && break
+SKILLS_REPO=""
+for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
+         "$HOME/.claude/skills/review/../.." \
+         "$HOME/.codex/skills/review/../.."; do
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
 [ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO"
 
@@ -216,7 +219,7 @@ Stop after round 2.
 
 Report to the user: scope reviewed, rounds run, reviewer path used, findings fixed/rejected/asked, path of every report written (round 1 and, if it ran, round 2), and suite status.
 
-In branch scope and full mode, then say: "Review done. Using `finishing-a-development-branch`." and invoke it. Path scope, codebase scope and report-only mode end with the summary — there is no branch to finish.
+In branch scope and full mode, then say: "Review done. Using `finishing-a-development-branch`." and invoke `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin). Path scope, codebase scope and report-only mode end with the summary — there is no branch to finish.
 
 ## Rules
 

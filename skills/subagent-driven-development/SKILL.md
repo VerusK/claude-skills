@@ -414,8 +414,8 @@ The final whole-branch review is done by an external reviewer through the
 `review` skill. After the last task:
 
 1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
-2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
-3. `review` hands off to `finishing-a-development-branch` itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
+2. Invoke the `review` (`verus-skills:review` when installed as a plugin) skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
+3. `review` hands off to `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
 
 There is no second fix wave here; residual findings surface to your human
 partner when finishing-a-development-branch presents the options.
@@ -436,8 +436,7 @@ delete this plan's workspace (`rm -rf <workspace>`) — the git history is
 the record now. Sibling directories belong to other plans; leave them
 alone.
 
-`review` invokes finishing-a-development-branch itself; invoke it here only if
-`review` stopped without handing off.
+`review` invokes `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself; invoke it here only if `review` stopped without handing off.
 
 ## Common Rationalizations
 

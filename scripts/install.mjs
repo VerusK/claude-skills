@@ -10,7 +10,7 @@ export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url
 export const HOOK_MARKER = "scripts/session-start.mjs";
 const AGENTS_MARKER = "<!-- claude-skills-using -->";
 
-const USAGE = "usage: install.mjs [--home DIR] [--uninstall] [--skip-plugin]";
+const USAGE = "usage: install.mjs [--home DIR] [--uninstall] [--skip-plugin] [--force]";
 
 function isSymlink(p) {
   try { return lstatSync(p).isSymbolicLink(); } catch { return false; }
@@ -179,8 +179,38 @@ function uninstallSuperpowersPlugin() {
   }
 }
 
+export const PLUGIN_ID = "verus-skills@verus-skills";
+
+function claudePluginList() {
+  try {
+    return execFileSync("claude", ["plugin", "list"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return null;
+  }
+}
+
+function codexPluginConfig(home) {
+  try {
+    return readFileSync(path.join(home, ".codex", "config.toml"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+// The plugin ships the same skills and the same SessionStart hook, so running
+// both installs would double every skill and inject USING.md twice. Codex
+// declares its plugins in config.toml, which the claude CLI never reports, so
+// both sources are checked.
+export function pluginInstalled(home, run = claudePluginList, readCodex = codexPluginConfig) {
+  const claude = run();
+  if (typeof claude === "string" && claude.includes(PLUGIN_ID)) return "claude";
+  const codex = readCodex(home);
+  if (typeof codex === "string" && codex.includes(`[plugins."${PLUGIN_ID}"]`)) return "codex";
+  return null;
+}
+
 export function parseArgs(argv) {
-  const opts = { home: null, uninstall: false, skipPlugin: false };
+  const opts = { home: null, uninstall: false, skipPlugin: false, force: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--home") {
@@ -194,6 +224,8 @@ export function parseArgs(argv) {
       opts.uninstall = true;
     } else if (arg === "--skip-plugin") {
       opts.skipPlugin = true;
+    } else if (arg === "--force") {
+      opts.force = true;
     } else {
       return { error: `unknown option: ${arg}` };
     }
@@ -233,6 +265,18 @@ function main() {
       process.exitCode = 1;
       return;
     }
+  }
+
+  const installedFor = opts.uninstall || opts.force ? null : pluginInstalled(home);
+  if (installedFor) {
+    console.error(`${PLUGIN_ID} is installed (${installedFor}); the symlink install would duplicate every skill and inject USING.md twice`);
+    console.error(
+      installedFor === "codex"
+        ? `remove the [plugins."${PLUGIN_ID}"] section from ${path.join(home, ".codex", "config.toml")}   (or re-run with --force)`
+        : `run: claude plugin uninstall ${PLUGIN_ID}   (or re-run with --force)`,
+    );
+    process.exitCode = 1;
+    return;
   }
 
   if (opts.uninstall) {

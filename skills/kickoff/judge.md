@@ -3,7 +3,9 @@
 Use this whenever you are about to ask the user a question that has 2–6 concrete options.
 
 Every fenced block below is one shell call; the locator must be at the top of any
-block that uses `$SKILLS_REPO`.
+block that uses `$SKILLS_REPO`. It tries the pointer file the SessionStart hook
+writes (the plugin install), then the symlinks the installer creates (the
+development install), and validates each candidate before accepting it.
 
 ## Locate the repo (informational)
 
@@ -12,10 +14,13 @@ it to export `SKILLS_REPO` for a later block; variables do not survive between
 shell calls.
 
 ```bash
-for d in "${CLAUDE_SKILL_DIR:-}" "$HOME/.claude/skills/kickoff" "$HOME/.codex/skills/kickoff"; do
-  [ -n "$d" ] && [ -e "$d/SKILL.md" ] && SKILLS_REPO="$(cd "$(dirname "$(realpath "$d")")/.." && pwd)" && break
+SKILLS_REPO=""
+for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
+         "$HOME/.claude/skills/kickoff/../.." \
+         "$HOME/.codex/skills/kickoff/../.."; do
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
-[ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || echo "judge not found: SKILLS_REPO=$SKILLS_REPO"
+[ -n "$SKILLS_REPO" ] || echo "distro root not found"
 echo "SKILLS_REPO=$SKILLS_REPO"
 ```
 
@@ -25,10 +30,13 @@ This is the block you actually run: locator first, then the question, then the
 script — all in one call.
 
 ```bash
-for d in "${CLAUDE_SKILL_DIR:-}" "$HOME/.claude/skills/kickoff" "$HOME/.codex/skills/kickoff"; do
-  [ -n "$d" ] && [ -e "$d/SKILL.md" ] && SKILLS_REPO="$(cd "$(dirname "$(realpath "$d")")/.." && pwd)" && break
+SKILLS_REPO=""
+for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
+         "$HOME/.claude/skills/kickoff/../.." \
+         "$HOME/.codex/skills/kickoff/../.."; do
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
-[ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || echo "judge not found: SKILLS_REPO=$SKILLS_REPO"
+[ -n "$SKILLS_REPO" ] || echo "distro root not found"
 echo "SKILLS_REPO=$SKILLS_REPO"
 
 Q=$(mktemp)

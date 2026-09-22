@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
---- vendor/subagent-driven-development/SKILL.md	2026-09-22 12:12:10
-+++ skills/subagent-driven-development/SKILL.md	2026-09-22 16:01:21
+--- vendor/subagent-driven-development/SKILL.md	2026-09-22 18:01:01
++++ skills/subagent-driven-development/SKILL.md	2026-09-22 20:40:24
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -207,8 +207,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -residual load-bearing findings surface to your human partner when
 -finishing-a-development-branch presents the options.
 +1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
-+2. Invoke the `review` skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
-+3. `review` hands off to `finishing-a-development-branch` itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
++2. Invoke the `review` (`verus-skills:review` when installed as a plugin) skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
++3. `review` hands off to `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
  
 +There is no second fix wave here; residual findings surface to your human
 +partner when finishing-a-development-branch presents the options.
@@ -216,17 +216,16 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -484,7 +436,8 @@
+@@ -484,7 +436,7 @@
  the record now. Sibling directories belong to other plans; leave them
  alone.
  
 -Use superpowers:finishing-a-development-branch.
-+`review` invokes finishing-a-development-branch itself; invoke it here only if
-+`review` stopped without handing off.
++`review` invokes `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself; invoke it here only if `review` stopped without handing off.
  
  ## Common Rationalizations
  
-@@ -505,9 +458,9 @@
+@@ -505,9 +457,9 @@
  ```
  You: I'm using Subagent-Driven Development to execute this plan.
  
@@ -239,7 +238,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  [Create todos for all tasks]
  
  Task 1: Hook installation script
-@@ -559,10 +512,10 @@
+@@ -559,10 +511,10 @@
  ...
  
  [After all tasks]
@@ -253,8 +252,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +Done! review handed off to finishing-a-development-branch.
  ```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
---- vendor/subagent-driven-development/implementer-prompt.md	2026-09-22 12:12:10
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-09-22 12:26:05
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-09-22 18:01:01
++++ skills/subagent-driven-development/implementer-prompt.md	2026-09-22 18:01:01
 @@ -5,8 +5,7 @@
  ```
  Subagent (general-purpose):
@@ -275,8 +274,8 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
  
      ## Before Reporting Back: Self-Review
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
---- vendor/subagent-driven-development/re-review-prompt.md	2026-09-22 12:12:10
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-09-22 12:19:34
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-09-22 18:01:01
++++ skills/subagent-driven-development/re-review-prompt.md	2026-09-22 18:01:01
 @@ -10,8 +10,7 @@
  ```
  Subagent (general-purpose):
@@ -288,8 +287,8 @@ diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent
      You are re-reviewing one task's fix round. A previous review produced
      findings; an implementer has attempted to fix them. Your job is to
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
---- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 12:12:10
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 12:19:32
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 18:01:01
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 18:01:01
 @@ -10,8 +10,7 @@
  ```
  Subagent (general-purpose):

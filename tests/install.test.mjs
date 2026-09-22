@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readli
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { linkSkills, unlinkSkills, ensureHook, removeHook, ensureAgentsLine, removeAgentsLine, HOOK_MARKER, REPO_ROOT } from "../scripts/install.mjs";
+import { linkSkills, unlinkSkills, ensureHook, removeHook, ensureAgentsLine, removeAgentsLine, HOOK_MARKER, REPO_ROOT, pluginInstalled, parseArgs } from "../scripts/install.mjs";
 
 const TEMP_DIRS = [];
 // realpath, so a checkout under a symlinked $TMPDIR (macOS: /var -> /private/var)
@@ -27,7 +27,14 @@ function runInstaller(args, extraEnv = {}) {
   const sandboxHome = tmp("sandbox-home-");
   return spawnSync(process.execPath, [INSTALLER, ...args], {
     encoding: "utf8",
-    env: { ...process.env, HOME: sandboxHome, ...extraEnv },
+    env: {
+      ...process.env,
+      // the stub answers `claude plugin list`; the real CLI must never decide a test
+      PATH: `${path.join(REPO_ROOT, "tests", "fixtures", "fake-bin")}:${process.env.PATH}`,
+      FAKE_CLAUDE_PLUGINS: "",
+      HOME: sandboxHome,
+      ...extraEnv,
+    },
   });
 }
 
@@ -342,7 +349,13 @@ function runInstallerFrom(root, args) {
   const sandboxHome = tmp("sandbox-home-");
   return spawnSync(process.execPath, [path.join(root, "scripts", "install.mjs"), ...args], {
     encoding: "utf8",
-    env: { ...process.env, HOME: sandboxHome },
+    env: {
+      ...process.env,
+      // the stub answers `claude plugin list`; the real CLI must never decide a test
+      PATH: `${path.join(REPO_ROOT, "tests", "fixtures", "fake-bin")}:${process.env.PATH}`,
+      FAKE_CLAUDE_PLUGINS: "",
+      HOME: sandboxHome,
+    },
   });
 }
 
@@ -400,7 +413,7 @@ test("linkSkills still skips a foreign link that is not a distro checkout", () =
 });
 
 test("session-start.mjs prints a parseable SessionStart hook payload", () => {
-  const r = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [SESSION_START], { encoding: "utf8", env: { ...process.env, HOME: tmp("home-") } });
   assert.equal(r.status, 0, r.stderr);
   const payload = JSON.parse(r.stdout);
   assert.equal(payload.hookSpecificOutput.hookEventName, "SessionStart");
@@ -408,4 +421,67 @@ test("session-start.mjs prints a parseable SessionStart hook payload", () => {
   assert.equal(typeof ctx, "string");
   assert.ok(ctx.length > 100);
   assert.ok(ctx.includes(readFileSync(path.join(REPO_ROOT, "USING.md"), "utf8")));
+});
+
+test("parseArgs accepts --force", () => {
+  assert.equal(parseArgs(["--force"]).force, true);
+  assert.equal(parseArgs([]).force, false);
+});
+
+test("pluginInstalled recognises our plugin in either agent and ignores others", () => {
+  const none = () => null;
+  assert.equal(pluginInstalled("/h", () => "verus-skills@verus-skills  1.0.0  enabled", none), "claude");
+  assert.equal(pluginInstalled("/h", () => "superpowers@claude-plugins-official  6.3.0", none), null);
+  assert.equal(pluginInstalled("/h", none, none), null);
+  // Codex declares its plugins in config.toml; `claude plugin list` never sees them
+  const codex = '[plugins."verus-skills@verus-skills"]\nenabled = true\n';
+  assert.equal(pluginInstalled("/h", none, () => codex), "codex");
+  assert.equal(pluginInstalled("/h", none, () => '[plugins."superpowers@claude-plugins-official"]\nenabled = true\n'), null);
+});
+
+test("pluginInstalled reads the Codex config from the given home", () => {
+  const home = tmp("home-");
+  mkdirSync(path.join(home, ".codex"), { recursive: true });
+  writeFileSync(
+    path.join(home, ".codex", "config.toml"),
+    '[marketplaces.verus-skills]\nsource_type = "git"\n\n[plugins."verus-skills@verus-skills"]\nenabled = true\n',
+  );
+  assert.equal(pluginInstalled(home, () => null), "codex");
+  assert.equal(pluginInstalled(tmp("home-"), () => null), null);
+});
+
+test("the installer refuses when the plugin is installed, and installs with --force", () => {
+  const refused = runInstaller(["--home", tmp("home-")], {
+    FAKE_CLAUDE_PLUGINS: "verus-skills@verus-skills  1.0.0  enabled",
+  });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /verus-skills@verus-skills/);
+  assert.match(refused.stderr, /--force/);
+
+  const home = tmp("home-");
+  const forced = runInstaller(["--home", home, "--force"], {
+    FAKE_CLAUDE_PLUGINS: "verus-skills@verus-skills  1.0.0  enabled",
+  });
+  assert.equal(forced.status, 0);
+  assert.ok(existsSync(path.join(home, ".claude", "skills", "kickoff")));
+});
+
+test("the installer also refuses when only the Codex plugin is declared", () => {
+  const home = tmp("home-");
+  mkdirSync(path.join(home, ".codex"), { recursive: true });
+  writeFileSync(
+    path.join(home, ".codex", "config.toml"),
+    '[plugins."verus-skills@verus-skills"]\nenabled = true\n',
+  );
+  const res = runInstaller(["--home", home]);
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /codex/);
+  assert.match(res.stderr, /config\.toml/);
+});
+
+test("the installer proceeds when the plugin is not installed", () => {
+  const home = tmp("home-");
+  const res = runInstaller(["--home", home]);
+  assert.equal(res.status, 0);
+  assert.ok(existsSync(path.join(home, ".claude", "skills", "kickoff")));
 });

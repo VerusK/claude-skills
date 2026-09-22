@@ -1,6 +1,6 @@
 diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
---- vendor/writing-plans/SKILL.md	2026-09-22 12:12:09
-+++ skills/writing-plans/SKILL.md	2026-09-22 12:26:07
+--- vendor/writing-plans/SKILL.md	2026-09-22 18:01:01
++++ skills/writing-plans/SKILL.md	2026-09-22 20:40:24
 @@ -13,9 +13,9 @@
  
  **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
@@ -18,7 +18,7 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
  # [Feature Name] Implementation Plan
  
 -> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-+> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development to implement this plan task-by-task; the plan must have passed plan-review before execution. Steps use checkbox (`- [ ]`) syntax for tracking.
++> **For agentic workers:** REQUIRED SUB-SKILL: Use `subagent-driven-development` (`verus-skills:subagent-driven-development` when installed as a plugin) to implement this plan task-by-task; the plan must have passed plan-review before execution. Steps use checkbox (`- [ ]`) syntax for tracking.
  
  **Goal:** [One sentence describing what this builds]
  
@@ -52,4 +52,4 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
 -
 -**If Native chosen:**
 -- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
-+Then invoke the `plan-review` skill with the plan path. Do not start implementation before the plan review reports clean.
++Then invoke the `plan-review` (`verus-skills:plan-review` when installed as a plugin) skill with the plan path. Do not start implementation before the plan review reports clean.

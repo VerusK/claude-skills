@@ -64,7 +64,7 @@ Open-ended questions (no sensible options) are asked directly, one per message, 
 
 **Spike:** frame the question and the probe in 2–3 sentences, get a nod, investigate as cheaply as correctness allows, report a recommendation. Anything built is labeled throwaway. Stop.
 
-**Bounded:** after the tree is settled, present a short design in chat (approach, files touched, how to test) plus the Decisions list. STOP and wait for an explicit yes. Then hand off to `test-driven-development` for the change itself; no plan document.
+**Bounded:** after the tree is settled, present a short design in chat (approach, files touched, how to test) plus the Decisions list. STOP and wait for an explicit yes. Then hand off to `test-driven-development` (`verus-skills:test-driven-development` when installed as a plugin) for the change itself; no plan document.
 
 **Architectural:** after the tree is settled:
 
@@ -73,7 +73,7 @@ Open-ended questions (no sensible options) are asked directly, one per message, 
 3. Write the spec to `docs/specs/YYYY-MM-DD-<topic>-design.md` with these sections: Goal, Non-goals, Design (the approved sections), Testing, **Decisions** (every decision block, auto-accepted ones marked `auto`, user-answered ones marked `user`).
 4. Self-review the spec: no placeholders, no contradictions, one interpretation per requirement, scoped for a single plan. Fix inline.
 5. Commit the spec. Tell the user: "Spec written and committed to `<path>`. Review it; when approved I will write the plan with `writing-plans`."
-6. On approval invoke `writing-plans`. Invoke nothing else.
+6. On approval invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin). Invoke nothing else.
 
 ## 5. Reporting decisions
 

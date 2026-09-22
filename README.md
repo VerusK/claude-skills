@@ -2,12 +2,27 @@
 
 A personal skills distro for [Claude Code](https://docs.anthropic.com/claude-code) and [Codex](https://github.com/openai/codex): one opinionated workflow assembled from the best skills of several open-source collections, kept in sync with their upstreams, with local patches on top.
 
-## Why a distro instead of plugins
+## Two ways to install
 
-- **One flow, one place.** Skills from different authors are wired to call each other by name; the routing lives in `USING.md`, injected into every session by a SessionStart hook.
-- **Patched copies, not forks.** Upstream skills are vendored into `vendor/`, three-way merged into `skills/`, and our edits are recorded in `patches/`. A weekly GitHub Action opens a PR when upstream changes.
-- **Decisions by probability.** Multiple-choice questions are sent to the TypeSafe judge (Jev). High-confidence answers are accepted automatically and printed with their probabilities; low-confidence ones are asked.
-- **A second voice.** Plans and branches are reviewed by Codex (through Orca when available), never only by the agent that wrote them.
+The distro ships as the `verus-skills` plugin and also installs by symlink from a
+checkout. The plugin is the normal path: updates arrive through
+`claude plugin update`. The symlink install is the development path: edits in the
+checkout are live with no release. They are mutually exclusive — the symlink
+installer refuses to run while the plugin is installed, because both ship the
+same ten skills and the same SessionStart hook.
+
+- **One flow, one place.** Skills from different authors are wired to call each
+  other by name; the routing lives in `USING.md`, injected into every session by a
+  SessionStart hook. Under the plugin the skills are addressed
+  `verus-skills:<name>`; under the symlink install, by the bare name.
+- **Patched copies, not forks.** Upstream skills are vendored into `vendor/`,
+  three-way merged into `skills/`, and our edits are recorded in `patches/`. A
+  weekly GitHub Action opens a PR when upstream changes.
+- **Decisions by probability.** Multiple-choice questions are sent to the TypeSafe
+  judge (Jev). High-confidence answers are accepted automatically and printed with
+  their probabilities; low-confidence ones are asked.
+- **A second voice.** Plans and branches are reviewed by Codex (through Orca when
+  available), never only by the agent that wrote them.
 
 ## The flow
 
@@ -50,7 +65,7 @@ Outside the flow: `systematic-debugging`, `test-driven-development`, `verificati
 |---|---|
 | *(none)* | the branch diff against the merge base with `main` (or against a commit passed as the argument) |
 | `<paths\|globs>` | those tracked files, reviewed whole, no diff |
-| `all` | every tracked text file, minus `vendor/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles |
+| `all` | every tracked text file, minus `vendor/`, `vendor-node/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles |
 
 A **clean** working tree gives full mode: review → findings judged → at most one fix wave and one re-review; each round's report is committed as soon as it is written. In branch scope it then hands off to `finishing-a-development-branch`; path and codebase scope end with the summary. A **dirty** working tree gives report-only mode, so the skill is usable mid-task: findings are still judged and printed, but no fix subagent runs and nothing is committed.
 
@@ -78,6 +93,40 @@ Patches: `superpowers:*` references point at this distro's skill names, no git-w
 
 ## Install
 
+### As a plugin (recommended)
+
+```bash
+claude plugin marketplace add VerusK/claude-skills
+claude plugin install verus-skills@verus-skills
+```
+
+Then restart Claude Code. For Codex, add to `~/.codex/config.toml`:
+
+```toml
+[marketplaces.verus-skills]
+source_type = "git"
+source = "https://github.com/VerusK/claude-skills.git"
+
+[plugins."verus-skills@verus-skills"]
+enabled = true
+```
+
+Update with `claude plugin update verus-skills@verus-skills`.
+
+The plugin cannot uninstall another plugin, so if `superpowers` is still
+installed — its skills are vendored here — remove it yourself:
+
+```bash
+claude plugin uninstall superpowers@claude-plugins-official
+```
+
+The SessionStart hook writes the distro root to `~/.verus-skills/root`; the
+skills read that file to find `scripts/typesafe-judge.mjs` and
+`scripts/reviewer.sh`, because neither `CLAUDE_PLUGIN_ROOT` nor
+`CLAUDE_SKILL_DIR` reaches a skill's shell calls.
+
+### From a checkout (development)
+
 Requirements: Node 20+, git, `codex` CLI (logged in), optional Orca CLI, a TypeSafe API key.
 
 ```bash
@@ -94,6 +143,7 @@ make install ARGS="--skip-plugin"              # keep the superpowers plugin ins
 node scripts/install.mjs --home /tmp/sandbox   # install into another HOME (used by the tests)
 node scripts/install.mjs --skip-plugin         # same as make install ARGS="--skip-plugin"
 node scripts/install.mjs --uninstall           # same as make uninstall
+node scripts/install.mjs --force                # install the symlinks even though the plugin is installed
 ```
 
 Re-installing from a second checkout of this repo (a fresh clone, or the old one moved away) re-points the existing symlinks, SessionStart hook and `AGENTS.md` line at the new checkout and reports them as `re-pointed from <old checkout>`, instead of leaving duplicates behind.
@@ -148,11 +198,49 @@ Append to `sources.yaml`:
 
 Run `make sync`, edit `skills/my-skill/` if needed, `make repatch`, commit.
 
+## Release
+
+One version lives in `package.json`, `.claude-plugin/plugin.json`,
+`.codex-plugin/plugin.json` and the marketplace entry; a test fails if they
+disagree.
+
+```bash
+make release BUMP=patch    # or minor, major, or an explicit X.Y.Z
+```
+
+It refuses to start on a dirty tracked tree. It bumps the four manifests, lets
+npm rewrite `package-lock.json`, runs the suite, commits, and tags the release
+with `claude plugin tag`, which re-checks that `plugin.json` and the marketplace
+entry agree.
+
+It stops there. Nothing reaches `claude plugin update` until the tag is pushed,
+which stays a separate, deliberate step:
+
+```bash
+git push --follow-tags
+```
+
+The vendored TypeSafe SDK under `vendor-node/` is what the judge imports inside
+the plugin cache, where `node_modules` does not exist. After changing the
+dependency in `package.json`, run `npm install && make vendor-sdk` and commit the
+result; a test compares the vendored version against `package-lock.json`.
+
 ## Uninstall
 
 ```bash
 make uninstall   # removes symlinks, hook and AGENTS.md line
 ```
+
+For the plugin install:
+
+```bash
+claude plugin uninstall verus-skills@verus-skills
+claude plugin marketplace remove verus-skills
+rm -rf ~/.verus-skills
+```
+
+For Codex, also drop the `[marketplaces.verus-skills]` and
+`[plugins."verus-skills@verus-skills"]` sections from `~/.codex/config.toml`.
 
 ## License
 
