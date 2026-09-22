@@ -67,12 +67,21 @@ function optionLabel(o) {
 export const SUFFICIENCY_QUESTION =
   "Does the state contain enough concrete information to choose one option confidently, without guessing the user's intent?";
 
+// Without criteria the model picks its own bar for "enough"; these two anchor it.
+export const SUFFICIENCY_CRITERIA = {
+  true: "a stranger who sees only this state can name the option the facts require and point at the fact that decides it",
+  false: "choosing requires guessing the user's intent, or a fact that is not in the state",
+};
+
 export function buildQuestions(input, choice, noul) {
   const criteria = {};
   for (const o of input.options) {
     criteria[o.id] = o.description ? `${o.label}: ${o.description}` : o.label;
   }
-  return { answer: choice(input.question, criteria), sufficiency: noul(SUFFICIENCY_QUESTION) };
+  return {
+    answer: choice(input.question, criteria),
+    sufficiency: noul(SUFFICIENCY_QUESTION, SUFFICIENCY_CRITERIA),
+  };
 }
 
 // `recommended` is deliberately absent: telling Jev what Claude already picked turns
@@ -85,19 +94,32 @@ export function buildState(input) {
   };
 }
 
+// Two decimals turn 0.699 into "0.70" — a number that reads as accepted when it
+// was not. Near a threshold the third decimal is the one that carries the verdict.
+function fixed(value, threshold) {
+  if (!Number.isFinite(value)) return "—";
+  const near = Number.isFinite(threshold) && Math.abs(value - threshold) < 0.005;
+  return value.toFixed(near ? 3 : 2);
+}
+
 export function formatDecision(input, result) {
   const pct = (v) => `${Math.round((v ?? 0) * 100)}%`;
   const width = Math.max(...input.options.map((o) => optionLabel(o).length));
   const lines = input.options.map((o) => `  ${optionLabel(o).padEnd(width)}  ${pct(result.probabilities[o.id])}`);
+  // A result without a sufficiency reading (an older caller, a hand-built result)
+  // prints dashes rather than throwing, and is never labelled thin on no evidence.
+  const known = Number.isFinite(result.sufficiency) && Number.isFinite(result.sufficiencyThreshold);
   // "мало данных" names the reason a confident-looking pick was still not accepted.
-  const thin = result.sufficiency < result.sufficiencyThreshold;
+  const thin = known && result.sufficiency < result.sufficiencyThreshold;
   const verdict = result.accepted ? "принято автоматически" : `спросить пользователя${thin ? " (мало данных)" : ""}`;
+  const sufficiencyPct = Number.isFinite(result.sufficiency) ? pct(result.sufficiency) : "—";
+  const sufficiencyThreshold = Number.isFinite(result.sufficiencyThreshold) ? result.sufficiencyThreshold : "—";
   return [
     `Решение (Jev): ${input.question}`,
     ...lines,
     `  Рекомендация Claude: ${input.recommended || "—"}`,
-    `  Данных достаточно: ${pct(result.sufficiency)}`,
-    `  Выбрано: ${result.choice}, confidence ${result.confidence.toFixed(2)}, данных ${result.sufficiency.toFixed(2)}, порог ${result.threshold}/${result.sufficiencyThreshold} → ${verdict}`,
+    `  Данных достаточно: ${sufficiencyPct}`,
+    `  Выбрано: ${result.choice}, confidence ${fixed(result.confidence, result.threshold)}, данных ${fixed(result.sufficiency, result.sufficiencyThreshold)}, порог ${result.threshold}/${sufficiencyThreshold} → ${verdict}`,
   ].join("\n");
 }
 
@@ -179,7 +201,7 @@ async function main() {
     process.exit(2);
   }
   if (!Number.isFinite(threshold)) {
-    console.error("invalid threshold");
+    console.error("invalid threshold (flag or config/judge.json)");
     process.exit(2);
   }
   if (!(threshold > 0 && threshold <= 1)) {
@@ -187,7 +209,7 @@ async function main() {
     process.exit(2);
   }
   if (!Number.isFinite(sufficiencyThreshold)) {
-    console.error("invalid sufficiency");
+    console.error("invalid sufficiency (flag or config/judge.json)");
     process.exit(2);
   }
   if (!(sufficiencyThreshold > 0 && sufficiencyThreshold <= 1)) {

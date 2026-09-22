@@ -88,6 +88,17 @@ test("buildQuestions adds a sufficiency question", () => {
   assert.match(q.sufficiency.q, /without guessing the user's intent/);
 });
 
+test("buildQuestions anchors the sufficiency question to both outcomes", () => {
+  const q = buildQuestions(input, fakeChoice, fakeNoul);
+  // An unanchored noul lets Jev invent its own bar for "enough"; the two
+  // descriptions pin what a yes and a no each mean.
+  assert.deepEqual(Object.keys(q.sufficiency.criteria).sort(), ["false", "true"]);
+  assert.match(q.sufficiency.criteria.true, /stranger who sees only this state/);
+  assert.match(q.sufficiency.criteria.true, /point at the fact that decides it/);
+  assert.match(q.sufficiency.criteria.false, /guessing the user's intent/);
+  assert.match(q.sufficiency.criteria.false, /not in the state/);
+});
+
 test("buildState never leaks the recommendation to the judge", () => {
   const s = buildState(input);
   assert.equal("recommended" in s, false);
@@ -117,6 +128,39 @@ test("judge accepts above both thresholds", async () => {
   assert.equal(r.sufficiency, 0.71);
   assert.equal(r.sufficiencyThreshold, 0.6);
   assert.match(r.block, /Выбрано: A, confidence 0\.82, данных 0\.71, порог 0\.7\/0\.6 → принято автоматически/);
+});
+
+test("judge accepts when sufficiency exactly equals its threshold", async () => {
+  // The gate is `>=`: a value sitting exactly on the boundary passes, and the
+  // block prints three decimals so the reader can see it did not merely round there.
+  const r = await judge(
+    input,
+    deps(fakeClient({ type: "choice", choice: "A", confidence: 0.82, probabilities: { A: 0.9, B: 0.1 } }, { type: "noul", noul: 0.6 })),
+  );
+  assert.equal(r.sufficiency, 0.6);
+  assert.equal(r.accepted, true);
+  assert.match(r.block, /данных 0\.600, порог 0\.7\/0\.6 → принято автоматически/);
+  assert.doesNotMatch(r.block, /мало данных/);
+});
+
+test("judge sends a state without the recommendation end to end", async () => {
+  let seen;
+  const client = {
+    systemOne: async (req) => {
+      seen = req.state;
+      return {
+        answers: {
+          answer: { type: "choice", choice: "A", confidence: 0.82, probabilities: { A: 0.9, B: 0.1 } },
+          sufficiency: { type: "noul", noul: 0.71 },
+        },
+      };
+    },
+  };
+  const r = await judge(input, deps(client));
+  assert.equal("recommended" in seen, false);
+  assert.equal(JSON.stringify(seen).includes("recommended"), false);
+  // The recommendation still reaches the user, just not the judge.
+  assert.match(r.block, /Рекомендация Claude: A/);
 });
 
 test("judge rejects below threshold", async () => {
@@ -166,6 +210,58 @@ test("formatDecision prints a dash when Claude has no recommendation", () => {
     accepted: false,
   });
   assert.match(block, /Рекомендация Claude: —/);
+});
+
+test("formatDecision prints three decimals within 0.005 of a threshold", () => {
+  const block = formatDecision(input, {
+    choice: "A",
+    probabilities: { A: 0.82, B: 0.18 },
+    confidence: 0.699,
+    threshold: 0.7,
+    sufficiency: 0.598,
+    sufficiencyThreshold: 0.6,
+    accepted: false,
+  });
+  // Two decimals would print "0.70" and "0.60" — numbers that read as accepted.
+  assert.match(block, /confidence 0\.699, данных 0\.598/);
+});
+
+test("formatDecision keeps two decimals away from the thresholds", () => {
+  const block = formatDecision(input, {
+    choice: "A",
+    probabilities: { A: 0.82, B: 0.18 },
+    confidence: 0.82,
+    threshold: 0.7,
+    sufficiency: 0.71,
+    sufficiencyThreshold: 0.6,
+    accepted: true,
+  });
+  assert.match(block, /confidence 0\.82, данных 0\.71/);
+});
+
+test("formatDecision survives a missing sufficiency", () => {
+  for (const over of [{}, { sufficiency: 0.71 }, { sufficiencyThreshold: 0.6 }]) {
+    const block = formatDecision(input, {
+      choice: "A",
+      probabilities: { A: 0.82, B: 0.18 },
+      confidence: 0.82,
+      threshold: 0.7,
+      accepted: true,
+      ...over,
+    });
+    assert.match(block, /Данных достаточно: (—|71%)/);
+    // Nothing is known to be thin, so the tag must not appear.
+    assert.doesNotMatch(block, /мало данных/);
+  }
+  const bare = formatDecision(input, {
+    choice: "A",
+    probabilities: { A: 0.82, B: 0.18 },
+    confidence: 0.82,
+    threshold: 0.7,
+    accepted: true,
+  });
+  assert.match(bare, /Данных достаточно: —/);
+  assert.match(bare, /данных —, порог 0\.7\/—/);
 });
 
 test("judge throws when the SDK picks an id that is not an option", async () => {
@@ -254,7 +350,8 @@ test("CLI exits 2 on an unparsable threshold", () => {
   for (const args of [["--threshold", "abc"], ["--threshold"], ["--threshold="], ["--threshold=abc"]]) {
     const r = runCli({ args, env: { TYPESAFE_API_KEY: "dummy" } });
     assert.equal(r.status, 2, `args=${args.join(" ")}`);
-    assert.match(r.stderr, /invalid threshold/, `args=${args.join(" ")}`);
+    // The message names both places the value could have come from.
+    assert.match(r.stderr, /invalid threshold \(flag or config\/judge\.json\)/, `args=${args.join(" ")}`);
   }
 });
 
@@ -276,8 +373,9 @@ test("CLI exits 2 on a sufficiency outside (0,1]", () => {
 });
 
 test("CLI reads both --sufficiency spellings", () => {
-  // config/judge.json holds a valid sufficiencyThreshold, so an error about the
-  // flag's own value proves the flag was parsed rather than silently ignored.
+  // 0.9 is a valid value, so the run must get past both sufficiency checks and
+  // fail on the empty stdin instead: stderr mentioning `input.question` and never
+  // `sufficiency` is what proves each spelling was parsed rather than ignored.
   for (const args of [["--sufficiency=0.9"], ["--sufficiency", "0.9"]]) {
     const ok = runCli({ args, env: { TYPESAFE_API_KEY: "dummy" } });
     assert.equal(ok.status, 2, `args=${args.join(" ")}`);
@@ -290,7 +388,7 @@ test("CLI exits 2 on an unparsable sufficiency", () => {
   for (const args of [["--sufficiency", "abc"], ["--sufficiency"], ["--sufficiency="], ["--sufficiency=abc"]]) {
     const r = runCli({ args, env: { TYPESAFE_API_KEY: "dummy" } });
     assert.equal(r.status, 2, `args=${args.join(" ")}`);
-    assert.match(r.stderr, /invalid sufficiency/, `args=${args.join(" ")}`);
+    assert.match(r.stderr, /invalid sufficiency \(flag or config\/judge\.json\)/, `args=${args.join(" ")}`);
   }
 });
 

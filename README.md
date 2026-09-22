@@ -56,7 +56,7 @@ A **clean** working tree gives full mode: review → findings judged → at most
 
 ### Decisions and reviewers
 
-- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`) and the key is read from `TYPESAFE_API_KEY`. Every auto-accepted answer is printed in chat as a decision block with the options and their probabilities. When the judge is unavailable the script exits `2` and the skill asks the user instead of guessing.
+- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`, overridable with `--threshold`) and the key is read from `TYPESAFE_API_KEY`. A second gate guards against confidence built on a thin context: the judge also rates how well the supplied facts support any choice, and an answer is auto-accepted only when that sufficiency clears `sufficiencyThreshold` (default `0.6` in the same file, overridable with `--sufficiency`); otherwise the question goes to the user marked `(мало данных)`. Every auto-accepted answer is printed in chat as a decision block with the options, their probabilities and both numbers. When the judge is unavailable the script exits `2` and the skill asks the user instead of guessing.
 - The external reviewer is `scripts/reviewer.sh`: Orca-managed Codex when `orca status` answers, otherwise `codex exec`. If neither is available it exits `3` and the calling skill falls back to an unnamed background Claude subagent on `opus`.
 
 ## Skills

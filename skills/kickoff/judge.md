@@ -44,7 +44,7 @@ cat > "$Q" <<'JSON'
     "decisions": ["<already settled decision 1>", "..."],
     "facts": ["<repo fact with file path, e.g. 'package.json: type module, node>=20'>", "<short excerpt if it matters>"],
     "constraints": ["<user rule or hard constraint>"],
-    "consequences": {"A": "<what happens if A; when A is wrong>", "B": "..."}
+    "consequences": {"A": "<what concretely happens or breaks if A is chosen: file, behaviour, test>", "B": "<same shape, same specificity, same length>"}
   },
   "recommended": "A"
 }
@@ -62,7 +62,7 @@ node "$SKILLS_REPO/scripts/typesafe-judge.mjs" < "$Q"; echo "judge_exit=$?"
 ## Rules
 
 - Options must be mutually exclusive, and every option's `description` states the concrete consequence of taking it — not a restatement of the label.
-- `consequences.<id>` says when that option would be the **wrong** call. One entry per option id.
+- `consequences` is mechanical, not evaluative: one entry per option id; each names what concretely happens or breaks (file, behaviour, test) if that option is chosen — equal specificity and length for every id; no comparative or preference language ("better", "simpler", "recommended"). A `consequences` map that is detailed only for some options is a defect and the question must be rewritten before judging.
 - `facts` carries the evidence: file paths, exact settings, short excerpts. A question is judge-able only if `facts` alone would let a stranger pick. If you cannot write such a `facts` list, the question is not judge-able: ask the user directly.
 - `decisions` accumulates across rounds of the same interview: every answer already settled goes in, so later questions are judged against the design as it stands.
 - `constraints` holds the user's rules and the hard limits; `goal` is one sentence.
