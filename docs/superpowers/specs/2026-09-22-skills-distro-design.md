@@ -81,7 +81,7 @@ Spike-путь и bounded-путь сохраняются из brainstorming: sp
 - Все ссылки `superpowers:<name>` заменяются на наши имена (`superpowers:brainstorming` → `kickoff`, `superpowers:requesting-code-review` → `branch-review`).
 - Шаг `using-git-worktrees` удаляется из `subagent-driven-development` и `writing-plans`: работа всегда идёт в worktree Orca.
 - В `subagent-driven-development` финальный ревьюер заменяется вызовом `branch-review`; задачные ревью после каждой задачи остаются на Claude-сабагентах.
-- Во все места, где запускаются сабагенты, добавляется правило `model: opus` (правило пользователя из глобальной памяти).
+- Во все места, где запускаются сабагенты, добавляется правило `model: opus` (правило пользователя из глобальной памяти) и правило «сабагенты запускаются без имени, в фоне, не как именованные teammates с отдельными окнами; пользователь читает только итоговую сводку».
 - Пути `docs/superpowers/specs/` → `docs/specs/`, `docs/superpowers/plans/` → `docs/plans/`.
 - Шапка плана в `writing-plans` ссылается на `subagent-driven-development` без префикса и убирает `executing-plans`.
 

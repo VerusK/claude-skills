@@ -15,6 +15,7 @@
 - Node `>= 20`; no dependencies beyond `@typesafe-ai/sdk` and `yaml`.
 - Skills live one level deep: `skills/<name>/SKILL.md`. No nested skill dirs.
 - Subagents dispatched by any skill in this repo use `model: opus` (user's global rule).
+- Subagents are dispatched unnamed and in the background (never as named teammates that open their own windows); the controller only collects their reports.
 - Auto-accepting an answer without a successful judge call is forbidden; judge failure (exit 2) always falls back to asking the user.
 - `reviewer.sh` exit codes: `0` report written, `3` no external reviewer available, `1` usage error.
 - Spec paths: specs go to `docs/specs/`, plans to `docs/plans/` (patched into vendored skills).
@@ -890,6 +891,7 @@ test("SDD final review routes to branch-review and every prompt pins opus", () =
   const sdd = readFileSync(path.join(root, "subagent-driven-development/SKILL.md"), "utf8");
   assert.match(sdd, /branch-review/);
   assert.doesNotMatch(sdd, /using-git-worktrees/);
+  assert.match(sdd, /unnamed/);
   for (const f of ["implementer-prompt.md", "task-reviewer-prompt.md", "re-review-prompt.md"]) {
     assert.match(readFileSync(path.join(root, "subagent-driven-development", f), "utf8"), /model: opus/);
   }
@@ -946,6 +948,13 @@ Then:
 Every subagent dispatched by this skill uses `model: opus`. This is a user rule
 for this machine: implementers, task reviewers, re-reviewers and the final
 reviewer all run on the Opus tier. Always pass the model explicitly.
+
+Dispatch subagents unnamed and in the background: never give them a `name`
+or turn them into named teammates, because every named agent opens its own
+window on this machine. The user does not watch subagents work; you collect
+their reports. For fix rounds, resume the agent by the id the dispatch
+returned, or dispatch a fresh unnamed implementer with the brief and report
+file paths.
 ```
 4. Replace the `## Final Review` section with:
 ```markdown
@@ -1080,7 +1089,7 @@ When in doubt, take the heavier path. Hidden complexity found later upgrades the
 
 Before asking anything, read: repo layout, docs, recent commits, existing specs in
 `docs/specs/`. Any question that a file or command can answer is never asked;
-dispatch an Explore subagent (`model: opus`) for broad lookups and keep asking
+dispatch an unnamed Explore subagent (`model: opus`, background) for broad lookups and keep asking
 the rest of the frontier meanwhile.
 
 ## 3. The decision tree
@@ -1513,7 +1522,7 @@ echo "reviewer_exit=$?"
 ```
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
-- `3`: dispatch a Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it.
+- `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it.
 - `1`: fix the invocation; do not proceed.
 
 ## 3. Triage findings
@@ -1681,7 +1690,7 @@ bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPOR
 echo "reviewer_exit=$?"
 ```
 
-Exit `3` → dispatch a Claude subagent (`general-purpose`, `model: opus`) with the prompt content and the instruction to write `REPORT`.
+Exit `3` → dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the prompt content and the instruction to write `REPORT`.
 
 ## 3. Triage
 
@@ -1691,7 +1700,7 @@ For each finding under `## Findings (confidence 7+)`, most severe first, build a
 
 ## 4. Fix wave
 
-Collect every accepted finding into one list and dispatch ONE fix subagent (`general-purpose`, `model: opus`): give it the list, the spec path, the repo test command, and the rule "fix all, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
+Collect every accepted finding into one list and dispatch ONE unnamed background fix subagent (`general-purpose`, `model: opus`): give it the list, the spec path, the repo test command, and the rule "fix all, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
 
 Append to `PLAN`:
 
@@ -1765,7 +1774,7 @@ Whenever a skill auto-accepts an answer via the TypeSafe judge, the decision blo
 
 ## Rules
 
-- Subagents use `model: opus`.
+- Subagents use `model: opus`, are dispatched unnamed and in the background; never as named teammates with their own windows. The user reads your summary, not the subagents.
 - Work in the current checkout; never create git worktrees.
 - User instructions (CLAUDE.md, AGENTS.md, direct requests) override skills.
 ```
