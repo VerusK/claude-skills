@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadLocal, redact, resolveApiKey, resolveJudgeModel } from "./config.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, "..");
@@ -140,11 +141,12 @@ export function formatDecision(input, result) {
   ].join("\n");
 }
 
-export async function judge(input, { client, choice, noul, threshold, sufficiencyThreshold }) {
+export async function judge(input, { client, choice, noul, threshold, sufficiencyThreshold, model }) {
   validate(input);
   const response = await client.systemOne({
     state: buildState(input),
     questions: buildQuestions(input, choice, noul),
+    ...(typeof model === "string" && model.trim() ? { model } : {}),
   });
   const a = response?.answers?.answer;
   const s = response?.answers?.sufficiency;
@@ -180,6 +182,28 @@ export async function judge(input, { client, choice, noul, threshold, sufficienc
 // Reads --<name> <n> and --<name>=<n>; returns null when the flag is absent
 // (the caller then falls back to config/judge.json). Any other --<name>* spelling
 // is a typo, not a silent no-op.
+export function failureMessage(err, apiKey) {
+  return `judge failed: ${redact(err.message, apiKey)}`;
+}
+
+// The SDK's own logger prints info/debug to stdout (breaking the one-line JSON contract)
+// and debug-logs request/response data; this one keeps every line on stderr, key redacted.
+function logArg(a) {
+  if (typeof a === "string") return a;
+  if (a instanceof Error) return a.message;
+  try {
+    return JSON.stringify(a) ?? String(a);
+  } catch {
+    return String(a);
+  }
+}
+
+export function redactingLogger(apiKey, write = (line) => process.stderr.write(line + "\n")) {
+  const at = (level) => (...args) =>
+    write(`[typesafe-sdk ${level}] ${redact(args.map(logArg).join(" "), apiKey).replace(/[\r\n]+/g, " ")}`);
+  return { debug: at("debug"), info: at("info"), warn: at("warn"), error: at("error") };
+}
+
 export function parseNumberArg(args, name) {
   const flag = `--${name}`;
   let raw;
@@ -233,8 +257,21 @@ async function main() {
     console.error("sufficiency must be in (0,1]");
     process.exit(2);
   }
-  if (!process.env.TYPESAFE_API_KEY) {
-    console.error("TYPESAFE_API_KEY is not set; judge unavailable");
+  let apiKey;
+  let model;
+  try {
+    const local = loadLocal();
+    if (local?.insecure && local.data.typesafe?.apiKey) {
+      console.error("warning: ~/.verus-skills/config.json is readable by group or others; chmod 600 it");
+    }
+    apiKey = resolveApiKey(process.env);
+    model = resolveJudgeModel(process.env);
+  } catch (err) {
+    console.error(`judge failed: ${err.message}`); // config.mjs errors never carry values
+    process.exit(2);
+  }
+  if (!apiKey) {
+    console.error("TypeSafe API key not found (TYPESAFE_API_KEY or ~/.verus-skills/config.json); judge unavailable");
     process.exit(2);
   }
   let input;
@@ -246,11 +283,14 @@ async function main() {
   }
   try {
     const { TypeSafeClient, choice, noul } = await loadSdk();
-    const client = new TypeSafeClient();
-    const result = await judge(input, { client, choice, noul, threshold, sufficiencyThreshold });
+    // SDK logging is off unless TYPESAFE_LOG_LEVEL asks for it; then it goes to stderr, redacted.
+    // Its default logger would write info/debug to stdout (breaking the JSON) and debug-logs error bodies.
+    const logLevel = process.env.TYPESAFE_LOG_LEVEL?.trim() || "off";
+    const client = new TypeSafeClient({ apiKey, logLevel, logger: redactingLogger(apiKey) });
+    const result = await judge(input, { client, choice, noul, threshold, sufficiencyThreshold, model });
     process.stdout.write(JSON.stringify(result) + "\n");
   } catch (err) {
-    console.error(`judge failed: ${err.message}`);
+    console.error(failureMessage(err, apiKey));
     process.exit(2);
   }
 }

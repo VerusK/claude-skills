@@ -44,11 +44,14 @@ test("the vendored copy really exports TypeSafeClient and choice", async () => {
 test("loadSdk resolves the vendored copy when node_modules is absent", () => {
   // The plugin cache is exactly this: our files, no node_modules. Calling
   // loadSdk() directly is the only way to reach the fallback — running the judge
-  // would exit at its TYPESAFE_API_KEY guard before the import, and a dummy key
+  // would exit at its API-key guard before the import, and a dummy key
   // would drive a live API call.
   const root = tmp("no-node-modules-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
   cpSync(path.join(REPO_ROOT, "scripts", "typesafe-judge.mjs"), path.join(root, "scripts", "typesafe-judge.mjs"));
+  cpSync(path.join(REPO_ROOT, "scripts", "config.mjs"), path.join(root, "scripts", "config.mjs"));
+  mkdirSync(path.join(root, "config"), { recursive: true });
+  cpSync(path.join(REPO_ROOT, "config", "models.json"), path.join(root, "config", "models.json"));
   cpSync(path.join(REPO_ROOT, "vendor-node"), path.join(root, "vendor-node"), { recursive: true });
   const judge = pathToFileURL(path.join(root, "scripts", "typesafe-judge.mjs")).href;
   const res = spawnSync(
@@ -86,7 +89,7 @@ test("vendoredSdkUrl throws a named error when the vendored ESM entry is gone", 
 
 test("the judge exits 2 with a judge failed: line when no SDK can be loaded at all", () => {
   // scripts/ and config/ copied, vendor-node/ deliberately absent. The key must be
-  // non-empty: main() exits at its TYPESAFE_API_KEY guard with a different message
+  // non-empty: main() exits at its API-key guard with a different message
   // before it ever reaches loadSdk(). loadSdk then throws ENOENT, offline.
   const root = tmp("broken-root-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
@@ -95,6 +98,9 @@ test("the judge exits 2 with a judge failed: line when no SDK can be loaded at a
   // The real config, so every threshold main() validates is present and the run
   // reaches loadSdk() rather than failing on config first.
   cpSync(path.join(REPO_ROOT, "config", "judge.json"), path.join(root, "config", "judge.json"));
+  // The judge imports ./config.mjs and reads config/models.json before loadSdk().
+  cpSync(path.join(REPO_ROOT, "scripts", "config.mjs"), path.join(root, "scripts", "config.mjs"));
+  cpSync(path.join(REPO_ROOT, "config", "models.json"), path.join(root, "config", "models.json"));
   const res = spawnSync(process.execPath, [path.join(root, "scripts", "typesafe-judge.mjs")], {
     encoding: "utf8",
     input: JSON.stringify({
@@ -103,7 +109,7 @@ test("the judge exits 2 with a judge failed: line when no SDK can be loaded at a
       context: "c",
       recommended: "A",
     }),
-    env: { ...process.env, TYPESAFE_API_KEY: "dummy" },
+    env: { ...process.env, TYPESAFE_API_KEY: "dummy", HOME: tmp("vendor-home-") },
   });
   assert.equal(res.status, 2);
   assert.match(res.stderr, /judge failed:/);

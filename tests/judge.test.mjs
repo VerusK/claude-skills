@@ -1,11 +1,20 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { judge, validate, buildState, buildQuestions, formatDecision } from "../scripts/typesafe-judge.mjs";
+import { judge, validate, buildState, buildQuestions, formatDecision, failureMessage, redactingLogger } from "../scripts/typesafe-judge.mjs";
+
+const TEMP_DIRS = [];
+function tmp(prefix) {
+  const d = realpathSync(mkdtempSync(path.join(tmpdir(), prefix)));
+  TEMP_DIRS.push(d);
+  return d;
+}
+after(() => { for (const d of TEMP_DIRS) rmSync(d, { recursive: true, force: true }); });
 
 const input = {
   question: "Where to store the API key?",
@@ -302,26 +311,30 @@ test("judge throws when sufficiency is missing or out of range", async () => {
   }
 });
 
-// --- CLI: every run below is offline. Either TYPESAFE_API_KEY is absent (the script
-// exits before importing the SDK) or stdin is invalid (judge() validates before it
-// calls the client), so no test can reach the TypeSafe API.
+// --- CLI: every run gets a throwaway HOME, so ~/.verus-skills is never the user's,
+// and an env stripped of the user's TypeSafe key, model, endpoint and log level.
+// A run that gets past the key guard talks only to the local fake server below;
+// no test can reach the TypeSafe API.
 const SCRIPT = fileURLToPath(new URL("../scripts/typesafe-judge.mjs", import.meta.url));
 
-function runCli({ args = [], stdin = "{}", env = {}, cwd } = {}) {
-  // Strip the real key from the inherited env so a test can never authenticate.
-  const { TYPESAFE_API_KEY, ...clean } = process.env;
+function cliEnv(env = {}, home) {
+  const { TYPESAFE_API_KEY, TYPESAFE_DEFAULT_MODEL, TYPESAFE_BASE_URL, TYPESAFE_LOG_LEVEL, ...clean } = process.env;
+  return { ...clean, HOME: home ?? tmp("judge-home-"), ...env };
+}
+
+function runCli({ args = [], stdin = "{}", env = {}, cwd, home } = {}) {
   return spawnSync(process.execPath, [cwd ? path.join(cwd, "scripts", "typesafe-judge.mjs") : SCRIPT, ...args], {
     input: stdin,
     encoding: "utf8",
     timeout: 20000,
-    env: { ...clean, ...env },
+    env: cliEnv(env, home),
   });
 }
 
-test("CLI exits 2 when TYPESAFE_API_KEY is missing", () => {
+test("CLI exits 2 when no key is set anywhere, naming both places", () => {
   const r = runCli({});
   assert.equal(r.status, 2);
-  assert.match(r.stderr, /TYPESAFE_API_KEY is not set/);
+  assert.match(r.stderr, /TypeSafe API key not found \(TYPESAFE_API_KEY or ~\/\.verus-skills\/config\.json\); judge unavailable/);
 });
 
 test("CLI exits 2 on a threshold outside (0,1]", () => {
@@ -416,9 +429,213 @@ test("CLI exits 2 when config/judge.json is missing", (t) => {
   const dir = realpathSync(mkdtempSync(path.join(tmpdir(), "judge-noconfig-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(path.join(dir, "scripts"), { recursive: true });
+  mkdirSync(path.join(dir, "config"), { recursive: true });
   copyFileSync(SCRIPT, path.join(dir, "scripts", "typesafe-judge.mjs"));
+  // The judge imports ./config.mjs and reads config/models.json; without them it would
+  // fail at module loading, before the judge.json read this test is about.
+  copyFileSync(path.join(path.dirname(SCRIPT), "config.mjs"), path.join(dir, "scripts", "config.mjs"));
+  copyFileSync(path.join(path.dirname(SCRIPT), "..", "config", "models.json"), path.join(dir, "config", "models.json"));
   const r = runCli({ cwd: dir, env: { TYPESAFE_API_KEY: "dummy" } });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /judge failed:/);
+  assert.match(r.stderr, /judge\.json/);
+  assert.doesNotMatch(r.stderr, /config\.mjs|ERR_MODULE_NOT_FOUND/);
   assert.doesNotMatch(r.stderr, /^\s+at /m);
+});
+
+const JUDGE_SECRET = "ts_DUMMY_SECRET_123";
+const JUDGE_INPUT = JSON.stringify({ question: "q", options: [{ id: "A", label: "a" }, { id: "B", label: "b" }], context: "c", recommended: "A" });
+// The body POST /v1/systemone answers with (vendor-node/@typesafe-ai/sdk: systemOne returns it as parsed).
+const OK_REPLY = {
+  status: 200,
+  json: {
+    answers: {
+      answer: { type: "choice", choice: "A", confidence: 0.9, probabilities: { A: 0.9, B: 0.1 } },
+      sufficiency: { type: "noul", noul: 0.9 },
+    },
+  },
+};
+
+function judgeHome(local, mode = 0o600) {
+  const h = tmp("judge-home-");
+  if (local !== undefined) {
+    mkdirSync(path.join(h, ".verus-skills"), { recursive: true });
+    const f = path.join(h, ".verus-skills/config.json");
+    writeFileSync(f, typeof local === "string" ? local : JSON.stringify(local));
+    chmodSync(f, mode);
+  }
+  return h;
+}
+
+// A local stand-in for the TypeSafe API on 127.0.0.1: records every request and
+// answers each one with `reply` ({ status, json }).
+async function fakeTypeSafe(reply) {
+  const seen = [];
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (d) => { body += d; });
+    req.on("end", () => {
+      seen.push({ method: req.method, url: req.url, authorization: req.headers.authorization, body: JSON.parse(body) });
+      res.writeHead(reply.status, { "content-type": "application/json" });
+      res.end(JSON.stringify(reply.json));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    url: `http://127.0.0.1:${server.address().port}`,
+    seen,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+// Asynchronous on purpose: spawnSync would block this process, and with it the fake server.
+function runCliAsync({ stdin = JUDGE_INPUT, env = {}, home } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [SCRIPT], { env: cliEnv(env, home) });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => child.kill(), 20000);
+    child.stdout.on("data", (d) => { stdout += d; });
+    child.stderr.on("data", (d) => { stderr += d; });
+    child.on("error", reject);
+    child.on("close", (status) => { clearTimeout(timer); resolve({ status, stdout, stderr }); });
+    child.stdin.end(stdin);
+  });
+}
+
+test("judge passes an explicit model to systemOne and omits it otherwise", async () => {
+  const seen = [];
+  const client = {
+    systemOne: async (req) => {
+      seen.push(req);
+      return {
+        answers: {
+          answer: { type: "choice", choice: "A", confidence: 0.82, probabilities: { A: 0.9, B: 0.1 } },
+          sufficiency: { type: "noul", noul: 0.71 },
+        },
+      };
+    },
+  };
+  const withModel = await judge(input, deps(client, { model: "jev-test" }));
+  const without = await judge(input, deps(client));
+  assert.equal(withModel.choice, "A");
+  assert.equal(without.choice, "A");
+  assert.equal(seen[0].model, "jev-test");
+  assert.equal("model" in seen[1], false);
+});
+
+test("CLI sends the local key and the resolved model to TypeSafe and prints the result", async (t) => {
+  const api = await fakeTypeSafe(OK_REPLY);
+  t.after(api.close);
+  // Only the local file holds a key; the environment has none.
+  const home = judgeHome({ typesafe: { apiKey: JUDGE_SECRET }, judge: { model: "jev-local" } });
+  const r = await runCliAsync({ home, env: { TYPESAFE_BASE_URL: api.url } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(api.seen.length, 1);
+  assert.equal(api.seen[0].method, "POST");
+  assert.equal(api.seen[0].url, "/v1/systemone");
+  assert.equal(api.seen[0].authorization, `Bearer ${JUDGE_SECRET}`);
+  assert.equal(api.seen[0].body.model, "jev-local");
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.choice, "A");
+  assert.equal(out.accepted, true);
+  assert.ok(!r.stdout.includes(JUDGE_SECRET) && !r.stderr.includes(JUDGE_SECRET));
+});
+
+test("CLI: env key and env model win over the local file in the real request", async (t) => {
+  const api = await fakeTypeSafe(OK_REPLY);
+  t.after(api.close);
+  const home = judgeHome({ typesafe: { apiKey: JUDGE_SECRET }, judge: { model: "jev-local" } });
+  const r = await runCliAsync({
+    home,
+    env: { TYPESAFE_BASE_URL: api.url, TYPESAFE_API_KEY: "ts_ENV_KEY_456", TYPESAFE_DEFAULT_MODEL: "jev-env" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(api.seen[0].authorization, "Bearer ts_ENV_KEY_456");
+  assert.equal(api.seen[0].body.model, "jev-env");
+  assert.equal(JSON.parse(r.stdout).choice, "A");
+});
+
+test("CLI: a TypeSafe error that echoes the key exits 2, and real stderr carries it redacted", async (t) => {
+  // 400 is not retried by the SDK, so the run makes exactly one request.
+  const api = await fakeTypeSafe({ status: 400, json: { error: `invalid key ${JUDGE_SECRET}` } });
+  t.after(api.close);
+  const r = await runCliAsync({ home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }), env: { TYPESAFE_BASE_URL: api.url } });
+  assert.equal(r.status, 2);
+  assert.equal(api.seen.length, 1);
+  assert.match(r.stderr, /judge failed: 400 invalid key \[redacted\]/);
+  assert.ok(!r.stderr.includes(JUDGE_SECRET) && !r.stdout.includes(JUDGE_SECRET), r.stderr);
+});
+
+test("CLI: a broken local file exits 2, names the file, and never leaks the secret", () => {
+  const r = runCli({ stdin: JUDGE_INPUT, home: judgeHome(`{"typesafe": {"apiKey": ${JUDGE_SECRET}}}`) });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /invalid JSON in ~\/\.verus-skills\/config\.json/);
+  assert.ok(!r.stderr.includes(JUDGE_SECRET) && !r.stdout.includes(JUDGE_SECRET));
+});
+
+test("CLI: an insecure local key file draws a warning and still works", async (t) => {
+  const api = await fakeTypeSafe(OK_REPLY);
+  t.after(api.close);
+  const r = await runCliAsync({ home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }, 0o644), env: { TYPESAFE_BASE_URL: api.url } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /readable by group or others; chmod 600/);
+  assert.ok(!r.stderr.includes(JUDGE_SECRET));
+});
+
+test("failureMessage replaces every occurrence of the key", () => {
+  const msg = failureMessage(new Error(`401 for key ${JUDGE_SECRET} (retry with ${JUDGE_SECRET})`), JUDGE_SECRET);
+  assert.equal(msg, "judge failed: 401 for key [redacted] (retry with [redacted])");
+  assert.equal(failureMessage(new Error("boom"), null), "judge failed: boom");
+});
+
+test("redactingLogger writes one redacted line per call, for every level and argument type", () => {
+  const lines = [];
+  const log = redactingLogger(JUDGE_SECRET, (line) => lines.push(line));
+  log.debug("request", { headers: { authorization: `Bearer ${JUDGE_SECRET}` } });
+  log.info(`key=${JUDGE_SECRET}`);
+  log.warn("retrying", 2);
+  log.error(new Error(`401 for ${JUDGE_SECRET}`));
+  const circular = {};
+  circular.self = circular;
+  log.debug("cycle", circular);
+  assert.equal(lines.length, 5);
+  assert.ok(lines.every((l) => !l.includes(JUDGE_SECRET) && !l.includes("\n")), lines.join("\n"));
+  assert.match(lines[0], /^\[typesafe-sdk debug\] request .*Bearer \[redacted\]/);
+  assert.match(lines[2], /^\[typesafe-sdk warn\] retrying 2$/);
+  assert.match(lines[3], /401 for \[redacted\]/);
+});
+
+test("CLI: with TYPESAFE_LOG_LEVEL=debug an error body holding the key reaches neither stream", async (t) => {
+  const api = await fakeTypeSafe({ status: 400, json: { error: `invalid key ${JUDGE_SECRET}` } });
+  t.after(api.close);
+  const r = await runCliAsync({
+    home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }),
+    env: { TYPESAFE_BASE_URL: api.url, TYPESAFE_LOG_LEVEL: "debug" },
+  });
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, "");
+  assert.ok(!r.stderr.includes(JUDGE_SECRET), r.stderr);
+});
+
+test("CLI: with TYPESAFE_LOG_LEVEL=debug a success still prints exactly one JSON line on stdout", async (t) => {
+  const api = await fakeTypeSafe(OK_REPLY);
+  t.after(api.close);
+  const r = await runCliAsync({
+    home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }),
+    env: { TYPESAFE_BASE_URL: api.url, TYPESAFE_LOG_LEVEL: "debug" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = r.stdout.trimEnd().split("\n");
+  assert.equal(out.length, 1, r.stdout);
+  assert.equal(JSON.parse(out[0]).choice, "A");
+  assert.ok(!r.stderr.includes(JUDGE_SECRET) && !r.stdout.includes(JUDGE_SECRET));
+});
+
+test("CLI: without TYPESAFE_LOG_LEVEL the SDK logs nothing", async (t) => {
+  const api = await fakeTypeSafe(OK_REPLY);
+  t.after(api.close);
+  const r = await runCliAsync({ home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }), env: { TYPESAFE_BASE_URL: api.url } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stderr, "");
 });
