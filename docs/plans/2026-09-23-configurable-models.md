@@ -2999,3 +2999,21 @@ accepted without the judge: [P1] a terminal loaded from `--session-file` keeps r
 Ответ пользователя: A — «Безопасный ручной рецепт».
 ```
 (first run returned `(мало данных)`, sufficiency 0.59; re-judged once with the plugin-cache path and the two-line CLI contract facts added)
+
+## Review decisions (round 2)
+
+Reviewer: real Codex via Orca, same terminal session as round 1; report `docs/reviews/VerusK-configurable-models-2026-09-23-2.md` (READY WITH FIXES). Resolved from round 1: the padded-key leak, unquoted Orca arguments, the destructive README recipe, and the fallback race when the close succeeds. One residual finding (P2; ledger line 18 BLOCKS MERGE, so triaged as P1): a failed `orca terminal close` still fell back to `codex exec` and discarded the handle.
+
+```
+Решение (Jev): How should reviewer.sh handle a failed 'orca terminal close' of its own reviewer terminal before falling back to codex exec?
+  A. Stop on a failed close               92%
+  B. Fall back to a separate output file  8%
+  C. Leave as is                          0%
+  Рекомендация Claude: A
+  Данных достаточно: 77%
+  Выбрано: A, confidence 0.88, данных 0.77, порог 0.7/0.6 → принято автоматически
+```
+
+Fix: `a2a84b3` — a failed close keeps the handle in the session file, prints `orca: could not close reviewer terminal <handle>; not falling back` and exits 1; `npm test` 256/256.
+
+Deferred (not merge-blocking, per both reports' ledger triage): the Task 1–9 minors in the SDD ledger marked OK by the reviewer — among them end-marker strictness (last line, CRLF), positive log-level assertions in the judge tests, stale "fixed/rejected/asked" summary wording, and acceptance step 16 (a local model pin never reaches the GitHub-installed plugin; the step needs a local plugin source or a published revision before it can serve as acceptance evidence).
