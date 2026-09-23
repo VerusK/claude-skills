@@ -78,3 +78,4 @@ node "$SKILLS_REPO/scripts/typesafe-judge.mjs" < "$Q"; echo "judge_exit=$?"
 - Total `context` must stay under 8 KB serialised; the script rejects more. Trim excerpts, not facts.
 - Escape `"` and `\` inside the JSON strings; write multi-line strings as `\n` — a parse error makes the judge look unavailable when the input was yours.
 - Questions about the user's personal taste, credentials, or anything outside the repo are never auto-accepted: skip the judge and ask.
+- Every option must be one a reasonable engineer could pick. Never pad a question with an unargued "reject" or "do nothing": a "leave it as is" option carries its strongest argument in `description`, or it is left out. A question left with only one real option is not judge-able — decide it yourself and state the evidence.

@@ -61,10 +61,18 @@ echo "reviewer_exit=$?"
 
 Parse `## Findings (confidence 7+)`. For each finding, in order of severity:
 
-Build a judge question:
-- `question`: "How should the plan handle: <finding text>?"
-- options: `A` "Accept: revise the plan as the reviewer proposes", `B` "Accept with a different fix: <your alternative, if you have one>", `C` "Reject: the finding is wrong or out of scope, because <reason>". Omit `B` if you have no alternative. Map each option to the judge's JSON fields: `label` is the text before the colon, `description` is the rest.
-- `context`: a structured object — `goal` (what the plan delivers, one sentence), `decisions` (findings already triaged in this round), `facts` (the plan's Goal and Architecture lines, the spec's relevant constraint, the finding verbatim, and the relevant plan excerpt), `constraints` (the user's rules and the plan's hard limits), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language; a map detailed only for some options is a defect, rewrite the question before judging). Facts only — a stranger reading `facts` alone must be able to pick.
+First decide whether the finding is a real choice.
+
+**One reasonable fix** — for example a reproduced bug with an obvious remedy, or a factual error in a document: do not call the judge. Accept it and print, in place of a decision block:
+
+`accepted without the judge: <finding one-liner> — <the evidence: reproduction, file:line, command output>`
+
+Record that line with the decisions (section 4).
+
+**Otherwise build a judge question about how to fix it:**
+- `question`: "How should <the finding, in a few words> be fixed?"
+- options: 2–4 concrete ways to fix it, each one a reasonable engineer could pick, each with its concrete consequence in `description`. The reviewer's proposal may be one of them. A "leave it as is" option is allowed only when its `description` states the strongest argument for leaving it; never add a bare "reject". Map each option to the judge's JSON fields: `label` is a short name, `description` the consequence.
+- `context`: a structured object — `goal` (what the plan delivers, one sentence), `decisions` (findings already triaged in this round), `facts` (the plan's Goal and Architecture lines, the spec's relevant constraint, the finding verbatim, and the relevant plan excerpt), `constraints` (the user's rules and the plan's hard limits), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language). Facts only — a stranger reading `facts` alone must be able to pick.
 - `recommended`: your pick. It is shown to the user and never sent to the judge.
 
 Run the judge exactly as `judge.md` says. Accepted → apply the decision; unaccepted or any non-zero judge exit → ask the user with the decision block. Print every decision block in chat as it happens.
@@ -73,18 +81,18 @@ Findings in the Appendix are not acted on; leave them in the report.
 
 ## 4. Revise the plan
 
-Apply every accepted `A`/`B` decision to `PLAN` directly (edit tasks, add tests, add steps). Append to the plan a section:
+Apply to `PLAN` directly (edit tasks, add tests, add steps) the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it, and every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the plan. Append to the plan a section:
 
 ```
 ## Plan review decisions (round N)
-<one decision block per finding, plus "Rejected: <finding> — <reason>" lines>
+<one decision block per judged finding, one "accepted without the judge: …" line per finding decided without it, and a "Left as is: <finding> — <argument>" line for each finding the judge or the user chose to leave>
 ```
 
 Commit: `git commit -am "docs(plan): apply plan-review round N"`.
 
 ## 5. Second round
 
-Skip round 2 if the round-1 report has no P0/P1 at confidence 7+. Otherwise, if `ROUND` is 1 and at least one finding was accepted: copy the round-1 report to `<REPORT>.round1.md` first (`reviewer.sh` deletes `REPORT` at startup, so the only copy would be lost), then set `ROUND` to 2, rebuild the prompt (section 1, reading the previous report from `<REPORT>.round1.md`), relaunch (section 2; pass the same SESSION as round 1 — in Orca that reuses round 1's terminal, so the reviewer sees its own earlier context), triage and revise again.
+Skip round 2 if the round-1 report has no P0/P1 at confidence 7+. Otherwise, if `ROUND` is 1 and at least one finding changed the plan: copy the round-1 report to `<REPORT>.round1.md` first (`reviewer.sh` deletes `REPORT` at startup, so the only copy would be lost), then set `ROUND` to 2, rebuild the prompt (section 1, reading the previous report from `<REPORT>.round1.md`), relaunch (section 2; pass the same SESSION as round 1 — in Orca that reuses round 1's terminal, so the reviewer sees its own earlier context), triage and revise again.
 
 Stop after round 2.
 

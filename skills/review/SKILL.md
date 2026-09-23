@@ -19,14 +19,14 @@ argument-hint: "[all | <path|glob>... | <base>] — default: branch diff vs main
 - `REPORT`: `docs/reviews/<BRANCH with / replaced by ->-<YYYY-MM-DD>.md`; path scope appends a slug of the first path (`...-<slug>.md`), codebase scope appends `-all`. If that file already exists, append `-2`, `-3`, … before `.md` — a same-day rerun and round 2 both get their own file, and `reviewer.sh` deletes its `--output` at startup, so an existing report must never be reused as the output path. Always repo-relative; `reviewer.sh` exits 1 on an absolute path. It is relative to the repo `reviewer.sh` works in, so run from the repo under review, or pass `--repo <that repo>` to `reviewer.sh`. Create `docs/reviews/` if it does not exist.
 - `PLAN`, `SPEC`: the plan and the spec path from its header. Branch scope: the plan the user named, else the newest file in `docs/plans/`. Path and codebase scope: only a plan the user named, otherwise `none` — a set of files or a whole codebase is not the output of the newest plan, so never guess one. Either may be absent — send `none` rather than inventing a path.
 - `LEDGER`: `.superpowers/sdd/<PLAN basename without .md>/progress.md`, when `PLAN` is a path and that file exists; otherwise `none`. This is the ledger `subagent-driven-development` keeps while it works through the plan.
-- `Ledger lines:` the lines of `LEDGER` containing `Minor (deferred)`, `Ruling` or `parked` — the findings the implementation loop deferred or ruled on, which this review is the last chance to catch. `none` when `LEDGER` is `none` or no line matches. Collect them with:
+- `Ledger lines:` the lines of `LEDGER` containing `minor (deferred)` (as subagent-driven-development writes it), `Ruling` or `parked`, matched case-insensitively — the findings the implementation loop deferred or ruled on, which this review is the last chance to catch. `none` when `LEDGER` is `none` or no line matches. Collect them with:
 
   ```bash
   PLAN="<PLAN, or empty>"
   LEDGER=""
   [ -n "$PLAN" ] && LEDGER=".superpowers/sdd/$(basename "$PLAN" .md)/progress.md"
   if [ -n "$LEDGER" ] && [ -f "$LEDGER" ]; then
-    grep -E 'Minor \(deferred\)|Ruling|parked' "$LEDGER" || echo none
+    grep -iE 'minor \(deferred\)|ruling|parked' "$LEDGER" || echo none
   else
     echo none
   fi
@@ -105,7 +105,7 @@ fi
 Mode depends on the working tree, ignoring this skill's and the launcher's own artifacts (`docs/reviews/`, `.context/`) — a report left behind by an earlier run must not flip the next run into report-only:
 
 - clean (`MODE=full`) → **full mode**: review, fix wave, re-review, hand-off.
-- dirty (`MODE=report-only`) → **report-only mode**: in branch scope review `git diff BASE` (working tree including uncommitted changes), in path and codebase scope review the working-tree contents of the files, so the skill is usable mid-task; the report title says `(includes uncommitted changes)`; findings are still judged and printed as decision blocks, but no fix subagent is dispatched and nothing is committed. End with the list of accepted findings for the user to apply, then stop — no hand-off to `finishing-a-development-branch`.
+- dirty (`MODE=report-only`) → **report-only mode**: in branch scope review `git diff BASE` (working tree including uncommitted changes), in path and codebase scope review the working-tree contents of the files, so the skill is usable mid-task; the report title says `(includes uncommitted changes)`; findings are still judged and printed as decision blocks, but no fix subagent is dispatched and nothing is committed. End with the fix list (section 4) for the user to apply, then stop — no hand-off to `finishing-a-development-branch`.
 
 The block prints the `git status --porcelain` lines that caused `MODE=report-only`; show them to the user so the mode is never a surprise.
 
@@ -186,10 +186,18 @@ That keeps the tree clean for the fix wave and stops an untracked report from pu
 
 Parse `## Findings (confidence 7+)`. For each finding, in order of severity:
 
-Build a judge question:
-- `question`: "How should the code handle: <finding text>?"
-- options: `A` "Fix as proposed: apply the reviewer's fix", `B` "Fix differently: <your alternative, if you have one>", `C` "Reject: the finding is wrong or out of scope, because <reason>". Omit `B` if you have no alternative. Map each option to the judge's JSON fields: `label` is the text before the colon, `description` is the rest.
-- `context`: a structured object — `goal` (what the branch delivers, one sentence), `decisions` (findings already triaged in this round), `facts` (the summary from step 1.2, the finding verbatim, the relevant spec or plan constraint, and the code excerpt the finding points at), `constraints` (the user's rules and the spec's hard limits), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language; a map detailed only for some options is a defect, rewrite the question before judging). Facts only — a stranger reading `facts` alone must be able to pick.
+First decide whether the finding is a real choice.
+
+**One reasonable fix** — for example a reproduced bug with an obvious remedy, or a factual error in a document: do not call the judge. Accept it and print, in place of a decision block:
+
+`accepted without the judge: <finding one-liner> — <the evidence: reproduction, file:line, command output>`
+
+Record that line with the decisions (section 4).
+
+**Otherwise build a judge question about how to fix it:**
+- `question`: "How should <the finding, in a few words> be fixed?"
+- options: 2–4 concrete ways to fix it, each one a reasonable engineer could pick, each with its concrete consequence in `description`. The reviewer's proposal may be one of them. A "leave it as is" option is allowed only when its `description` states the strongest argument for leaving it; never add a bare "reject". Map each option to the judge's JSON fields: `label` is a short name, `description` the consequence.
+- `context`: a structured object — `goal` (what the branch delivers, one sentence), `decisions` (findings already triaged in this round), `facts` (the summary from step 1.2, the finding verbatim, the relevant spec or plan constraint, and the code excerpt the finding points at), `constraints` (the user's rules and the spec's hard limits), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language). Facts only — a stranger reading `facts` alone must be able to pick.
 - `recommended`: your pick. It is shown to the user and never sent to the judge.
 
 Run the judge exactly as `judge.md` says. Accepted → record the decision; unaccepted or any non-zero judge exit → ask the user with the decision block. Print every decision block in chat as it happens.
@@ -200,11 +208,11 @@ Findings in the Appendix are not acted on; leave them in the report.
 
 ## 4. Fix wave (full mode only)
 
-In report-only mode skip this section and section 5: print the accepted findings as a checklist for the user to apply, close the reviewer session (the block at the start of section 6), then stop. Nothing is committed in report-only mode.
+In report-only mode skip this section and section 5: print the fix list below as a checklist for the user to apply, close the reviewer session (the block at the start of section 6), then stop. Nothing is committed in report-only mode.
 
 The report is already committed by the step at the end of section 2, so the tree is clean here. Find the repo's test command, in this order: the plan's header, `CLAUDE.md` or `AGENTS.md`, then `package.json` scripts / `Makefile` targets / `pyproject.toml`. If none of them names one, say so in the hand-off and skip the suite rather than guessing.
 
-Collect every accepted finding into one list and dispatch ONE fix subagent — Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. Give it the list, the spec path, the test command you found, and the rules "fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
+Collect into one fix list the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it, plus every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the code and stays off the list. If the list is empty, skip the fix wave and go on to recording the decisions. Otherwise dispatch ONE fix subagent — Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. Give it the list, the spec path, the test command you found, and the rules "fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
 
 If the suite is red after the fix wave, report the failing tests to the user, close the reviewer session (the block at the start of section 6) and stop — do not start round 2 and do not hand off to `finishing-a-development-branch`.
 
@@ -214,7 +222,7 @@ Otherwise append to `PLAN`:
 
 ```
 ## Review decisions (round N)
-<one decision block per finding, plus "Rejected: <finding> — <reason>" lines>
+<one decision block per judged finding, one "accepted without the judge: …" line per finding decided without it, and a "Left as is: <finding> — <argument>" line for each finding the judge or the user chose to leave>
 ```
 
 Then commit the plan change: `git add "<PLAN>" && git commit -m "docs(plan): apply review round N"`.
