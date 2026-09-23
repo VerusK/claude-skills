@@ -9,7 +9,7 @@ checkout. The plugin is the normal path: updates arrive through
 `claude plugin update`. The symlink install is the development path: edits in the
 checkout are live with no release. They are mutually exclusive — the symlink
 installer refuses to run while the plugin is installed, because both ship the
-same ten skills and the same SessionStart hook.
+same ten skills, the same three agents and the same SessionStart hook.
 
 - **One flow, one place.** Skills from different authors are wired to call each
   other by name; the routing lives in `USING.md`, injected into every session by a
@@ -30,7 +30,7 @@ same ten skills and the same SessionStart hook.
 flowchart LR
   K[kickoff<br/>interview + spec] --> W[writing-plans]
   W --> PR[plan-review<br/>Codex]
-  PR --> SDD[subagent-driven-development<br/>opus subagents]
+  PR --> SDD[subagent-driven-development<br/>verus-worker + verus-reviewer]
   SDD --> BR[review<br/>Codex]
   BR --> F[finishing-a-development-branch]
   K -. questions .-> J[(TypeSafe judge)]
@@ -51,7 +51,7 @@ kickoff → writing-plans → plan-review → subagent-driven-development → re
 | 1 | `kickoff` | Classifies the task, interviews through a decision tree, judges each multiple-choice question, writes `docs/specs/<date>-<topic>-design.md` with a Decisions section. |
 | 2 | `writing-plans` | Bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
 | 3 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review. |
-| 4 | `subagent-driven-development` | Fresh `opus` subagent per task, spec + quality review after each. |
+| 4 | `subagent-driven-development` | Fresh `verus-worker` subagent per task, a `verus-reviewer` spec + quality review after each. |
 | 5 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 6. |
 | 6 | `finishing-a-development-branch` | Merge, PR, or keep. |
 
@@ -71,8 +71,8 @@ A **clean** working tree gives full mode: review → findings judged → at most
 
 ### Decisions and reviewers
 
-- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`, overridable with `--threshold`) and the key is read from `TYPESAFE_API_KEY`. A second gate guards against confidence built on a thin context: the judge also rates how well the supplied facts support any choice, and an answer is auto-accepted only when that sufficiency clears `sufficiencyThreshold` (default `0.6` in the same file, overridable with `--sufficiency`); otherwise the question goes to the user marked `(мало данных)`. Every auto-accepted answer is printed in chat as a decision block with the options, their probabilities and both numbers. When the judge is unavailable the script exits `2` and the skill asks the user instead of guessing.
-- The external reviewer is `scripts/reviewer.sh`: Orca-managed Codex when `orca status` answers, otherwise `codex exec`. If neither is available it exits `3` and the calling skill falls back to an unnamed background Claude subagent on `opus`.
+- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`, overridable with `--threshold`). The key comes from `TYPESAFE_API_KEY`, else from `typesafe.apiKey` in `~/.verus-skills/config.json`; the model is `judge.model` (see [Models and effort](#models-and-effort)). A second gate guards against confidence built on a thin context: the judge also rates how well the supplied facts support any choice, and an answer is auto-accepted only when that sufficiency clears `sufficiencyThreshold` (default `0.6` in the same file, overridable with `--sufficiency`); otherwise the question goes to the user marked `(мало данных)`. Every auto-accepted answer is printed in chat as a decision block with the options, their probabilities and both numbers. When the judge is unavailable the script exits `2` and the skill asks the user instead of guessing.
+- The external reviewer is `scripts/reviewer.sh`: Orca-managed Codex when `orca status` answers, otherwise `codex exec`, with the Codex model and effort from [Models and effort](#models-and-effort). On the Orca path a report counts as finished only once its last line is `<!-- end of review -->`, which both reviewer prompts require. If neither is available it exits `3` and the calling skill falls back to the `verus-reviewer` agent, dispatched unnamed and in the background.
 
 ## Skills
 
@@ -89,7 +89,29 @@ A **clean** working tree gives full mode: review → findings judged → at most
 | `verification-before-completion` | copy | obra/superpowers | Jesse Vincent | MIT |
 | `typesafe-ai` | copy | [typesafe-ai/skills](https://github.com/typesafe-ai/skills) | TypeSafe AI | MIT |
 
-Patches: `superpowers:*` references point at this distro's skill names, no git-worktree steps (work happens in Orca worktrees), all subagents on `opus`, SDD's final review routed to `review`, docs under `docs/specs/` and `docs/plans/`; `test-driven-development` only has its citations rewritten. Full attribution is in `NOTICE`.
+Patches: `superpowers:*` references point at this distro's skill names, no git-worktree steps (work happens in Orca worktrees), every subagent dispatched as a `verus-*` agent type (see [Models and effort](#models-and-effort)), SDD's final review routed to `review`, docs under `docs/specs/` and `docs/plans/`; `test-driven-development` only has its citations rewritten. Full attribution is in `NOTICE`.
+
+## Models and effort
+
+Every model and effort setting lives in `config/models.json`:
+
+```json
+{
+  "subagents": {
+    "worker":   { "model": "opus", "effort": "high" },
+    "reviewer": { "model": "opus", "effort": "xhigh" },
+    "explorer": { "model": "opus", "effort": "medium" }
+  },
+  "codex": { "model": "default", "reasoning": "default" },
+  "judge": { "model": "jev-latest" }
+}
+```
+
+- **Claude subagents** run as the agent types `verus-worker` (implementers, fix waves), `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer) and `verus-explorer` (kickoff lookups); `make install` links them into `~/.claude/agents/`, the plugin ships them. After editing `subagents`, run `make models` — it rewrites the `model:`/`effort:` lines of `agents/verus-*.md`; a test fails if they drift. The symlink install sees the change at once; the plugin after a release. Effort: `low|medium|high|xhigh|max`.
+- **The `opus` alias** follows the newest Opus only when the main session is not itself pinned to an older Opus: a session on an older Opus keeps its subagents on that exact version. To pin, write a full model id (e.g. `claude-opus-5-6`) and run `make models`.
+- **Codex reviewer:** `default` passes no `-m`/`model_reasoning_effort`, so Codex uses `~/.codex/config.toml`. Override per run with `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`. Every Codex value must be a single token (letters, digits, `_ . : [ ] -`); anything else stops the review with an error that names the setting, never its value. Each review starts a fresh Codex terminal, so a change applies from the next review.
+- **Judge:** `jev-latest` by default; override per run with `TYPESAFE_DEFAULT_MODEL`.
+- **Per machine**, without a commit: `~/.verus-skills/config.json` may set `codex.model`, `codex.reasoning` and `judge.model`; it wins over `config/models.json`, env wins over both. A Claude subagent's model cannot be overridden per run — agent definitions are static.
 
 ## Install
 
@@ -145,7 +167,12 @@ git clone https://github.com/VerusK/claude-skills.git && cd claude-skills
 make install
 ```
 
-`make install` symlinks every skill into `~/.claude/skills/` and `~/.codex/skills/`, adds a SessionStart hook to `~/.claude/settings.json` that runs `scripts/session-start.mjs` to inject `USING.md`, adds a pointer line to `~/.codex/AGENTS.md`, and uninstalls the `superpowers` plugin (its skills are vendored here). It then reports whether `TYPESAFE_API_KEY`, `codex` and `orca` are present. Names already taken in the target directories by something that is not ours are skipped, never overwritten.
+`make install` symlinks every skill into `~/.claude/skills/` and `~/.codex/skills/`, links the three agent types (`verus-worker.md`, `verus-reviewer.md`, `verus-explorer.md` from `agents/`) into `~/.claude/agents/`, adds a SessionStart hook to `~/.claude/settings.json` that runs `scripts/session-start.mjs` to inject `USING.md`, adds a pointer line to `~/.codex/AGENTS.md`, and uninstalls the `superpowers` plugin (its skills are vendored here). It then reports whether a TypeSafe API key (`TYPESAFE_API_KEY` or `~/.verus-skills/config.json`), `codex` and `orca` are present.
+
+Skill names and agent names are treated differently when something else already holds them:
+
+- A **skill name** taken in `~/.claude/skills/` or `~/.codex/skills/` by something that is not ours is skipped with a `SKIPPED` line and never overwritten; the rest of the install goes on.
+- An **agent name** in `~/.claude/agents/` held by a regular file, or by a link to an existing file outside this checkout and outside every other checkout of the distro, stops the install before anything is written — even with `--force`, because the skills would dispatch to that foreign agent. Move it away and re-run. A dangling link on an agent name is replaced and reported as `replaced dangling link`.
 
 Pass installer flags through `make install` with `ARGS`, or call the script directly:
 
@@ -154,20 +181,22 @@ make install ARGS="--skip-plugin"              # keep the superpowers plugin ins
 node scripts/install.mjs --home /tmp/sandbox   # install into another HOME (used by the tests)
 node scripts/install.mjs --skip-plugin         # same as make install ARGS="--skip-plugin"
 node scripts/install.mjs --uninstall           # same as make uninstall
-node scripts/install.mjs --force                # install the symlinks even though the plugin is installed
+node scripts/install.mjs --force                # install even though the plugin is installed (never overrides an agent-name collision)
 ```
 
-Re-installing from a second checkout of this repo (a fresh clone, or the old one moved away) re-points the existing symlinks, SessionStart hook and `AGENTS.md` line at the new checkout and reports them as `re-pointed from <old checkout>`, instead of leaving duplicates behind.
+Re-installing from a second checkout of this repo (a fresh clone, or the old one moved away) re-points the existing skill and agent symlinks, SessionStart hook and `AGENTS.md` line at the new checkout and reports them as `re-pointed from <old checkout>`, instead of leaving duplicates behind.
 
-Codex model and reasoning effort used by `plan-review` / `review` live in `config/reviewer.json` (default `gpt-6-astra`, `high`); override per run with `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`.
+Models and effort for every layer — Claude subagents, the Codex reviewer, the judge — are set as described in [Models and effort](#models-and-effort).
 
-Put the TypeSafe key where Claude Code sees it, in `~/.claude/settings.json`:
+Put the TypeSafe key in `~/.verus-skills/config.json` — one place for Claude Code and Codex, outside every repo, kept across plugin updates:
 
-```json
-"env": { "TYPESAFE_API_KEY": "ts_..." }
+```bash
+mkdir -p ~/.verus-skills
+printf '{ "typesafe": { "apiKey": "ts_..." } }\n' > ~/.verus-skills/config.json
+chmod 600 ~/.verus-skills/config.json
 ```
 
-For Codex also `export TYPESAFE_API_KEY=...` in `~/.zshenv`.
+`TYPESAFE_API_KEY` in the environment still works and wins over the file. The judge warns when the file is readable by group or others. `config/models.json` refuses any secret-like field, so a key can never be committed.
 
 Remove old collections that this distro replaces — gstack, compound-engineering and superpowers leftovers in Claude and Codex:
 
@@ -247,7 +276,7 @@ For the plugin install:
 ```bash
 claude plugin uninstall verus-skills@verus-skills
 claude plugin marketplace remove verus-skills
-rm -rf ~/.verus-skills
+rm -f ~/.verus-skills/root   # keeps config.json and its key
 ```
 
 For Codex:
@@ -256,6 +285,8 @@ For Codex:
 codex plugin remove verus-skills@verus-skills
 codex plugin marketplace remove verus-skills
 ```
+
+Older versions kept one Orca terminal per repo in `.context/plan-review-session` / `.context/review-session`. They are no longer used; close those terminals in Orca and delete the files if they are still there.
 
 These drop the `[marketplaces.verus-skills]` and
 `[plugins."verus-skills@verus-skills"]` sections from `~/.codex/config.toml`;

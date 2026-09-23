@@ -5,12 +5,13 @@ installed from GitHub, so it tests what users get. Record the answers inline.
 
 Last run: **2026-09-23**, `main` at `266d08e`, Claude Code 2.1.x, codex-cli 0.155.1.
 Every step passed. The results are recorded under each step and in
-[Results](#results-2026-09-23).
+[Results](#results-2026-09-23). Steps 14–18 and 21 were added after that run and
+have no result yet.
 
 ## Before you start
 
-The plugin and the symlink install ship the same ten skills and the same
-SessionStart hook. With both active:
+The plugin and the symlink install ship the same ten skills, the same three
+agents and the same SessionStart hook. With both active:
 
 - a bare skill name resolves through the symlink,
 - the two hooks race to write `~/.verus-skills/root`,
@@ -29,13 +30,13 @@ end.
 
    It prints `<checkout>/skills/kickoff`. Record `<checkout>`: `/Users/sleepwalker/Projects/claude-skills`
 
-   If it prints nothing, there is no symlink install. Skip steps 2 and 17, but still run steps 3 and 4.
+   If it prints nothing, there is no symlink install. Skip steps 2 and 23, but still run steps 3 and 4.
 
 2. Uninstall the symlink install from that checkout. If a pointer file exists, clear it. A stale pointer would make the plugin's first session report two installs.
 
    ```bash
    (cd <checkout> && make uninstall)
-   rm -rf ~/.verus-skills
+   rm -f ~/.verus-skills/root
    ```
 
 3. Check that neither skills directory still holds any of the ten skills. The loop must print nothing:
@@ -83,6 +84,11 @@ end.
 
 12. `claude plugin details verus-skills@verus-skills` → lists all ten skills and one SessionStart hook.
 13. In a throwaway git repo, run `claude -p "/kickoff add a hello.sh script that prints hello"`. It announces kickoff and reaches its first question. The judge's decision blocks show that the judge ran from the cache.
+14. `claude plugin details verus-skills@verus-skills` shows `Agents (3)`: `verus-worker`, `verus-reviewer`, `verus-explorer`.
+15. Dispatch `verus-skills:verus-worker` without a `name` (e.g. run a one-task plan through subagent-driven-development): no window opens, and the `--debug` log shows the model and effort from `config/models.json`.
+16. Pinned parent: start a session on the full id of an older Opus; the debug log shows `verus-worker` (model `opus`) on that same older version. Pin a full id in `config/models.json`, run `make models`, reinstall; the agent then runs on the pinned id.
+17. Collision: with a foreign `~/.claude/agents/verus-worker.md` in place, `make install ARGS="--force"` exits non-zero, names the file, and creates no link. (`--force` gets past the plugin-installed refusal, which is checked first; the agent collision still stops it.)
+18. With `TYPESAFE_API_KEY` unset and the key only in `~/.verus-skills/config.json`, the judge answers `judge_exit=0`.
 
 Record: **does a bare skill name resolve inside the plugin, or is the `verus-skills:` prefix required?** A bare name resolves. A Skill tool call with `kickoff` loaded the plugin's skill. The prefix is optional.
 
@@ -90,7 +96,7 @@ Record: **is the slash command `/kickoff` or `/verus-skills:kickoff`?** Both wor
 
 ## Codex
 
-14. Install through Codex's own CLI:
+19. Install through Codex's own CLI:
 
     ```bash
     codex plugin marketplace add VerusK/claude-skills
@@ -99,30 +105,32 @@ Record: **is the slash command `/kickoff` or `/verus-skills:kickoff`?** Both wor
 
     This writes `[marketplaces.verus-skills]` and `[plugins."verus-skills@verus-skills"]` to `~/.codex/config.toml`. The plugin lands in `~/.codex/plugins/cache/verus-skills/verus-skills/<version>`, which has no `node_modules`.
 
-15. Start `codex` interactively. It shows **Hooks need review**; trust the `verus-skills` SessionStart hook. Then check:
+20. Start `codex` interactively. It shows **Hooks need review**; trust the `verus-skills` SessionStart hook. Then check:
     - the skills are listed as `verus-skills:<name>`,
     - the context has a `Distro root:` line under `~/.codex/plugins/cache/`,
     - `~/.verus-skills/root` points there.
 
     `codex exec` skips untrusted hooks silently. For a one-off non-interactive check, use `codex exec --dangerously-bypass-hook-trust …`. It trusts nothing permanently. `codex exec --skip-git-repo-check` also adds a `[projects."<dir>"] trust_level = "trusted"` entry for the directory it ran in, so remove it afterwards.
 
+21. In the same trusted session, make a skill dispatch a subagent (e.g. run a one-task plan through `verus-skills:subagent-driven-development`). The dispatch goes through `spawn_agent` with no `name` and no model, and no separate window opens.
+
 Record: **did the inline `hooks` block in `.codex-plugin/plugin.json` fire the SessionStart hook?** Yes, once it is trusted. It runs exactly once per session: one `Distro root:` line, and the routing block appears once. With the Claude Code install also present, it gives no two-installs warning, since both roots are plugin caches. Untrusted, it does not run at all.
 
 ## Teardown
 
-16. Remove the plugin from both agents:
+22. Remove the plugin from both agents:
 
     ```bash
     claude plugin uninstall verus-skills@verus-skills
     claude plugin marketplace remove verus-skills
     codex plugin remove verus-skills@verus-skills
     codex plugin marketplace remove verus-skills
-    rm -rf ~/.verus-skills
+    rm -f ~/.verus-skills/root
     ```
 
     The Codex commands drop both sections from `~/.codex/config.toml`. The symlink installer treats the plugin section alone as an install, and refuses while it is there. Claude Code keeps the old cache copy until its own in-use sweep removes it, and that is harmless.
 
-17. Restore the symlink install from the checkout recorded in step 1, not from the checkout under test. Running it from any other checkout re-points the symlinks there. `--skip-plugin` keeps the `superpowers` plugin installed. Plain `make install` uninstalls it.
+23. Restore the symlink install from the checkout recorded in step 1, not from the checkout under test. Running it from any other checkout re-points the symlinks there. `--skip-plugin` keeps the `superpowers` plugin installed. Plain `make install` uninstalls it.
 
     ```bash
     (cd <checkout> && make install ARGS="--skip-plugin")
@@ -143,6 +151,6 @@ Record: **did the inline `hooks` block in `.codex-plugin/plugin.json` fire the S
 | 11 | `judge_exit=0`, `reviewer.sh found`, `node_modules present` (Claude Code installed the dependencies), vendored SDK loads from the cache |
 | 12 | ten skills, one SessionStart hook, about 919 always-on tokens |
 | 13 | bare `kickoff`, `/kickoff` and `/verus-skills:kickoff` all reach kickoff's first question |
-| 14 | Codex CLI installed the plugin; its cache has no `node_modules` |
-| 15 | untrusted: hook skipped; trusted (bypass flag): one `Distro root:` under the Codex cache, pointer updated, no two-installs warning |
-| 16–17 | both plugins removed; symlinks restored with `--skip-plugin`; `config.toml` and `AGENTS.md` byte-identical to the backups; `settings.json` equal on every key |
+| 19 | Codex CLI installed the plugin; its cache has no `node_modules` |
+| 20 | untrusted: hook skipped; trusted (bypass flag): one `Distro root:` under the Codex cache, pointer updated, no two-installs warning |
+| 22–23 | both plugins removed; symlinks restored with `--skip-plugin`; `config.toml` and `AGENTS.md` byte-identical to the backups; `settings.json` equal on every key |
