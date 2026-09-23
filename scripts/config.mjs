@@ -148,9 +148,11 @@ export function resolveJudgeModel(env = process.env, { home = homedir(), root = 
   return pick(env.TYPESAFE_DEFAULT_MODEL, local.judge?.model, repo.judge.model) ?? "jev-latest";
 }
 
+// Trimmed: the HTTP layer sends the key without surrounding whitespace, and the
+// judge must redact exactly the string it sends. Blank after trimming = absent.
 export function resolveApiKey(env = process.env, { home = homedir() } = {}) {
-  if (nonEmpty(env.TYPESAFE_API_KEY)) return env.TYPESAFE_API_KEY;
-  return pick(loadLocal(home)?.data.typesafe?.apiKey) ?? null;
+  if (nonEmpty(env.TYPESAFE_API_KEY)) return env.TYPESAFE_API_KEY.trim();
+  return pick(loadLocal(home)?.data.typesafe?.apiKey)?.trim() ?? null;
 }
 
 export function redact(text, secret) {

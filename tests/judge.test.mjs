@@ -567,6 +567,31 @@ test("CLI: a TypeSafe error that echoes the key exits 2, and real stderr carries
   assert.ok(!r.stderr.includes(JUDGE_SECRET) && !r.stdout.includes(JUDGE_SECRET), r.stderr);
 });
 
+// A key with surrounding whitespace: the HTTP layer sends it trimmed, so redaction must use the trimmed key too.
+const PADDED_KEY_SOURCES = [
+  ["a padded env key", () => ({ home: judgeHome(), env: { TYPESAFE_API_KEY: `${JUDGE_SECRET} ` } })],
+  ["a padded local-file key", () => ({ home: judgeHome({ typesafe: { apiKey: `${JUDGE_SECRET}\n` } }), env: {} })],
+];
+for (const [label, source] of PADDED_KEY_SOURCES) {
+  for (const logLevel of [undefined, "debug"]) {
+    const mode = logLevel ? ` with TYPESAFE_LOG_LEVEL=${logLevel}` : "";
+    test(`CLI: ${label}${mode} is sent trimmed and an error echoing it reaches neither stream`, async (t) => {
+      const api = await fakeTypeSafe({ status: 400, json: { error: `invalid key ${JUDGE_SECRET}` } });
+      t.after(api.close);
+      const { home, env } = source();
+      const r = await runCliAsync({
+        home,
+        env: { TYPESAFE_BASE_URL: api.url, ...env, ...(logLevel ? { TYPESAFE_LOG_LEVEL: logLevel } : {}) },
+      });
+      assert.equal(r.status, 2, r.stderr);
+      assert.equal(api.seen.length, 1);
+      assert.equal(api.seen[0].authorization, `Bearer ${JUDGE_SECRET}`);
+      assert.match(r.stderr, /judge failed: 400 invalid key \[redacted\]/);
+      assert.ok(!r.stderr.includes(JUDGE_SECRET) && !r.stdout.includes(JUDGE_SECRET), "the key leaked to stdout or stderr");
+    });
+  }
+}
+
 test("CLI: a broken local file exits 2, names the file, and never leaks the secret", () => {
   const r = runCli({ stdin: JUDGE_INPUT, home: judgeHome(`{"typesafe": {"apiKey": ${JUDGE_SECRET}}}`) });
   assert.equal(r.status, 2);

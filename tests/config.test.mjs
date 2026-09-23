@@ -116,6 +116,21 @@ test("precedence: env > local > repo > default, for every layer", () => {
   assert.equal(resolveApiKey({ TYPESAFE_API_KEY: "ts_env" }, { home: h }), "ts_env");
 });
 
+test("resolveApiKey trims the env key and the local key, so redaction sees what is sent", () => {
+  for (const padded of [`${SECRET} `, ` ${SECRET}`, `${SECRET}\n`, `\t${SECRET}\r\n`]) {
+    assert.equal(resolveApiKey({ TYPESAFE_API_KEY: padded }, { home: home() }), SECRET, JSON.stringify(padded));
+    assert.equal(resolveApiKey({}, { home: home({ typesafe: { apiKey: padded } }) }), SECRET, JSON.stringify(padded));
+  }
+});
+
+test("resolveApiKey treats a blank env key as absent and falls back to the local key", () => {
+  const h = home({ typesafe: { apiKey: `${SECRET}\n` } });
+  for (const blank of ["", " ", "\n", " \t\r\n"]) {
+    assert.equal(resolveApiKey({ TYPESAFE_API_KEY: blank }, { home: h }), SECRET, JSON.stringify(blank));
+    assert.equal(resolveApiKey({ TYPESAFE_API_KEY: blank }, { home: home() }), null, JSON.stringify(blank));
+  }
+});
+
 test("model and effort resolve independently", () => {
   const r = root({ ...MODELS, codex: { model: "repo-m", reasoning: "default" } });
   assert.deepEqual(resolveCodex({ REVIEWER_CODEX_REASONING: "low" }, { home: home(), root: r }), { model: "repo-m", reasoning: "low" });
