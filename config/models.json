@@ -1,0 +1,9 @@
+{
+  "subagents": {
+    "worker": { "model": "opus", "effort": "high" },
+    "reviewer": { "model": "opus", "effort": "xhigh" },
+    "explorer": { "model": "opus", "effort": "medium" }
+  },
+  "codex": { "model": "default", "reasoning": "default" },
+  "judge": { "model": "jev-latest" }
+}
