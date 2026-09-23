@@ -86,8 +86,8 @@ end.
 13. In a throwaway git repo, run `claude -p "/kickoff add a hello.sh script that prints hello"`. It announces kickoff and reaches its first question. The judge's decision blocks show that the judge ran from the cache.
 14. `claude plugin details verus-skills@verus-skills` shows `Agents (3)`: `verus-worker`, `verus-reviewer`, `verus-explorer`.
 15. Dispatch `verus-skills:verus-worker` without a `name` (e.g. run a one-task plan through subagent-driven-development): no window opens, and the `--debug` log shows the model and effort from `config/models.json`.
-16. Pinned parent: start a session on the full id of an older Opus; the debug log shows `verus-worker` (model `opus`) on that same older version. Pin a full id in `config/models.json`, run `make models`, reinstall; the agent then runs on the pinned id.
-17. Collision: with a foreign `~/.claude/agents/verus-worker.md` in place, `make install ARGS="--force"` exits non-zero, names the file, and creates no link. (`--force` gets past the plugin-installed refusal, which is checked first; the agent collision still stops it.)
+16. Pinned parent: start a session on the full id of an older Opus; the debug log shows `verus-worker` (model `opus`) on that same older version. Pin a full id in `config/models.json`, run `make models`, reinstall; the agent then runs on the pinned id. Then revert the pin, so step 23 does not link pinned agents: `git checkout -- config/models.json agents/`.
+17. Collision: with a foreign `~/.claude/agents/verus-worker.md` in place, `make install ARGS="--force"` exits non-zero, names the file, and creates no link. (`--force` gets past the plugin-installed refusal, which is checked first; the agent collision still stops it.) Then remove the foreign file, so step 23 can install: `rm ~/.claude/agents/verus-worker.md`.
 18. With `TYPESAFE_API_KEY` unset and the key only in `~/.verus-skills/config.json`, the judge answers `judge_exit=0`.
 
 Record: **does a bare skill name resolve inside the plugin, or is the `verus-skills:` prefix required?** A bare name resolves. A Skill tool call with `kickoff` loaded the plugin's skill. The prefix is optional.
