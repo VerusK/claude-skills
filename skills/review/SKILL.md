@@ -1,6 +1,6 @@
 ---
 name: review
-description: External code review by Codex (via Orca, then codex exec, then a Claude agent on opus) of a branch diff, a set of paths, or the whole codebase, against the plan and spec when they exist. Routes confidence-7+ findings through the TypeSafe judge, applies accepted fixes with one fix subagent, runs one re-review round, then hands off to finishing-a-development-branch. Use at the end of subagent-driven-development, before merge, or when asked to "review the branch", "review these files" or "review the codebase".
+description: External code review by Codex (via Orca, then codex exec, then a fallback reviewer agent) of a branch diff, a set of paths, or the whole codebase, against the plan and spec when they exist. Routes confidence-7+ findings through the TypeSafe judge, applies accepted fixes with one fix subagent, runs one re-review round, then hands off to finishing-a-development-branch. Use at the end of subagent-driven-development, before merge, or when asked to "review the branch", "review these files" or "review the codebase".
 argument-hint: "[all | <path|glob>... | <base>] — default: branch diff vs main"
 ---
 
@@ -157,7 +157,7 @@ echo "reviewer_exit=$?"
 ```
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
-- `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it. On a host with no subagent tool (e.g. a Codex session), do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
+- `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
 - `1`: fix the invocation; do not proceed.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 
@@ -194,7 +194,7 @@ In report-only mode skip this section and section 5: print the accepted findings
 
 The report is already committed by the step at the end of section 2, so the tree is clean here. Find the repo's test command, in this order: the plan's header, `CLAUDE.md` or `AGENTS.md`, then `package.json` scripts / `Makefile` targets / `pyproject.toml`. If none of them names one, say so in the hand-off and skip the suite rather than guessing.
 
-Collect every accepted finding into one list and dispatch ONE unnamed background fix subagent (`general-purpose`, `model: opus`): give it the list, the spec path, the test command you found, and the rules "fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
+Collect every accepted finding into one list and dispatch ONE fix subagent — Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. Give it the list, the spec path, the test command you found, and the rules "fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
 
 If the suite is red after the fix wave, report the failing tests to the user and stop — do not start round 2 and do not hand off to `finishing-a-development-branch`.
 

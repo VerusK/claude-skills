@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: External engineering review of an implementation plan before any code is written. Launches Codex (via Orca, then codex exec, then a Claude agent on opus), routes confidence-7+ findings through the TypeSafe judge, revises the plan, and runs exactly one re-review round. Use after writing-plans, when asked to "review the plan", or before subagent-driven-development.
+description: External engineering review of an implementation plan before any code is written. Launches Codex (via Orca, then codex exec, then a fallback reviewer agent), routes confidence-7+ findings through the TypeSafe judge, revises the plan, and runs exactly one re-review round. Use after writing-plans, when asked to "review the plan", or before subagent-driven-development.
 argument-hint: "<path to plan .md>"
 ---
 
@@ -47,7 +47,7 @@ echo "reviewer_exit=$?"
 ```
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
-- `3`: dispatch an unnamed background Claude subagent (`general-purpose`, `model: opus`) with the same prompt file content as its prompt and the instruction to write `REPORT`. Wait for it. On a host with no subagent tool (e.g. a Codex session), do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
+- `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
 - `1`: fix the invocation; do not proceed.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 

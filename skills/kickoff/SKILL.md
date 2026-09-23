@@ -31,7 +31,7 @@ When in doubt, take the heavier path. Hidden complexity found later upgrades the
 
 Before asking anything, read: repo layout, docs, recent commits, existing specs in
 `docs/specs/`. Any question that a file or command can answer is never asked;
-dispatch an unnamed Explore subagent (`model: opus`, background) for broad lookups and keep asking
+dispatch an explorer subagent for broad lookups — Claude Code: `subagent_type` = `verus-explorer` (`verus-skills:verus-explorer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. Keep asking
 the rest of the frontier meanwhile.
 
 ## 3. The decision tree

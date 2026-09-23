@@ -9,7 +9,7 @@ Skills are named below without a prefix. Under the plugin install each one is ad
 1. `kickoff` — always first for a new task: classifies (spike / bounded / architectural), interviews via a decision tree, auto-answers multiple-choice questions through the TypeSafe judge, writes the spec to `docs/specs/`.
 2. `writing-plans` — turns the approved spec into `docs/plans/<date>-<name>.md`.
 3. `plan-review` — external review of the plan by Codex; findings judged; one re-review round.
-4. `subagent-driven-development` — executes the plan task by task with fresh `opus` subagents and per-task reviews.
+4. `subagent-driven-development` — executes the plan task by task with fresh subagents (the `verus-worker` and `verus-reviewer` agent types) and per-task reviews.
 5. `review` — external review of the whole branch by Codex; one fix wave; one re-review. It also runs standalone: on given paths or globs, or over the whole codebase.
 6. `finishing-a-development-branch` — merge / PR / keep.
 
@@ -28,6 +28,6 @@ Whenever a skill auto-accepts an answer via the TypeSafe judge, the decision blo
 
 ## Rules
 
-- Subagents use `model: opus`, are dispatched unnamed and in the background; never as named teammates with their own windows. The user reads your summary, not the subagents.
+- Subagents are dispatched unnamed and in the background, never as named teammates with their own windows. In Claude Code they run as the distro's agent types via `subagent_type` — `verus-worker`, `verus-reviewer`, `verus-explorer` (prefixed `verus-skills:` under the plugin install) — whose model and effort come from `config/models.json`; never pass a `model` parameter. In a Codex session they are dispatched with spawn_agent, with no model. The user reads your summary, not the subagents.
 - Work in the current checkout; never create git worktrees.
 - User instructions (CLAUDE.md, AGENTS.md, direct requests) override skills.

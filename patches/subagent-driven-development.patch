@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
 --- vendor/subagent-driven-development/SKILL.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/SKILL.md	2026-09-22 20:40:24
++++ skills/subagent-driven-development/SKILL.md	2026-09-23 07:46:28
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -99,16 +99,20 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  Never start implementation on a main/master branch without your human
  partner's explicit consent.
  
-@@ -183,41 +174,17 @@
+@@ -183,41 +174,20 @@
  
  ## Model Selection
  
 -Use the least powerful model that can handle each role to conserve cost and increase speed.
-+Every subagent dispatched by this skill uses `model: opus`. This is a user rule
-+for this machine: implementers, task reviewers, re-reviewers and the final
-+reviewer all run on the Opus tier. Always pass the model explicitly.
++Subagents run on the distro's agent types, whose model and effort come from
++`config/models.json` (regenerated into the agent files by `make models`), never
++from the dispatch:
  
 -**Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
++- Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Never pass a `model` parameter: it would override the agent's configured model.
++- In a Codex session: dispatch with spawn_agent and pass no model.
+ 
+-**Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
 +Dispatch subagents unnamed and in the background: never give them a `name`
 +or turn them into named teammates, because every named agent opens its own
 +window on this machine. The user does not watch subagents work; you collect
@@ -116,8 +120,6 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +returned, or dispatch a fresh unnamed implementer with the brief and report
 +file paths.
  
--**Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
--
 -**Architecture and design tasks**: use the most capable available model.
 -The final whole-branch review is one of these — dispatch it on the most
 -capable available model, not the session default.
@@ -150,7 +152,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## The Task Loop
  
  **Batch small same-shape work.** When the plan lists several tasks that are
-@@ -295,7 +262,7 @@
+@@ -295,7 +265,7 @@
  
  **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
  1. If it's a context problem, provide more context and re-dispatch with the same model
@@ -159,7 +161,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  3. If the task is too large, break it into smaller pieces
  4. If the plan itself is wrong, rule on the correction, ledger it, and re-dispatch with the ruling carried in the dispatch
  
-@@ -378,12 +345,11 @@
+@@ -378,12 +348,11 @@
  dispatch a fresh implementer carrying the brief path, the report-file path,
  and the findings — the report file is the persistent memory either way.
  
@@ -177,7 +179,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  **Every round, either way:** the implementer fixes, re-runs the tests
  covering the amended code, appends its fix report to the same report file,
-@@ -444,30 +410,16 @@
+@@ -444,30 +413,16 @@
  
  ## Final Review
  
@@ -207,7 +209,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -residual load-bearing findings surface to your human partner when
 -finishing-a-development-branch presents the options.
 +1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
-+2. Invoke the `review` (`verus-skills:review` when installed as a plugin) skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a Claude agent on opus as fallback), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
++2. Invoke the `review` (`verus-skills:review` when installed as a plugin) skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a fallback reviewer agent), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
 +3. `review` hands off to `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
  
 +There is no second fix wave here; residual findings surface to your human
@@ -216,7 +218,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -484,7 +436,7 @@
+@@ -484,7 +439,7 @@
  the record now. Sibling directories belong to other plans; leave them
  alone.
  
@@ -225,7 +227,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  ## Common Rationalizations
  
-@@ -505,9 +457,9 @@
+@@ -505,9 +460,9 @@
  ```
  You: I'm using Subagent-Driven Development to execute this plan.
  
@@ -238,7 +240,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  [Create todos for all tasks]
  
  Task 1: Hook installation script
-@@ -559,10 +511,10 @@
+@@ -559,10 +514,10 @@
  ...
  
  [After all tasks]
@@ -253,18 +255,23 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
 --- vendor/subagent-driven-development/implementer-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-09-22 18:01:01
-@@ -5,8 +5,7 @@
++++ skills/subagent-driven-development/implementer-prompt.md	2026-09-23 07:46:10
+@@ -2,11 +2,11 @@
+ 
+ Use this template when dispatching an implementer subagent.
+ 
++**Dispatch.** Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model.
++
  ```
- Subagent (general-purpose):
+-Subagent (general-purpose):
++Subagent (verus-worker):
    description: "Implement Task N: [task name]"
 -  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
 -         model silently inherits the session's most expensive one]
-+  model: opus
    prompt: |
      You are implementing Task N: [task name]
  
-@@ -86,7 +85,7 @@
+@@ -86,7 +86,7 @@
  
      **How to escalate:** Report back with status BLOCKED or NEEDS_CONTEXT. Describe
      specifically what you're stuck on, what you've tried, and what kind of help you need.
@@ -275,27 +282,54 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
      ## Before Reporting Back: Self-Review
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
 --- vendor/subagent-driven-development/re-review-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-09-22 18:01:01
-@@ -10,8 +10,7 @@
++++ skills/subagent-driven-development/re-review-prompt.md	2026-09-23 07:46:10
+@@ -7,11 +7,11 @@
+ **Purpose:** Verify each finding from the previous review was addressed, and
+ that the fix itself broke nothing.
+ 
++**Dispatch.** Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model.
++
  ```
- Subagent (general-purpose):
+-Subagent (general-purpose):
++Subagent (verus-reviewer):
    description: "Re-review Task N fix round R"
 -  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
 -         model silently inherits the session's most expensive one]
-+  model: opus
    prompt: |
      You are re-reviewing one task's fix round. A previous review produced
      findings; an implementer has attempted to fix them. Your job is to
+@@ -101,8 +101,6 @@
+ ```
+ 
+ **Placeholders:**
+-- `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection; scoped
+-  re-reviews of small fix diffs take a cheap-to-mid tier
+ - `[BRIEF_FILE]` — the task brief file (same file the implementer worked from)
+ - `[FINDINGS]` — the Critical/Important findings and spec gaps from the
+   previous review, copied verbatim, one per bullet
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
 --- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 18:01:01
-@@ -10,8 +10,7 @@
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-23 07:46:10
+@@ -7,11 +7,11 @@
+ **Purpose:** Verify one task's implementation matches its requirements (nothing
+ more, nothing less) and is well-built (clean, tested, maintainable)
+ 
++**Dispatch.** Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model.
++
  ```
- Subagent (general-purpose):
+-Subagent (general-purpose):
++Subagent (verus-reviewer):
    description: "Review Task N (spec + quality)"
 -  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
 -         model silently inherits the session's most expensive one]
-+  model: opus
    prompt: |
      You are reviewing one task's implementation: first whether it matches its
      requirements, then whether it is well-built. This is a task-scoped gate,
+@@ -188,7 +188,6 @@
+ ```
+ 
+ **Placeholders:**
+-- `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection
+ - `[BRIEF_FILE]` — REQUIRED: the task brief file (`bash scripts/task-brief PLAN N`
+   prints the path; same file the implementer worked from)
+ - `[GLOBAL_CONSTRAINTS]` — the binding requirements copied verbatim from

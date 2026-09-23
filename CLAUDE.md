@@ -15,7 +15,7 @@ Personal skills distro for Claude Code and Codex. See README.md for the flow and
 ## Rules
 
 - Edit vendored skills only in `skills/<name>/`, then run `make repatch`.
-- Subagents dispatched by skills here use `model: opus`.
+- Subagents dispatched by skills here run as the distro's agent types (`verus-worker`, `verus-reviewer`, `verus-explorer`); their model and effort live in `config/models.json` — run `make models` after editing it.
 - Run `npm test` before committing script changes.
 - One version across `package.json` and the three plugin manifests; bump with `make release BUMP=<patch|minor|major>`.
 - Hand-offs between skills name both the bare and the `verus-skills:` form.

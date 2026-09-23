@@ -2,10 +2,11 @@
 
 Use this template when dispatching an implementer subagent.
 
+**Dispatch.** Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model.
+
 ```
-Subagent (general-purpose):
+Subagent (verus-worker):
   description: "Implement Task N: [task name]"
-  model: opus
   prompt: |
     You are implementing Task N: [task name]
 
