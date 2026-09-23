@@ -83,9 +83,11 @@ else
   [[ "$CODEX_MODEL" =~ $TOKEN_RE ]] || { echo "config: REVIEWER_CODEX_MODEL must be a single token" >&2; exit 1; }
   [[ "$CODEX_REASONING" =~ $TOKEN_RE ]] || { echo "config: REVIEWER_CODEX_REASONING must be a single token" >&2; exit 1; }
 fi
+# CODEX_FLAGS goes into the Orca --command string, which a shell parses: quote each
+# argument, since a token may hold [ ] (a glob to sh/bash, "no matches found" in zsh).
 CODEX_FLAGS=""
-[ "$CODEX_MODEL" != "default" ] && CODEX_FLAGS="$CODEX_FLAGS -m $CODEX_MODEL"
-[ "$CODEX_REASONING" != "default" ] && CODEX_FLAGS="$CODEX_FLAGS -c model_reasoning_effort=$CODEX_REASONING"
+[ "$CODEX_MODEL" != "default" ] && CODEX_FLAGS="$CODEX_FLAGS -m $(printf '%q' "$CODEX_MODEL")"
+[ "$CODEX_REASONING" != "default" ] && CODEX_FLAGS="$CODEX_FLAGS -c $(printf '%q' "model_reasoning_effort=$CODEX_REASONING")"
 
 # Stage the prompt inside the repo so a sandboxed Codex can read it.
 mkdir -p "$REPO/.context" "$REPO/$(dirname "$OUTPUT")"

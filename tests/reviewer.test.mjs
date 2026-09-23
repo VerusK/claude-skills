@@ -240,6 +240,37 @@ test("codex exec and the Orca terminal use config/models.json", () => {
   assert.match(r.log, /terminal create .*--command codex -m cfg-model -c model_reasoning_effort=minimal/);
 });
 
+test("the Orca command passes a bracketed model to codex literally when a shell runs it", () => {
+  // The token grammar allows [ and ]; unquoted, `gpt-test[1m]` is a glob that matches
+  // ./gpt-test1 (bash, sh) or aborts with "no matches found" (zsh).
+  const dir = repo();
+  writeFileSync(path.join(dir, "gpt-test1"), "");
+  const cmdFile = path.join(dir, "orca-command.txt");
+  const r = run(dir, ["orca", "codex"], {
+    env: { REVIEWER_CODEX_MODEL: "gpt-test[1m]", REVIEWER_CODEX_REASONING: "low", FAKE_ORCA_COMMAND_FILE: cmdFile },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: orca/);
+  const command = readFileSync(cmdFile, "utf8");
+  const bin = tmp("bin-argv-");
+  writeFileSync(path.join(bin, "codex"), '#!/bin/sh\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > "$ARGV_FILE"\n');
+  chmodSync(path.join(bin, "codex"), 0o755);
+  const shells = [["sh", "-c"], ["bash", "-c"]];
+  if (existsSync("/bin/zsh")) shells.push(["/bin/zsh", "-f", "-c"]);
+  for (const [shell, ...flags] of shells) {
+    const argvFile = path.join(dir, `argv-${path.basename(shell)}.txt`);
+    const s = spawnSync(shell, [...flags, command], {
+      cwd: dir, encoding: "utf8", env: { PATH: `${bin}:/usr/bin:/bin`, HOME: dir, ARGV_FILE: argvFile },
+    });
+    assert.equal(s.status, 0, `${shell}: ${s.stderr}\ncommand: ${command}`);
+    assert.deepEqual(
+      readFileSync(argvFile, "utf8").split("\n").slice(0, -1),
+      ["-m", "gpt-test[1m]", "-c", "model_reasoning_effort=low"],
+      `${shell} ran: ${command}`,
+    );
+  }
+});
+
 test("the local ~/.verus-skills/config.json overrides the repo config", () => {
   const { script } = cfgTree({ model: "cfg-model", reasoning: "minimal" });
   const dir = repo();
