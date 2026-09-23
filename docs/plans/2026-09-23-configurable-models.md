@@ -2962,3 +2962,40 @@ Left as is (code): P1 "a trailing newline passes the single-token check because 
 
 Applied: Task 4 — the CLI passes `logLevel` = trimmed `TYPESAFE_LOG_LEVEL` or `"off"` and `logger: redactingLogger(apiKey)` (exported; one line per call on stderr, key → `[redacted]`, safe for errors and circular objects). Tests: a unit test of `redactingLogger`; with `TYPESAFE_LOG_LEVEL=debug`, a 400 whose body holds the key reaches neither stream (exit 2), and a success still prints exactly one JSON line on stdout; without the variable, stderr stays empty on success.
 
+
+## Review decisions (round 1)
+
+Reviewer: real Codex via Orca (`reviewer: orca`), report `docs/reviews/VerusK-configurable-models-2026-09-23.md` (NOT READY: 2 × P1, 2 × P2; ledger lines 6, 18, 23, 48 marked BLOCKS MERGE are the same four findings). Fixes: `1b4f7ba`, `ca4ea89`, `30c7d12`, `766e9a6`; `npm test` 254/254.
+
+```
+Решение (Jev): How should an API key with surrounding whitespace be handled so the judge never prints it unredacted?
+  A. Trim the key                   88%
+  B. Reject surrounding whitespace  4%
+  C. Redact every variant           8%
+  Рекомендация Claude: A
+  Данных достаточно: 61%
+  Выбрано: A, confidence 0.82, данных 0.61, порог 0.7/0.6 → принято автоматически
+```
+(first run of this question returned `(мало данных)`, sufficiency 0.57; re-judged once with the SDK's own env-trim and the header-trim facts added)
+
+accepted without the judge: [P1] a terminal loaded from `--session-file` keeps running after the Orca path falls back to `codex exec` and can overwrite the fallback report — evidence: `scripts/reviewer.sh` closed only `CREATED_HANDLE` (Task 3 review minor 4, Codex reproduction); writing the fallback to a temp file and renaming does not stop the old reviewer writing afterwards, so closing the owned terminal is the only fix.
+
+```
+Решение (Jev): How should reviewer.sh keep a Codex model or effort value containing [ or ] intact in the Orca terminal command?
+  A. Shell-quote the values           97%
+  B. Forbid brackets in Codex values  3%
+  Рекомендация Claude: A
+  Данных достаточно: 86%
+  Выбрано: A, confidence 0.95, данных 0.86, порог 0.7/0.6 → принято автоматически
+```
+
+```
+Решение (Jev): How should the README tell users to store the TypeSafe key in ~/.verus-skills/config.json without destroying existing settings or exposing the key?
+  A. Document a safe manual recipe  43%
+  B. Add a set-key helper           57%
+  Рекомендация Claude: A
+  Данных достаточно: 70%
+  Выбрано: B, confidence 0.14, данных 0.70, порог 0.7/0.6 → спросить пользователя
+Ответ пользователя: A — «Безопасный ручной рецепт».
+```
+(first run returned `(мало данных)`, sufficiency 0.59; re-judged once with the plugin-cache path and the two-line CLI contract facts added)
