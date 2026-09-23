@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveApiKey } from "./config.mjs";
 
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const HOOK_MARKER = "scripts/session-start.mjs";
@@ -74,6 +75,73 @@ export function unlinkSkills(repoRoot, targetDir) {
     if (isSymlink(p) && isUnder(readlinkSync(p), path.join(repoRoot, "skills"))) { unlinkSync(p); removed.push(name); }
   }
   return { removed: removed.sort() };
+}
+
+export function agentNames(repoRoot) {
+  const base = path.join(repoRoot, "agents");
+  if (!existsSync(base)) return [];
+  return readdirSync(base).filter((f) => /^verus-[a-z]+\.md$/.test(f)).sort();
+}
+
+function distroRootOfAgentLink(target, file) {
+  const tail = path.sep + path.join("agents", file);
+  if (typeof target !== "string" || !target.endsWith(tail)) return null;
+  return target.slice(0, -tail.length) || null;
+}
+
+// An agent name someone else already owns is an error, not a skip: the skills
+// would dispatch to that foreign agent instead of ours. A dangling link owns
+// nothing — it is replaced, never a collision. `existsSync` follows the link, so
+// it is checked first; `isDistroCheckout()` treats a missing directory as ours,
+// which must never decide an agent link.
+export function agentCollisions(repoRoot, targetDir) {
+  const foreign = [];
+  for (const file of agentNames(repoRoot)) {
+    const dst = path.join(targetDir, file);
+    if (isSymlink(dst)) {
+      if (!existsSync(dst)) continue; // dangling: linkAgents replaces it
+      const target = path.resolve(targetDir, readlinkSync(dst));
+      if (isUnder(target, repoRoot)) continue;
+      const from = distroRootOfAgentLink(target, file);
+      if (from && existsSync(from) && isDistroCheckout(from)) continue;
+      foreign.push(dst);
+    } else if (existsSync(dst)) {
+      foreign.push(dst);
+    }
+  }
+  return foreign;
+}
+
+export function linkAgents(repoRoot, targetDir) {
+  mkdirSync(targetDir, { recursive: true });
+  const linked = [], repointed = [], replaced = [];
+  for (const file of agentNames(repoRoot)) {
+    const src = path.join(repoRoot, "agents", file);
+    const dst = path.join(targetDir, file);
+    if (isSymlink(dst)) {
+      const target = readlinkSync(dst);
+      if (target === src) { linked.push(file); continue; }
+      if (!existsSync(dst)) replaced.push(file);
+      else if (!isUnder(target, repoRoot)) {
+        const from = distroRootOfAgentLink(target, file);
+        if (from) repointed.push({ name: file, from });
+      }
+      unlinkSync(dst);
+    }
+    symlinkSync(src, dst);
+    linked.push(file);
+  }
+  return { linked, repointed, replaced };
+}
+
+export function unlinkAgents(repoRoot, targetDir) {
+  const removed = [];
+  const own = path.join(repoRoot, "agents");
+  for (const file of agentNames(repoRoot)) {
+    const p = path.join(targetDir, file);
+    if (isSymlink(p) && isUnder(readlinkSync(p), own)) { unlinkSync(p); removed.push(file); }
+  }
+  return { removed };
 }
 
 function readJson(p, fallback) {
@@ -246,6 +314,7 @@ function main() {
   const codexSkills = path.join(home, ".codex", "skills");
   const settings = path.join(home, ".claude", "settings.json");
   const agents = path.join(home, ".codex", "AGENTS.md");
+  const claudeAgents = path.join(home, ".claude", "agents");
 
   // Validate before touching anything: a broken settings.json used to blow up
   // half-way through, after the symlinks had already been created.
@@ -279,9 +348,19 @@ function main() {
     return;
   }
 
+  if (!opts.uninstall) {
+    const foreign = agentCollisions(REPO_ROOT, claudeAgents);
+    if (foreign.length) {
+      for (const f of foreign) console.error(`${f} is not ours; move it away and re-run`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   if (opts.uninstall) {
     console.log("claude skills removed:", unlinkSkills(REPO_ROOT, claudeSkills).removed.join(", ") || "none");
     console.log("codex skills removed:", unlinkSkills(REPO_ROOT, codexSkills).removed.join(", ") || "none");
+    console.log("claude agents removed:", unlinkAgents(REPO_ROOT, claudeAgents).removed.join(", ") || "none");
     removeHook(settings, REPO_ROOT);
     removeAgentsLine(agents, REPO_ROOT);
     console.log("hook and AGENTS.md line removed");
@@ -297,14 +376,20 @@ function main() {
     }
     if (r.skipped.length) console.log(`${label}: SKIPPED (name taken by a foreign entry): ${r.skipped.join(", ")}`);
   }
+  const ag = linkAgents(REPO_ROOT, claudeAgents);
+  console.log(`claude agents: linked ${ag.linked.join(", ")}`);
+  for (const r of ag.repointed) console.log(`claude agents: re-pointed from ${r.from}: ${r.name}`);
+  for (const name of ag.replaced) console.log(`claude agents: replaced dangling link: ${name}`);
   ensureHook(settings, REPO_ROOT);
   console.log(`SessionStart hook set in ${settings}`);
   ensureAgentsLine(agents, REPO_ROOT);
   console.log(`USING.md referenced from ${agents}`);
   if (!opts.skipPlugin) console.log(uninstallSuperpowersPlugin());
 
+  let haveKey = false;
+  try { haveKey = Boolean(resolveApiKey(process.env, { home })); } catch {}
   const checks = [
-    ["TYPESAFE_API_KEY", Boolean(process.env.TYPESAFE_API_KEY), "add it to the env block of ~/.claude/settings.json (and ~/.zshenv for Codex)"],
+    ["TypeSafe API key", haveKey, "put it in ~/.verus-skills/config.json as typesafe.apiKey (chmod 600), or set TYPESAFE_API_KEY"],
     ["codex", which("codex"), "npm install -g @openai/codex && codex login"],
     ["orca", which("orca"), "optional; Orca-managed Codex sessions need the Orca CLI"],
   ];

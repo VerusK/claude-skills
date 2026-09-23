@@ -1,10 +1,10 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readlinkSync, symlinkSync, rmSync, copyFileSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readlinkSync, symlinkSync, rmSync, copyFileSync, realpathSync, lstatSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { linkSkills, unlinkSkills, ensureHook, removeHook, ensureAgentsLine, removeAgentsLine, HOOK_MARKER, REPO_ROOT, pluginInstalled, parseArgs } from "../scripts/install.mjs";
+import { linkSkills, unlinkSkills, ensureHook, removeHook, ensureAgentsLine, removeAgentsLine, HOOK_MARKER, REPO_ROOT, pluginInstalled, parseArgs, agentNames, agentCollisions, linkAgents, unlinkAgents } from "../scripts/install.mjs";
 
 const TEMP_DIRS = [];
 // realpath, so a checkout under a symlinked $TMPDIR (macOS: /var -> /private/var)
@@ -330,17 +330,28 @@ test("ensureHook/removeHook preserve every other settings key and hook event", (
 
 // --- finding I-1: a re-install from another checkout of this distro ------------
 
+const AGENT_FILES = ["verus-explorer.md", "verus-reviewer.md", "verus-worker.md"];
+
 // A self-contained distro checkout: what `isDistroCheckout` looks for
-// (sources.yaml + scripts/install.mjs) plus a runnable installer.
+// (sources.yaml + scripts/install.mjs), a runnable installer with the
+// scripts/config.mjs it imports, two skills and the three agent files.
 function distroRepo() {
   const root = tmp("distro-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
   copyFileSync(INSTALLER, path.join(root, "scripts", "install.mjs"));
+  copyFileSync(path.join(REPO_ROOT, "scripts", "config.mjs"), path.join(root, "scripts", "config.mjs"));
   writeFileSync(path.join(root, "sources.yaml"), "sources: []\n");
   writeFileSync(path.join(root, "USING.md"), "# using\n");
   for (const s of ["kickoff", "plan-review"]) {
     mkdirSync(path.join(root, "skills", s), { recursive: true });
     writeFileSync(path.join(root, "skills", s, "SKILL.md"), `---\nname: ${s}\n---\n`);
+  }
+  mkdirSync(path.join(root, "agents"), { recursive: true });
+  for (const t of ["worker", "reviewer", "explorer"]) {
+    writeFileSync(
+      path.join(root, "agents", `verus-${t}.md`),
+      `---\nname: verus-${t}\ndescription: fixture ${t} agent of a copied distro checkout\nmodel: opus\neffort: high\n---\n\nFixture.\n`,
+    );
   }
   return root;
 }
@@ -365,6 +376,9 @@ function assertSingleInstallOf(home, root) {
       assert.equal(readlinkSync(path.join(home, dir, "skills", s)), path.join(root, "skills", s));
     }
   }
+  for (const f of AGENT_FILES) {
+    assert.equal(readlinkSync(path.join(home, ".claude", "agents", f)), path.join(root, "agents", f));
+  }
   const settings = JSON.parse(readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
   const ours = settings.hooks.SessionStart.filter((g) => g.hooks.some((h) => h.command.includes(HOOK_MARKER)));
   assert.equal(ours.length, 1, "exactly one SessionStart hook of ours");
@@ -384,6 +398,7 @@ test("installing from a second distro checkout re-points links, hook and AGENTS 
   assert.equal(rb.status, 0, rb.stderr);
   assert.match(rb.stdout, new RegExp(`re-pointed from ${a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   assert.doesNotMatch(rb.stdout, /SKIPPED/);
+  for (const f of AGENT_FILES) assert.match(rb.stdout, new RegExp(`claude agents: re-pointed from .*: ${f.replace(".", "\\.")}`));
   assertSingleInstallOf(home, b);
 });
 
@@ -397,6 +412,7 @@ test("installing from a new checkout after the old one is gone re-points everyth
   const rb = runInstallerFrom(b, ["--home", home, "--skip-plugin"]);
   assert.equal(rb.status, 0, rb.stderr);
   assert.doesNotMatch(rb.stdout, /SKIPPED/);
+  for (const f of AGENT_FILES) assert.match(rb.stdout, new RegExp(`claude agents: replaced dangling link: ${f.replace(".", "\\.")}`));
   assertSingleInstallOf(home, b);
 });
 
@@ -484,4 +500,109 @@ test("the installer proceeds when the plugin is not installed", () => {
   const res = runInstaller(["--home", home]);
   assert.equal(res.status, 0);
   assert.ok(existsSync(path.join(home, ".claude", "skills", "kickoff")));
+});
+
+test("agentNames lists the three verus agents", () => {
+  assert.deepEqual(agentNames(REPO_ROOT), AGENT_FILES);
+});
+
+test("linkAgents links, is idempotent, and unlinkAgents removes only ours", () => {
+  const target = tmp("agents-");
+  writeFileSync(path.join(target, "someone-else.md"), "x");
+  assert.deepEqual(linkAgents(REPO_ROOT, target).linked, agentNames(REPO_ROOT));
+  assert.deepEqual(linkAgents(REPO_ROOT, target).linked, agentNames(REPO_ROOT));
+  assert.equal(readlinkSync(path.join(target, "verus-worker.md")), path.join(REPO_ROOT, "agents", "verus-worker.md"));
+  assert.deepEqual(unlinkAgents(REPO_ROOT, target).removed, agentNames(REPO_ROOT));
+  assert.ok(existsSync(path.join(target, "someone-else.md")));
+});
+
+test("a link into another existing distro checkout is re-pointed, not a collision", () => {
+  const target = tmp("agents-");
+  const other = distroRepo();
+  symlinkSync(path.join(other, "agents", "verus-worker.md"), path.join(target, "verus-worker.md"));
+  assert.deepEqual(agentCollisions(REPO_ROOT, target), []);
+  const r = linkAgents(REPO_ROOT, target);
+  assert.deepEqual(r.repointed, [{ name: "verus-worker.md", from: other }]);
+  assert.deepEqual(r.replaced, []);
+  assert.equal(readlinkSync(path.join(target, "verus-worker.md")), path.join(REPO_ROOT, "agents", "verus-worker.md"));
+});
+
+test("a dangling link on an agent name is replaced, whoever left it", () => {
+  const home = tmp("home-");
+  const claudeAgents = path.join(home, ".claude", "agents");
+  mkdirSync(claudeAgents, { recursive: true });
+  const link = path.join(claudeAgents, "verus-worker.md");
+  symlinkSync("/missing/agents/verus-worker.md", link);
+  assert.deepEqual(agentCollisions(REPO_ROOT, claudeAgents), []);
+  const r = runInstaller(["--home", home]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /claude agents: replaced dangling link: verus-worker\.md/);
+  assert.equal(readlinkSync(link), path.join(REPO_ROOT, "agents", "verus-worker.md"));
+});
+
+test("a foreign file, or a link to an existing foreign file, on an agent name refuses the whole install", () => {
+  // Shaped like a checkout (<dir>/agents/verus-worker.md), but <dir> is not a distro checkout.
+  const foreignDir = tmp("foreign-");
+  mkdirSync(path.join(foreignDir, "agents"), { recursive: true });
+  const foreignFile = path.join(foreignDir, "agents", "verus-worker.md");
+  const FOREIGN = "---\nname: verus-worker\n---\nnot ours\n";
+  writeFileSync(foreignFile, FOREIGN);
+  for (const plant of [
+    (f) => writeFileSync(f, FOREIGN),
+    (f) => symlinkSync(foreignFile, f),
+  ]) {
+    const home = tmp("home-");
+    mkdirSync(path.join(home, ".claude", "agents"), { recursive: true });
+    const foreign = path.join(home, ".claude", "agents", "verus-worker.md");
+    plant(foreign);
+    const snapshot = () => (lstatSync(foreign).isSymbolicLink() ? `link:${readlinkSync(foreign)}` : `file:${readFileSync(foreign, "utf8")}`);
+    const before = snapshot();
+    for (const extra of [[], ["--force"]]) {
+      const r = runInstaller(["--home", home, ...extra]);
+      assert.equal(r.status, 1, `${extra}: ${r.stdout}`);
+      assert.match(r.stderr, /verus-worker\.md is not ours; move it away and re-run/);
+      assert.equal(snapshot(), before, "the foreign entry must stay as it was");
+      assert.deepEqual(readdirSync(path.join(home, ".claude", "agents")), ["verus-worker.md"]);
+      assert.ok(!existsSync(path.join(home, ".claude", "skills")));
+      assert.ok(!existsSync(path.join(home, ".claude", "settings.json")));
+      assert.ok(!existsSync(path.join(home, ".codex")));
+    }
+    assert.equal(runInstaller(["--home", home, "--uninstall"]).status, 0);
+    assert.equal(snapshot(), before, "uninstall must not remove a foreign entry");
+  }
+  assert.equal(readFileSync(foreignFile, "utf8"), FOREIGN);
+});
+
+test("install links the agents into ~/.claude/agents and uninstall removes them", () => {
+  const home = tmp("home-");
+  assert.equal(runInstaller(["--home", home]).status, 0);
+  for (const f of agentNames(REPO_ROOT)) assert.equal(readlinkSync(path.join(home, ".claude", "agents", f)), path.join(REPO_ROOT, "agents", f));
+  assert.equal(runInstaller(["--home", home, "--uninstall"]).status, 0);
+  for (const f of agentNames(REPO_ROOT)) assert.ok(!existsSync(path.join(home, ".claude", "agents", f)));
+});
+
+test("uninstall from one distro checkout never removes another checkout's agent links", () => {
+  const home = tmp("home-");
+  const a = distroRepo();
+  const b = distroRepo();
+  assert.equal(runInstallerFrom(a, ["--home", home, "--skip-plugin"]).status, 0);
+  assert.equal(runInstallerFrom(b, ["--home", home, "--skip-plugin"]).status, 0);
+  const ua = runInstallerFrom(a, ["--home", home, "--uninstall"]);
+  assert.equal(ua.status, 0, ua.stderr);
+  assert.match(ua.stdout, /claude agents removed: none/);
+  for (const f of AGENT_FILES) assert.equal(readlinkSync(path.join(home, ".claude", "agents", f)), path.join(b, "agents", f));
+  const ub = runInstallerFrom(b, ["--home", home, "--uninstall"]);
+  assert.equal(ub.status, 0, ub.stderr);
+  assert.match(ub.stdout, /claude agents removed: verus-explorer\.md, verus-reviewer\.md, verus-worker\.md/);
+  for (const f of AGENT_FILES) assert.throws(() => lstatSync(path.join(home, ".claude", "agents", f)), { code: "ENOENT" });
+});
+
+test("the key check sees ~/.verus-skills/config.json and never prints the key", () => {
+  const home = tmp("home-");
+  mkdirSync(path.join(home, ".verus-skills"), { recursive: true });
+  writeFileSync(path.join(home, ".verus-skills", "config.json"), JSON.stringify({ typesafe: { apiKey: "ts_DUMMY_SECRET_123" } }));
+  const r = runInstaller(["--home", home], { TYPESAFE_API_KEY: "" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /ok +TypeSafe API key/);
+  assert.ok(!r.stdout.includes("ts_DUMMY_SECRET_123") && !r.stderr.includes("ts_DUMMY_SECRET_123"));
 });
