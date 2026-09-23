@@ -1,6 +1,6 @@
 # Дизайн: модели, effort и ключ TypeSafe в одном конфиге
 
-Дата: 2026-09-23. Статус: согласован в kickoff.
+Дата: 2026-09-23. Статус: согласован в kickoff, исправлен по ревью спеки (раунд 1, §6).
 
 ## 1. Цель
 
@@ -16,7 +16,7 @@
 
 ## 2. Не входит
 
-- Настройка сабагентов, которых порождает Codex (`spawn_agent`), когда скиллы работают под Codex. Формат агентов в Codex-плагинах не документирован, и тестов на это нет.
+- Настройка модели и effort сабагентов, которых порождает Codex (`spawn_agent`), когда скиллы работают под Codex. Формат агентов в Codex-плагинах не документирован, и тестов на это нет. Сама инструкция вызова через `spawn_agent` в каждой точке сохраняется (§4.4): вне рамок только модель и effort этих сабагентов.
 - Переопределение модели Claude-сабагента на один прогон через env. Определения агентов статичны; см. §4.5.
 - Проверка того, что роли, пишущие код, стоят на Opus. Правило пользователя остаётся на его совести (решение 8).
 - Автоматический перенос ключа из `~/.claude/settings.json` и `~/.zshenv`. README описывает, как перенести его вручную.
@@ -26,10 +26,14 @@
 
 - Frontmatter агента поддерживает `model` (алиасы `opus`/`sonnet`/`haiku`/`fable`, `inherit` или полный id) и `effort` (`low|medium|high|xhigh|max`). Официальный плагин `claude-security` отгружает агентов с `model: sonnet|inherit` и `effort: xhigh`.
 - У Agent tool нет параметра effort: effort задаётся только определением агента. Явный параметр `model` в вызове перекрывает `model` из frontmatter.
-- Агенты плагина адресуются как `<plugin>:<agent>`, пользовательские — из `~/.claude/agents/*.md`. Этого каталога на машине сейчас нет.
+- Агенты плагина адресуются как `<plugin>:<agent>`, пользовательские — из `~/.claude/agents/*.md`. Этого каталога на машине сейчас нет. Определение в проектном `.claude/agents/` с тем же именем перекрывает пользовательское ([scope precedence](https://code.claude.com/docs/en/sub-agents#choose-the-subagent-scope)).
 - Поле `name:` во frontmatter агента — идентификатор **типа**, окна оно не открывает. Окно открывает только параметр `name` вызова Agent tool.
-- Алиас `opus` сам резолвится в новейший Opus (сейчас Opus 5.5).
+- Алиас семейства зависит от модели родительской сессии ([model resolution](https://code.claude.com/docs/en/sub-agents#choose-a-model)). Если родитель сам работает на модели этого семейства, сабагент с `model: opus` получает **точную модель родителя**. Только в остальных случаях алиас даёт новейший Opus (сейчас Opus 5.5). Сессия, закреплённая на старом Opus, держит сабагентов на той же версии. Полный id в `model` закрепляет версию независимо от родителя.
+- Агенты (`agents/`) — компонент плагина Claude Code. `.codex-plugin/plugin.json` ставит в Codex тот же каталог `skills/`, но агентов не объявляет, поэтому в Codex-сессии типов `verus-*` нет. Сабагентов Codex порождает своим инструментом `spawn_agent`.
 - В `~/.codex/config.toml` пользователя стоят `model = "gpt-6-astra"` и `model_reasoning_effort = "high"` — те же значения, что закреплены в `config/reviewer.json`. Без `-m` Codex берёт модель из своего конфига.
+- `scripts/reviewer.sh` по умолчанию хранит хэндл Orca-терминала в `$REPO/.context/${TITLE}-session`: один файл на репо и заголовок, и ни один скилл не передаёт `--session-file`. Если `orca terminal show` по сохранённому хэндлу проходит, терминал переиспользуется. `orca terminal create --command "codex -m … -c model_reasoning_effort=…"` запускается, только когда живого хэндла нет. Закрывать разрешено только терминал, созданный этим же прогоном (`CREATED_HANDLE`).
+- Без `node` `reviewer.sh` намеренно отключает только Orca-ветку («node not found; Orca path disabled»), а `codex exec` продолжает работать с env и умолчаниями. Два теста в `tests/reviewer.test.mjs` закрепляют этот путь.
+- `JSON.parse` включает в сообщение об ошибке кусок входа. Проверено: `Unexpected token 's', ..."apiKey": ts_SECRET12"... is not valid JSON`. Судья печатает `err.message` как есть (`scripts/typesafe-judge.mjs`, строки около 253 и 260).
 - SDK TypeSafe читает `TYPESAFE_API_KEY` и `TYPESAFE_DEFAULT_MODEL`. По умолчанию модель — `jev-latest`, и `systemOne` принимает `model` на каждый запрос. `new TypeSafeClient({ apiKey })` принимает ключ явно.
 - Репозиторий `VerusK/claude-skills` публичный, из него ставится плагин. Кэш плагина при каждом обновлении заменяется целиком.
 
@@ -50,6 +54,8 @@
   "judge": { "model": "jev-latest" }
 }
 ```
+
+Ключи в `subagents` — имена **уровней**, а не идентификаторы агентов. Уровень `<tier>` соответствует файлу `agents/verus-<tier>.md` с `name: verus-<tier>`. В плагине этот тип адресуется как `verus-skills:verus-<tier>` (§4.3).
 
 **Локальный — `~/.verus-skills/config.json`**, живёт вне репо, права 0600, переживает обновления плагина. Все поля необязательны:
 
@@ -77,42 +83,57 @@
 
 Для Codex значение `default` означает, что соответствующий флаг не передаётся (`-m` или `-c model_reasoning_effort`), и Codex берёт настройку из `~/.codex/config.toml`. Модель и effort решаются независимо.
 
+Без `node` `reviewer.sh` пропускает оба файла конфига: модель и effort Codex берутся только из env, иначе `default` (§4.6).
+
 ### 4.3 Агенты плагина
 
-`agents/worker.md`, `agents/reviewer.md`, `agents/explorer.md`. Frontmatter: `name`, `description`, `model`, `effort`. Поля `tools` нет, поэтому набор инструментов полный, как у `general-purpose` сегодня. Тело — короткое описание роли и строка «Do not dispatch subagents; follow the task prompt exactly».
+`agents/verus-worker.md`, `agents/verus-reviewer.md`, `agents/verus-explorer.md`. Префикс `verus-` нужен, чтобы вызов не ушёл к чужому агенту с общим именем вроде `worker` из `~/.claude/agents/` или проектного `.claude/agents/`. Frontmatter: `name` (`verus-worker` и т. д.), `description`, `model`, `effort`. Поля `tools` нет, поэтому набор инструментов полный, как у `general-purpose` сегодня. Тело — короткое описание роли и строка «Do not dispatch subagents; follow the task prompt exactly».
 
-| Уровень | Роли |
-|---|---|
-| `worker` | SDD implementer, fix-субагент в `review` |
-| `reviewer` | SDD task-reviewer и re-reviewer, plan-document-reviewer в writing-plans, запасной внешний ревьюер в `plan-review` и `review` |
-| `explorer` | поиск в kickoff |
+| Ключ уровня в `config/models.json` | Тип агента (симлинковая установка / плагин) | Роли |
+|---|---|---|
+| `worker` | `verus-worker` / `verus-skills:verus-worker` | SDD implementer, fix-субагент в `review` |
+| `reviewer` | `verus-reviewer` / `verus-skills:verus-reviewer` | SDD task-reviewer и re-reviewer, plan-document-reviewer в writing-plans, запасной внешний ревьюер в `plan-review` и `review` |
+| `explorer` | `verus-explorer` / `verus-skills:verus-explorer` | поиск в kickoff |
 
 `scripts/models.mjs` (цель `make models`) делает три вещи:
 - читает и валидирует `config/models.json`: все три уровня на месте, модель — непустая строка, effort входит в допустимый набор, полей-секретов нет;
-- переписывает в трёх файлах **только** строки `model:` и `effort:` во frontmatter;
+- переписывает в `agents/verus-{worker,reviewer,explorer}.md` **только** строки `model:` и `effort:` во frontmatter;
 - на кривом конфиге падает, не записав ни одного файла.
 
 Проверки на Opus нет.
 
+Занятый идентификатор — ошибка, а не пропуск. Инсталлер до любой записи проверяет `~/.claude/agents/verus-{worker,reviewer,explorer}.md`. Если там лежит чужой файл или симлинк не в этот и не в другой чекаут дистро, инсталлер ничего не пишет (ни скиллов, ни агентов, ни хука), выходит с ненулевым кодом и называет файл: `~/.claude/agents/verus-worker.md is not ours; move it away and re-run`. `--force` эту проверку не обходит. Проектный `.claude/agents/` инсталлер не видит. Префикс `verus-` делает случайное перекрытие оттуда маловероятным, а плагинная форма `verus-skills:verus-<tier>` адресует агента плагина явно.
+
 ### 4.4 Точки вызова в скиллах и «без окон»
 
-Все 8 точек вызова (7 ролей) переходят на типы агентов. В каждой:
+Все 8 точек вызова (7 ролей) получают инструкцию для каждого хоста. Типы агентов `verus-*` — только для Claude Code.
 
-- тип агента назван в двух формах, как в hand-off'ах: `` `worker` (`verus-skills:worker` when installed as a plugin) ``;
+**Claude Code:**
+- тип агента назван в двух формах, как в hand-off'ах: `` `verus-worker` (`verus-skills:verus-worker` when installed as a plugin) ``;
 - вызов описан как `subagent_type` = этот тип, **unnamed** (без параметра `name`) и **in the background**;
 - нет ни `model: opus`, ни `general-purpose`, ни иного параметра `model`: он перекрыл бы frontmatter.
 
-Список точек: `skills/subagent-driven-development/implementer-prompt.md`, `task-reviewer-prompt.md`, `re-review-prompt.md`, `skills/writing-plans/plan-document-reviewer-prompt.md`, `skills/plan-review/SKILL.md` (exit 3), `skills/review/SKILL.md` (exit 3 и fix wave), `skills/kickoff/SKILL.md` (Explore). Модельный раздел `subagent-driven-development/SKILL.md` («Every subagent dispatched by this skill uses `model: opus`») переписывается под типы агентов. После правки SDD и writing-plans выполняется `make repatch`.
+**Codex:**
+- отдельная строка вида `In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model`;
+- ни типов `verus-*`, ни `subagent_type`, ни модели в этой строке нет. Модель сабагентов Codex вне рамок (§2);
+- в `plan-review` и `review` (exit 3) остаётся запасной путь для хоста вообще без инструмента сабагентов: провести ревью самому и пометить это в заголовке отчёта. Пример «(e.g. a Codex session)» из этой фразы убирается: у Codex есть `spawn_agent`, и для него теперь есть своя строка.
 
-`USING.md` и `CLAUDE.md` вместо «Subagents use `model: opus`» говорят: сабагенты запускаются как типы агентов дистро (`worker`/`reviewer`/`explorer`), модель и effort берутся из `config/models.json`, вызов — unnamed, in the background, никогда не `name`. Спека прямо фиксирует: `name:` во frontmatter агента — идентификатор типа, окна он не открывает.
+Список точек: `skills/subagent-driven-development/implementer-prompt.md`, `task-reviewer-prompt.md`, `re-review-prompt.md`, `skills/writing-plans/plan-document-reviewer-prompt.md`, `skills/plan-review/SKILL.md` (exit 3), `skills/review/SKILL.md` (exit 3 и fix wave), `skills/kickoff/SKILL.md` (Explore). Модельный раздел `subagent-driven-development/SKILL.md` («Every subagent dispatched by this skill uses `model: opus`») переписывается под типы агентов в Claude Code и `spawn_agent` в Codex. После правки SDD и writing-plans выполняется `make repatch`.
+
+`USING.md` и `CLAUDE.md` вместо «Subagents use `model: opus`» формулируют правило по хостам:
+- в Claude Code сабагенты запускаются через `subagent_type` как типы агентов дистро (`verus-worker`/`verus-reviewer`/`verus-explorer`, в плагине с префиксом `verus-skills:`), модель и effort берутся из `config/models.json`;
+- в Codex — через `spawn_agent`, без модели;
+- на обоих хостах вызов unnamed, in the background, никогда не `name`.
+
+Спека прямо фиксирует: `name:` во frontmatter агента — идентификатор типа, окна он не открывает.
 
 ### 4.5 Как переключить модель
 
 | Что | Как |
 |---|---|
-| новая версия внутри семейства (Opus 5.5 → 5.6) | ничего: алиас `opus` подхватит её сам |
+| новая версия внутри семейства (Opus 5.5 → 5.6) | если родительская сессия на новейшем Opus или вне семейства Opus — ничего, алиас `opus` подхватит новую версию. Если сессия закреплена на старом Opus, сабагенты остаются на её точной версии (§3). Тогда нужно переключить сессию или закрепить полный id (например, `claude-opus-5-6`) в `config/models.json` → `make models`. Закреплённый id не обновляется сам, и при следующем релизе его меняют вручную |
 | другой уровень или effort у сабагентов | правка `config/models.json` → `make models`; симлинковая установка видит изменение сразу, плагин — после релиза |
-| модель Codex | правка `~/.codex/config.toml` (при `default`) или `codex.model` в локальном либо репозиторном конфиге; на один прогон — `REVIEWER_CODEX_MODEL` |
+| модель Codex | правка `~/.codex/config.toml` (при `default`) или `codex.model` в локальном либо репозиторном конфиге; на один прогон — `REVIEWER_CODEX_MODEL`. Сохранённый Orca-терминал со старыми настройками не переиспользуется (§4.6) |
 | модель судьи | `judge.model` в локальном или репозиторном конфиге; на один прогон — `TYPESAFE_DEFAULT_MODEL` |
 
 ### 4.6 Компоненты
@@ -121,32 +142,56 @@
 |---|---|
 | `config/models.json` | новый (§4.1) |
 | `config/reviewer.json` | удаляется |
-| `agents/{worker,reviewer,explorer}.md` | новые, frontmatter генерирует `make models` |
+| `agents/verus-{worker,reviewer,explorer}.md` | новые, frontmatter генерирует `make models` |
 | `scripts/models.mjs`, `Makefile` | новые: цель `models` и валидация |
-| `scripts/config.mjs` | новый: загрузка и слияние двух слоёв (`loadModels()`, `loadLocal(home?)`, `resolveCodex(env, home?)`, `resolveJudgeModel(env, home?)`, `resolveApiKey(env, home?)`) — общий модуль для судьи, `reviewer.sh` и инсталлера |
-| `scripts/typesafe-judge.mjs` | модель и ключ берёт из `config.mjs`, передаёт `model` в `systemOne`, ключ — в `new TypeSafeClient({ apiKey })`; guard «нет ключа» проверяет итоговый ключ, а не только env |
-| `scripts/reviewer.sh` | модель и effort Codex берёт через `node scripts/config.mjs codex`; при `default` флаг не передаётся ни в Orca-, ни в `codex exec`-ветке |
-| `scripts/install.mjs` | линкует `agents/*.md` в `~/.claude/agents/` (снятие при uninstall, перенацеливание, пропуск чужих файлов — как у скиллов); проверка ключа учитывает локальный файл |
-| 8 точек вызова, `USING.md`, `CLAUDE.md` | §4.4 |
-| `README.md` | новый раздел «Models and effort» и раздел про ключ: `~/.verus-skills/config.json` с `chmod 600` вместо `env` в `settings.json`; env остаётся альтернативой |
-| `README.md`, `docs/plugin-acceptance.md` | `rm -rf ~/.verus-skills` → `rm -f ~/.verus-skills/root` (иначе стирается ключ); в чек-лист — шаги про агентов (§5) |
+| `scripts/config.mjs` | новый: загрузка и слияние двух слоёв (`loadModels()`, `loadLocal(home?)`, `resolveCodex(env, home?)`, `resolveJudgeModel(env, home?)`, `resolveApiKey(env, home?)`) — общий модуль для судьи, `reviewer.sh` и инсталлера. CLI печатает только запрошенную несекретную секцию. `node scripts/config.mjs codex` выводит ровно две строки: итоговые модель и effort Codex. Секции `typesafe` в CLI нет, и ключ он не печатает никогда. Ошибки редактируются по §4.7 |
+| `scripts/typesafe-judge.mjs` | модель и ключ берёт из `config.mjs`, передаёт `model` в `systemOne`, ключ — в `new TypeSafeClient({ apiKey })`; guard «нет ключа» проверяет итоговый ключ, а не только env; ошибки печатает по правилам §4.7 |
+| `scripts/reviewer.sh` | модель и effort Codex берёт через `node scripts/config.mjs codex`; при `default` флаг не передаётся ни в Orca-, ни в `codex exec`-ветке. Без `node` `config.mjs` не вызывается и работает путь без Node (ниже). Переиспользование Orca-терминала учитывает настройки (ниже) |
+| `scripts/install.mjs` | линкует `agents/verus-*.md` в `~/.claude/agents/` (снятие при uninstall, перенацеливание своих ссылок — как у скиллов). Чужой файл на месте нужного идентификатора — ненулевой выход до любой записи (§4.3), а не пропуск. Проверка ключа учитывает локальный файл и значение ключа не печатает |
+| 8 точек вызова, `USING.md`, `CLAUDE.md` | §4.4: инструкции для Claude Code и Codex |
+| `README.md` | новый раздел «Models and effort» (включая зависимость алиаса от модели сессии и закрепление полным id) и раздел про ключ: `~/.verus-skills/config.json` с `chmod 600` вместо `env` в `settings.json`; env остаётся альтернативой |
+| `README.md`, `docs/plugin-acceptance.md` | `rm -rf ~/.verus-skills` → `rm -f ~/.verus-skills/root` (иначе стирается ключ); в чек-лист — шаги про агентов, закреплённую сессию и коллизию имён (§5) |
+
+**`reviewer.sh`: путь без Node.** Если `node` не найден, `reviewer.sh`:
+- не вызывает `config.mjs` и не читает ни `config/models.json`, ни `~/.verus-skills/config.json`;
+- берёт `CODEX_MODEL="${REVIEWER_CODEX_MODEL:-default}"` и `CODEX_REASONING="${REVIEWER_CODEX_REASONING:-default}"`;
+- печатает одну строку в stderr: `node not found; Orca path disabled, config ignored (env or default only)`;
+- запускает `codex exec` как обычно, при `default` без соответствующего флага.
+
+Битый конфиг в этом режиме не мешает, потому что его никто не читает. Node — не жёсткое требование.
+
+**`reviewer.sh`: переиспользование Orca-терминала с учётом настроек.** Orca-ветка работает только при наличии `node`, так что файл сессии читается и пишется через него.
+- Формат файла сессии — JSON: `{"handle": "term-1", "model": "<итоговая модель>", "reasoning": "<итоговый effort>"}`. В файл пишутся итоговые значения, как их выдал `config.mjs` или env, включая литерал `default`. Записывается он, как и сейчас, только после успешного отчёта.
+- Терминал переиспользуется, только если файл разбирается, в нём есть `handle`, `model` и `reasoning`, оба значения совпадают с текущими итоговыми и `orca terminal show` по хэндлу проходит. Поэтому при неизменных настройках раунд 2 попадает в тот же терминал и видит контекст раунда 1.
+- Если настройки отличаются (включая переходы явное значение → `default` и `default` → явное), запускается свежий терминал с текущими флагами. В stderr пишется строка `orca: reviewer settings changed, starting a fresh terminal (previous terminal <handle> left open)`.
+- Старый терминал **не закрывается**. Он создан не этим прогоном, а закрывать разрешено только `CREATED_HANDLE`. Строка в stderr называет его хэндл, чтобы пользователь мог закрыть его сам.
+- Файл старого формата, в котором только хэндл, считается «настройки неизвестны». Это **всегда** даёт свежий терминал, и старый тоже не закрывается. Так миграция не может молча отправить ревью в Codex с прежними флагами.
+- Если свежий терминал не заработал и прогон ушёл в `codex exec`, созданный терминал закрывается, как сейчас, а файл сессии не меняется.
+- Ограничение: при `default` правка `~/.codex/config.toml` не видна `reviewer.sh`, потому что литерал `default` не меняется. Чтобы подхватить её в Orca, нужно удалить файл сессии. README говорит об этом.
 
 ### 4.7 Ошибки
 
 - `config/models.json` битый или неполный:
   - `make models` падает с понятным сообщением и не пишет файлы;
   - судья выходит с кодом 2 — скилл спрашивает пользователя, как при недоступном судье;
-  - `reviewer.sh` выходит с кодом 1.
-- `~/.verus-skills/config.json` отсутствует — это нормально. Битый JSON — судья выходит с кодом 2 и называет файл, `reviewer.sh` выходит с кодом 1.
+  - `reviewer.sh` выходит с кодом 1, если `node` есть. Без `node` конфиг не читается (§4.6).
+- `~/.verus-skills/config.json` отсутствует — это нормально. Битый JSON — судья выходит с кодом 2, `reviewer.sh` (при наличии `node`) выходит с кодом 1. Сообщение в обоих случаях содержит только имя файла (ниже).
 - Локальный файл с ключом доступен группе или всем (`mode & 0o077`) — судья пишет предупреждение в stderr и продолжает работу.
 - Ключа нет ни в env, ни в локальном файле — прежнее поведение: exit 2, «judge unavailable».
 - Файлы агентов разошлись с конфигом — падает тест.
+- Идентификатор агента занят чужим файлом — инсталлер выходит с ненулевым кодом и ничего не пишет (§4.3).
+
+**Редактирование секретов.** Локальный файл хранит `typesafe.apiKey`, поэтому ни одно сообщение об ошибке не должно выносить его содержимое наружу.
+- `loadLocal` перехватывает любую ошибку чтения и разбора и бросает новую ошибку с сообщением, где назван только файл: `invalid JSON in ~/.verus-skills/config.json`. Исходный `err.message` парсера никуда не передаётся: ни в текст, ни в `cause`, ни в стек.
+- Ни одна ошибка валидации (`models.mjs`, `config.mjs`, судья, `reviewer.sh`, инсталлер) никогда не включает значение из конфига. Ошибки называют поле и ожидание, но не значение: `codex.model must be a non-empty string`, `typesafe.apiKey must be a string`.
+- CLI `config.mjs`, которым пользуется `reviewer.sh`, печатает только запрошенные поля: `node scripts/config.mjs codex` выводит модель и effort Codex и ничего больше, ключ — никогда.
+- Судья перед печатью любой ошибки (строки около 253 и 260) заменяет в тексте итоговый ключ, если он известен, на `[redacted]`. Это страховка на случай, если ключ попадёт в сообщение SDK или сети.
 
 ## 5. Тестирование
 
 1. `tests/models.test.mjs`:
    - `config/models.json` валиден;
-   - три файла агентов совпадают с ним по `model`/`effort`;
+   - три файла `agents/verus-*.md` совпадают с ним по `model`/`effort`, а их `name` равен `verus-<ключ уровня>`;
    - `make models` на песочнице перегенерирует их;
    - на кривом конфиге (неизвестный effort, нет уровня, поле `apiKey`) падает, не записав ни одного файла;
    - меняются только строки `model:`/`effort:`, остальной frontmatter и тело не тронуты.
@@ -155,20 +200,44 @@
    - `default` у Codex не порождает флага;
    - ключ из локального файла принимается, env его перекрывает;
    - предупреждение о правах файла;
-   - битый локальный JSON.
-3. `tests/judge.test.mjs`: в `systemOne` уходит разрешённый `model`; ключ из локального файла доходит до клиента; guard срабатывает, только если ключа нет нигде.
-4. `tests/reviewer.test.mjs`: при `default` в командной строке нет `-m` и `model_reasoning_effort`; явные значения и env передаются. Существующие тесты с `config/reviewer.json` переводятся на `models.json`.
+   - битый локальный JSON;
+   - **секрет не утекает**. Подставной секрет `ts_DUMMY_SECRET_123` прогоняется через битый локальный файл (незакавыченное значение `apiKey`) и через ошибки валидации (`typesafe` строкой вместо объекта, `typesafe.apiKey` не строкой, неверный тип `codex.model` рядом с ключом). Ошибка `loadLocal` называет только файл. Stdout и stderr `node scripts/config.mjs codex` не содержат секрета ни при сбое, ни при успехе, а при успехе выводят ровно две строки.
+3. `tests/judge.test.mjs`:
+   - в `systemOne` уходит разрешённый `model`;
+   - ключ из локального файла доходит до клиента;
+   - guard срабатывает, только если ключа нет нигде;
+   - при битом локальном файле с подставным секретом судья выходит с кодом 2, называет файл, и секрета нет ни в stdout, ни в stderr;
+   - ошибка клиента, в тексте которой есть ключ, печатается с `[redacted]`.
+4. `tests/reviewer.test.mjs`:
+   - при `default` в командной строке нет `-m` и `model_reasoning_effort`; явные значения и env передаются. Существующие тесты с `config/reviewer.json` переводятся на `models.json`;
+   - при битом локальном конфиге с подставным секретом выход 1, секрета нет в stdout и stderr;
+   - переиспользование с учётом настроек. Сейчас тест «reuses an existing Orca session» проверяет простое переиспользование по хэндлу, а «a reused Orca session terminal is never closed» пишет файл сессии старого формата. Оба переводятся на новый формат. Новые случаи:
+     - два прогона подряд с одинаковыми настройками — второй переиспользует терминал без `terminal create`;
+     - два прогона подряд с разной моделью или effort — второй создаёт новый терминал с новыми флагами, не закрывает старый и перезаписывает файл сессии;
+     - переход явное значение → `default`: в новом `terminal create` нет `-m` или `model_reasoning_effort`;
+     - переход `default` → явное значение: флаг появляется в новом `terminal create`;
+     - файл сессии старого формата (только хэндл) — свежий терминал, старый не закрыт;
+   - путь без Node. Тесты «skips Orca when node is unavailable» и «codex exec stays pinned when node is unavailable» остаются. Оба кладут в песочницу `config/models.json` и локальный файл с отличимыми значениями и проверяют, что в команде `codex exec` этих значений нет, то есть конфиг проигнорирован, и что stderr содержит `config ignored`. Во втором тесте проверка `model_reasoning_effort=high` меняется: без env флага нет, потому что умолчание теперь `default`, а не зашитое `high`.
 5. `tests/patched-skills.test.mjs`:
    - в скиллах не осталось `model: opus` и `general-purpose` в точках вызова;
-   - каждая из 8 точек называет свой тип агента в двух формах и содержит «unnamed» и «background»;
-   - ни в одной нет параметров `name:` и `model:`.
-6. `tests/install.test.mjs`: линковка, снятие, перенацеливание и пропуск чужих файлов для `agents/`; проверка ключа видит локальный файл.
-7. `tests/plugin.test.mjs`: три агента на месте; при наличии бинаря `claude plugin validate` их принимает.
+   - каждая из 8 точек содержит инструкцию для Claude Code: свой тип `verus-*` в двух формах, `subagent_type`, «unnamed» и «background»;
+   - каждая из 8 точек содержит инструкцию для Codex: `spawn_agent`, «unnamed» и «background», без типа `verus-*` и без модели;
+   - ни в одной нет параметров `name:` и `model:`;
+   - во фразе про хост без инструмента сабагентов больше нет «e.g. a Codex session»;
+   - `USING.md` формулирует правило для обоих хостов.
+6. `tests/install.test.mjs`:
+   - линковка, снятие и перенацеливание своих ссылок для `agents/verus-*.md`;
+   - **коллизия имени**. Чужой обычный файл `~/.claude/agents/verus-worker.md`, а отдельно — симлинк на чужой путь, дают ненулевой выход с сообщением, где назван файл. Ни одна ссылка на скилл или агента не создана, хук не записан, чужой файл не тронут. `--force` проверку не обходит. Uninstall чужой файл не удаляет;
+   - проверка ключа видит локальный файл и не печатает его значение.
+7. `tests/plugin.test.mjs`: три агента `agents/verus-*.md` на месте; при наличии бинаря `claude plugin validate` их принимает.
 
 Ручная приёмка (добавляется в `docs/plugin-acceptance.md`):
-- `claude plugin details verus-skills@verus-skills` показывает `Agents (3)`;
-- вызов `verus-skills:worker` без `name` не открывает окна;
+- `claude plugin details verus-skills@verus-skills` показывает `Agents (3)`: `verus-worker`, `verus-reviewer`, `verus-explorer`;
+- вызов `verus-skills:verus-worker` без `name` не открывает окна;
 - debug-лог сессии показывает модель и effort агента из конфига;
+- закреплённая родительская сессия: в сессии, запущенной на полном id более старого Opus, debug-лог показывает, что `verus-worker` с `model: opus` работает на той же старой версии. После закрепления полного id в `config/models.json` и `make models` агент работает на закреплённом id;
+- коллизия: при чужом `~/.claude/agents/verus-worker.md` `make install` падает с ненулевым кодом, называет файл, и ни одна ссылка не создана. Работа не уходит к чужому агенту молча;
+- в Codex-сессии SDD-implementer запускается через `spawn_agent`, без имени и отдельного окна;
 - судья работает с ключом только из `~/.verus-skills/config.json` при снятом `TYPESAFE_API_KEY`.
 
 ## 6. Решения
@@ -212,6 +281,8 @@
   Выбрано: A, confidence 0.99, данных 0.64 → принято автоматически
 ```
 
+Ревью спеки (раунд 1) уточнило: занятый чужим файлом идентификатор агента — ошибка инсталлера, а не пропуск (§4.3).
+
 ### 5. Сабагенты Codex — `auto`
 
 ```
@@ -220,6 +291,8 @@
   B. In scope      1%
   Выбрано: A, confidence 0.99, данных 0.73 → принято автоматически
 ```
+
+Вне рамок только их модель и effort. Инструкция вызова через `spawn_agent` в каждой точке сохраняется (ревью спеки, раунд 1; §4.4).
 
 ### 6. Сколько типов агентов — `user`
 
@@ -231,7 +304,7 @@
   Выбрано: B, confidence 0.82, данных 0.34 → спросить пользователя (мало данных)
 ```
 
-Выбрано пользователем: **три уровня** — `worker`, `reviewer`, `explorer`.
+Выбрано пользователем: **три уровня** — `worker`, `reviewer`, `explorer`. После ревью спеки (раунд 1) это имена уровней и ключи `config/models.json`, а типы агентов называются `verus-worker`, `verus-reviewer`, `verus-explorer` (§4.3).
 
 ### 7. Как значения попадают в файлы агентов — `auto`
 
@@ -287,4 +360,63 @@
 
 ### 12. Сабагенты без имени и окон — `user` (исходное требование)
 
-Сабагенты вызываются через `subagent_type`, без параметра `name` и в фоне. Это закреплено тестом (§5, п. 5) и шагом приёмки.
+Сабагенты вызываются без параметра `name` и в фоне: в Claude Code через `subagent_type`, в Codex через `spawn_agent`. Это закреплено тестом (§5, п. 5) и шагом приёмки.
+
+### Ревью спеки, раунд 1 (Codex)
+
+Ревьюер — настоящий Codex через Orca (`reviewer: orca`). Отчёт: `docs/reviews/VerusK-configurable-models-2026-09-23-docs-specs-2026-09-23-configurable-models-design-md.md`. Все шесть находок приняты судьёй автоматически.
+
+```
+Решение (Jev): How should the spec handle: a malformed local config that now holds the API key leaks key text through JSON.parse error messages, which the judge prints verbatim?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 1.00, данных 0.88 → принято автоматически
+```
+
+Применено: факт в §3, CLI `config.mjs` в §4.6, раздел «Редактирование секретов» в §4.7, тесты утечки в §5 (пп. 2–4).
+
+```
+Решение (Jev): How should the spec handle: reviewer.sh reuses a saved Orca terminal started with the previous Codex flags, so a changed config or one-run override never reaches the reviewer while that terminal lives?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 1.00, данных 0.84 → принято автоматически
+```
+
+Применено: факт в §3, «переиспользование Orca-терминала с учётом настроек» в §4.6 (старый терминал не закрывается, файл старого формата даёт свежий терминал), строка про Codex в §4.5, тесты переходов в §5 (п. 4).
+
+```
+Решение (Jev): How should the spec handle: replacing every dispatch instruction with Claude-only subagent_type identifiers leaves the same skills, installed in Codex, with no specified way to dispatch?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 0.99, данных 0.78 → принято автоматически
+```
+
+Применено: §2, факт в §3, инструкции для двух хостов и правило `USING.md` по хостам в §4.4, решения 5 и 12, тест обоих хостов в §5 (п. 5), шаг Codex в ручной приёмке.
+
+```
+Решение (Jev): How should the spec handle: generic agent names (worker, reviewer, explorer) plus the installer's skip-foreign-files policy can silently route a dispatch to someone else's agent of the same name?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 1.00, данных 0.86 → принято автоматически
+```
+
+Применено: идентификаторы `verus-*` и таблица «ключ уровня → тип агента» в §4.1 и §4.3, ошибка инсталлера при коллизии в §4.3, §4.6 и §4.7, тест и шаг приёмки в §5 (п. 6), примечания к решениям 4 и 6.
+
+```
+Решение (Jev): How should the spec handle: its claim that the opus alias always picks the newest Opus is wrong when the parent session runs an older Opus, because subagents then keep the parent's exact model?
+  A. Fix as proposed  100%
+  C. Reject           0%
+  Выбрано: A, confidence 0.99, данных 0.86 → принято автоматически
+```
+
+Применено: факт в §3, строка «новая версия внутри семейства» в §4.5 (зависимость от модели сессии и закрепление полным id), README в §4.6, шаг с закреплённой сессией в ручной приёмке §5.
+
+```
+Решение (Jev): How should the spec handle: making reviewer.sh resolve its config through a Node script would regress its existing Node-free codex exec path?
+  A. Fix as proposed (env/default fallback)  100%
+  B. Make Node a hard prerequisite           0%
+  C. Reject                                  0%
+  Выбрано: A, confidence 0.99, данных 0.76 → принято автоматически
+```
+
+Применено: факт в §3, приоритеты в §4.2, «путь без Node» в §4.6, §4.7, проверки no-node тестов в §5 (п. 4).
