@@ -73,3 +73,10 @@ test("claude plugin validate accepts the repo", { skip: spawnSync("which", ["cla
   // `"manifest": null`, so the exit code alone proves nothing.
   assert.equal(JSON.parse(res.stdout).manifest?.type, "marketplace", res.stdout);
 });
+
+test("the plugin ships the three verus agents", () => {
+  for (const t of ["worker", "reviewer", "explorer"]) {
+    const text = readFileSync(path.join(ROOT, "agents", `verus-${t}.md`), "utf8");
+    assert.match(text, new RegExp(`^---\\nname: verus-${t}\\n`));
+  }
+});

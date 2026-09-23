@@ -1,4 +1,4 @@
-.PHONY: install uninstall sync repatch vendor-sdk release cleanup test deps
+.PHONY: install uninstall sync repatch vendor-sdk models release cleanup test deps
 
 deps:
 	npm install --no-audit --no-fund
@@ -17,6 +17,9 @@ repatch:
 
 vendor-sdk:
 	node scripts/vendor-sdk.mjs
+
+models:
+	node scripts/models.mjs
 
 release:
 	git diff --quiet HEAD || { echo "release: commit or stash tracked changes first" >&2; exit 1; }
