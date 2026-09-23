@@ -261,7 +261,9 @@ test("the CLI fails without leaking the secret on a broken local file or a bad f
 
 test("the CLI refuses a Codex value that is not a single token, from every source, without echoing it", () => {
   // A newline would forge the second output line; a space would add arguments to the Orca --command.
-  for (const bad of ["gpt-x\nlow", "gpt-x -c evil=1"]) {
+  // Trailing LF/CR/CRLF are pinned too: JS `$` without the m flag matches only at the very end,
+  // so they are already rejected — the cases catch a future regex change (plan-review round 2).
+  for (const bad of ["gpt-x\nlow", "gpt-x -c evil=1", "gpt-test\n", "gpt-test\r", "gpt-test\r\n"]) {
     const cases = [
       [cli(root({ ...MODELS, codex: { model: bad, reasoning: "default" } }), home()), /^config: codex\.model in config\/models\.json must be a single token$/],
       [cli(root({ ...MODELS, codex: { model: "default", reasoning: bad } }), home()), /^config: codex\.reasoning in config\/models\.json must be a single token$/],
@@ -1007,7 +1009,7 @@ test("without node the config is ignored: env or default only", () => {
 });
 
 test("a Codex value that is not a single token stops the run before any reviewer starts, with or without node", () => {
-  const bad = "gpt-x -c evil=1";
+  for (const bad of ["gpt-x -c evil=1", "gpt-test\n", "gpt-test\r", "gpt-test\r\n"]) {
   const dir = repo();
   const r = run(dir, ["orca", "codex"], { env: { REVIEWER_CODEX_MODEL: bad } });
   assert.equal(r.status, 1);
@@ -1023,6 +1025,7 @@ test("a Codex value that is not a single token stops the run before any reviewer
   assert.match(r2.stderr, /config: REVIEWER_CODEX_MODEL must be a single token/);
   assert.doesNotMatch(r2.stderr, /evil/);
   assert.doesNotMatch(r2.log, /codex exec|terminal create/);
+  }
 });
 ```
 
@@ -1448,7 +1451,7 @@ git commit -m "feat(reviewer): models config, default flags, end marker, one Orc
 
 **Interfaces:**
 - Consumes: `resolveJudgeModel`, `resolveApiKey`, `loadLocal`, `redact` from `scripts/config.mjs` (Task 1).
-- Produces: `judge(input, { client, choice, noul, threshold, sufficiencyThreshold, model })` — when `model` is a non-empty string, `client.systemOne` receives `{ state, questions, model }`; otherwise `{ state, questions }` as today. `failureMessage(err: Error, apiKey: string | null): string` — `judge failed: <message with the key replaced by [redacted]>`. The CLI builds `new TypeSafeClient({ apiKey })` with the resolved key and sends the resolved model in every `POST /v1/systemone` body; the SDK still takes its endpoint from `TYPESAFE_BASE_URL`, which the CLI tests point at a local `node:http` server.
+- Produces: `judge(input, { client, choice, noul, threshold, sufficiencyThreshold, model })` — when `model` is a non-empty string, `client.systemOne` receives `{ state, questions, model }`; otherwise `{ state, questions }` as today. `failureMessage(err: Error, apiKey: string | null): string` — `judge failed: <message with the key replaced by [redacted]>`. `redactingLogger(apiKey: string, write?: (line: string) => void): { debug, info, warn, error }` — every method formats its arguments into one line, replaces the key with `[redacted]` and writes it to stderr (or `write`). The CLI builds `new TypeSafeClient({ apiKey, logLevel, logger: redactingLogger(apiKey) })` with `logLevel` = `TYPESAFE_LOG_LEVEL` if set, else `"off"`, the resolved key and sends the resolved model in every `POST /v1/systemone` body; the SDK still takes its endpoint from `TYPESAFE_BASE_URL`, which the CLI tests point at a local `node:http` server.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1463,7 +1466,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { judge, validate, buildState, buildQuestions, formatDecision, failureMessage } from "../scripts/typesafe-judge.mjs";
+import { judge, validate, buildState, buildQuestions, formatDecision, failureMessage, redactingLogger } from "../scripts/typesafe-judge.mjs";
 
 const TEMP_DIRS = [];
 function tmp(prefix) {
@@ -1682,14 +1685,67 @@ test("failureMessage replaces every occurrence of the key", () => {
   assert.equal(msg, "judge failed: 401 for key [redacted] (retry with [redacted])");
   assert.equal(failureMessage(new Error("boom"), null), "judge failed: boom");
 });
+
+test("redactingLogger writes one redacted line per call, for every level and argument type", () => {
+  const lines = [];
+  const log = redactingLogger(JUDGE_SECRET, (line) => lines.push(line));
+  log.debug("request", { headers: { authorization: `Bearer ${JUDGE_SECRET}` } });
+  log.info(`key=${JUDGE_SECRET}`);
+  log.warn("retrying", 2);
+  log.error(new Error(`401 for ${JUDGE_SECRET}`));
+  const circular = {};
+  circular.self = circular;
+  log.debug("cycle", circular);
+  assert.equal(lines.length, 5);
+  assert.ok(lines.every((l) => !l.includes(JUDGE_SECRET) && !l.includes("\n")), lines.join("\n"));
+  assert.match(lines[0], /^\[typesafe-sdk debug\] request .*Bearer \[redacted\]/);
+  assert.match(lines[2], /^\[typesafe-sdk warn\] retrying 2$/);
+  assert.match(lines[3], /401 for \[redacted\]/);
+});
+
+test("CLI: with TYPESAFE_LOG_LEVEL=debug an error body holding the key reaches neither stream", async (t) => {
+  const api = await fakeTypeSafe({ status: 400, json: { error: `invalid key ${JUDGE_SECRET}` } });
+  t.after(api.close);
+  const r = await runCliAsync({
+    home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }),
+    env: { TYPESAFE_BASE_URL: api.url, TYPESAFE_LOG_LEVEL: "debug" },
+  });
+  assert.equal(r.status, 2);
+  assert.equal(r.stdout, "");
+  assert.ok(!r.stderr.includes(JUDGE_SECRET), r.stderr);
+});
+
+test("CLI: with TYPESAFE_LOG_LEVEL=debug a success still prints exactly one JSON line on stdout", async (t) => {
+  const api = await fakeTypeSafe(OK_REPLY);
+  t.after(api.close);
+  const r = await runCliAsync({
+    home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }),
+    env: { TYPESAFE_BASE_URL: api.url, TYPESAFE_LOG_LEVEL: "debug" },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = r.stdout.trimEnd().split("\n");
+  assert.equal(out.length, 1, r.stdout);
+  assert.equal(JSON.parse(out[0]).choice, "A");
+  assert.ok(!r.stderr.includes(JUDGE_SECRET) && !r.stdout.includes(JUDGE_SECRET));
+});
+
+test("CLI: without TYPESAFE_LOG_LEVEL the SDK logs nothing", async (t) => {
+  const api = await fakeTypeSafe(OK_REPLY);
+  t.after(api.close);
+  const r = await runCliAsync({ home: judgeHome({ typesafe: { apiKey: JUDGE_SECRET } }), env: { TYPESAFE_BASE_URL: api.url } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stderr, "");
+});
 ```
+
+`cliEnv` already drops an inherited `TYPESAFE_LOG_LEVEL`, so the last test does not depend on the developer's shell.
 
 `input` and `deps` are the fixtures already defined at the top of `tests/judge.test.mjs`.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `node --test tests/judge.test.mjs`
-Expected: FAIL — the module fails to load because `failureMessage` is not exported. Once it is, before Steps 3-4: `seen[0].model` is undefined; the guard message still says only `TYPESAFE_API_KEY is not set`; the local-key HTTP tests exit 2 at that guard without sending a request.
+Expected: FAIL — the module fails to load because `failureMessage` and `redactingLogger` are not exported. Once it is, before Steps 3-4: `seen[0].model` is undefined; the guard message still says only `TYPESAFE_API_KEY is not set`; the local-key HTTP tests exit 2 at that guard without sending a request.
 
 - [ ] **Step 3: Pass `model` through `judge()`**
 
@@ -1741,6 +1797,24 @@ Add, next to `judge`:
 export function failureMessage(err, apiKey) {
   return `judge failed: ${redact(err.message, apiKey)}`;
 }
+
+// The SDK's own logger prints info/debug to stdout (breaking the one-line JSON contract)
+// and debug-logs request/response data; this one keeps every line on stderr, key redacted.
+function logArg(a) {
+  if (typeof a === "string") return a;
+  if (a instanceof Error) return a.message;
+  try {
+    return JSON.stringify(a) ?? String(a);
+  } catch {
+    return String(a);
+  }
+}
+
+export function redactingLogger(apiKey, write = (line) => process.stderr.write(line + "\n")) {
+  const at = (level) => (...args) =>
+    write(`[typesafe-sdk ${level}] ${redact(args.map(logArg).join(" "), apiKey).replace(/[\r\n]+/g, " ")}`);
+  return { debug: at("debug"), info: at("info"), warn: at("warn"), error: at("error") };
+}
 ```
 
 Replace the final `try { … } catch` in `main()`:
@@ -1748,7 +1822,10 @@ Replace the final `try { … } catch` in `main()`:
 ```js
   try {
     const { TypeSafeClient, choice, noul } = await loadSdk();
-    const client = new TypeSafeClient({ apiKey });
+    // SDK logging is off unless TYPESAFE_LOG_LEVEL asks for it; then it goes to stderr, redacted.
+    // Its default logger would write info/debug to stdout (breaking the JSON) and debug-logs error bodies.
+    const logLevel = process.env.TYPESAFE_LOG_LEVEL?.trim() || "off";
+    const client = new TypeSafeClient({ apiKey, logLevel, logger: redactingLogger(apiKey) });
     const result = await judge(input, { client, choice, noul, threshold, sufficiencyThreshold, model });
     process.stdout.write(JSON.stringify(result) + "\n");
   } catch (err) {
@@ -2865,3 +2942,23 @@ Applied: Task 1 — `an unreadable local path, arrays and empty fields are file-
 
 accepted without the judge: the README keeps claims the plan contradicts — `README.md:33` (`opus subagents`), `:54` ("Fresh opus subagent per task"), `:74` (key read from `TYPESAFE_API_KEY` only), `:75` and `:92` (subagents on `opus`), `:148` (every occupied name skipped).
 Applied: Task 9 Step 3 — the flow diagram, the step-4 row, `Decisions and reviewers`, the `Patches:` paragraph, `Two ways to install` and the install text now name the agent tiers and the local key; the install text separates skill-name skipping from agent-name refusal and the dangling-link replacement; Step 6 greps that none of the old claims remain.
+
+## Plan review decisions (round 2)
+
+Reviewer: real Codex via Orca (`reviewer: orca`), report `docs/plans/2026-09-23-configurable-models.review.md`; round-1 report kept as `docs/plans/2026-09-23-configurable-models.review.md.round1.md`.
+
+Left as is (code): P1 "a trailing newline passes the single-token check because `$` matches before a final `\n`" — verified false: in JS, `/^[\w.:[\]-]+$/.test("gpt-test\n")` is `false` (also for `\r` and `\r\n`; `$` without the `m` flag matches only at the end of input), and the bash `TOKEN_RE` rejects them too. Pin tests added: `"gpt-test\n"`, `"gpt-test\r"`, `"gpt-test\r\n"` in the Task 1 token table and in the Task 3 reviewer test, with and without node.
+
+```
+Решение (Jev): How should the judge handle TypeSafe SDK logging, which by default writes info/debug to stdout and debug-logs request/response data that can hold the API key?
+  A. Silence                                         21%
+  B. Redacting stderr logger                         26%
+  C. Off by default, redacting logger when asked     53%
+  Рекомендация Claude: C
+  Данных достаточно: 48%
+  Выбрано: C, confidence 0.30, данных 0.48 → спросить пользователя
+Ответ пользователя: C — «Выключены, по запросу — с редактированием».
+```
+
+Applied: Task 4 — the CLI passes `logLevel` = trimmed `TYPESAFE_LOG_LEVEL` or `"off"` and `logger: redactingLogger(apiKey)` (exported; one line per call on stderr, key → `[redacted]`, safe for errors and circular objects). Tests: a unit test of `redactingLogger`; with `TYPESAFE_LOG_LEVEL=debug`, a 400 whose body holds the key reaches neither stream (exit 2), and a success still prints exactly one JSON line on stdout; without the variable, stderr stays empty on success.
+
