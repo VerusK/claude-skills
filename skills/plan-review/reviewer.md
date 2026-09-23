@@ -62,6 +62,9 @@ The report path is named on its own line at the end of this prompt. Save the rep
 ### 3. Tests
 ### 4. Performance
 <one short paragraph each, "No issues found" when clean>
+<!-- end of review -->
 ```
+
+End the report with this exact last line: `<!-- end of review -->` — write it once, after everything else. The launcher treats the report as finished only when that line is in the file, so a report without it is discarded.
 
 Do not edit the plan or any other file. Do not run tests or builds. Do not print the report to stdout; write the file and stop.

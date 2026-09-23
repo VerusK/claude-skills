@@ -60,8 +60,11 @@ The report path is named on its own line at the end of this prompt. Save the rep
 <one short paragraph; "No issues found" when clean, "No plan given" when PLAN and SPEC are both none>
 ## Ledger triage
 <for each deferred/parked line: BLOCKS MERGE or OK, one clause why; "None" if no ledger lines were given>
+<!-- end of review -->
 ```
 
 `<scope>` in the title is `<branch> vs <base>` when the SCOPE line says `branch`; otherwise it is a short description of what you reviewed — the paths, or `whole codebase`. When the MODE line says `report-only`, append ` (includes uncommitted changes)` to the title.
+
+End the report with this exact last line: `<!-- end of review -->` — write it once, after everything else. The launcher treats the report as finished only when that line is in the file, so a report without it is discarded.
 
 Do not edit any file except the report. Do not print the report to stdout; write the file and stop.

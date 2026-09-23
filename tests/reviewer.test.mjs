@@ -40,10 +40,24 @@ function run(dir, bins, opts = {}) {
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   // opts.script: run a copy of the launcher from elsewhere (e.g. a tree with no config/).
   const args = [opts.script ?? SCRIPT, "--prompt-file", prompt, "--output", opts.output ?? "docs/reviews/out.md",
-    "--title", "t", "--repo", opts.repo ?? dir, "--timeout-min", opts.timeoutMin ?? "1"];
+    "--title", "t", "--repo", opts.repo ?? dir, "--timeout-min", opts.timeoutMin ?? "1", ...(opts.extraArgs ?? [])];
   const r = spawnSync("bash", args, { cwd: opts.cwd ?? dir, encoding: "utf8", env });
   return { ...r, log: existsSync(log) ? readFileSync(log, "utf8") : "" };
 }
+
+function closeSession(dir, file, bins = ["orca"], env = {}) {
+  const bin = tmp("bin-");
+  for (const b of bins) { copyFileSync(path.join(FIX, b), path.join(bin, b)); chmodSync(path.join(bin, b), 0o755); }
+  const log = path.join(dir, "calls.log");
+  const r = spawnSync("bash", [SCRIPT, "--close-session", file], {
+    cwd: dir, encoding: "utf8",
+    env: { PATH: `${bin}:/usr/bin:/bin`, HOME: dir, FAKE_LOG: log, NODE: process.execPath, ...env },
+  });
+  return { ...r, log: existsSync(log) ? readFileSync(log, "utf8") : "" };
+}
+const count = (text, re) => (text.match(new RegExp(re, "gm")) ?? []).length;
+// What the fake orca writes: every complete report ends with the line reviewer.sh waits for.
+const ORCA_REPORT = "orca report\n<!-- end of review -->\n";
 
 test("prefers Orca when available", () => {
   const dir = repo();
@@ -52,9 +66,10 @@ test("prefers Orca when available", () => {
   assert.match(r.stdout, /reviewer: orca/);
   assert.match(r.log, /terminal create/);
   assert.doesNotMatch(r.log, /^codex/m);
-  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "orca report");
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), ORCA_REPORT);
   assert.ok(existsSync(path.join(dir, ".context/t-prompt.md")));
   assert.match(readFileSync(path.join(dir, ".git/info/exclude"), "utf8"), /\.context\//);
+  assert.match(r.log, /terminal close --terminal term-1/); // no --session-file: closed after the report
 });
 
 test("falls back to codex exec without Orca", () => {
@@ -157,18 +172,6 @@ test("falls back to codex when Orca is unreachable", () => {
   assert.doesNotMatch(r.log, /terminal create/);
 });
 
-test("reuses an existing Orca session", () => {
-  const dir = repo();
-  mkdirSync(path.join(dir, ".context"), { recursive: true });
-  writeFileSync(path.join(dir, ".context/t-session"), "term-1\n");
-  const r = run(dir, ["orca", "codex"]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /reviewer: orca/);
-  assert.match(r.log, /terminal show/);
-  assert.doesNotMatch(r.log, /terminal create/);
-  assert.equal(readFileSync(path.join(dir, ".context/t-session"), "utf8").trim(), "term-1");
-});
-
 test("never writes info/exclude into the worktree when rev-parse fails", () => {
   const dir = repo();
   const r = run(dir, ["codex"], { shims: { git: GIT_SHIM } });
@@ -179,110 +182,135 @@ test("never writes info/exclude into the worktree when rev-parse fails", () => {
   assert.ok(!existsSync(path.join(dir, "info/exclude")), "created <repo>/info/exclude inside the working tree");
 });
 
-test("config/reviewer.json holds a non-empty model and reasoning effort", () => {
-  const cfgPath = fileURLToPath(new URL("../config/reviewer.json", import.meta.url));
-  const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
-  for (const k of ["codexModel", "codexReasoning"]) {
-    assert.equal(typeof cfg[k], "string", `${k} must be a string`);
-    assert.ok(cfg[k].trim().length > 0, `${k} must not be empty`);
-  }
-});
-
-test("codex exec is pinned to the configured model and reasoning effort", () => {
-  const dir = repo();
-  const r = run(dir, ["codex"]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.log, /codex exec .*-m gpt-6-astra/);
-  assert.match(r.log, /model_reasoning_effort=high/);
-});
-
-test("the Orca codex terminal is pinned to the configured model and reasoning effort", () => {
-  const dir = repo();
-  const r = run(dir, ["orca", "codex"]);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.log, /terminal create .*--command codex -m gpt-6-astra -c model_reasoning_effort=high/);
-});
-
-test("env overrides the configured model and reasoning effort", () => {
-  const dir = repo();
-  const r = run(dir, ["codex"], {
-    env: { REVIEWER_CODEX_MODEL: "gpt-test", REVIEWER_CODEX_REASONING: "low" },
-  });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.log, /codex exec .*-m gpt-test/);
-  assert.match(r.log, /model_reasoning_effort=low/);
-  assert.doesNotMatch(r.log, /gpt-6-astra/);
-});
-
-test("falls back to the built-in defaults when config/reviewer.json is missing", () => {
-  const dir = repo();
-  const lone = tmp("rev-nocfg-");
-  mkdirSync(path.join(lone, "scripts"), { recursive: true });
-  const script = path.join(lone, "scripts/reviewer.sh");
-  copyFileSync(SCRIPT, script);
-  chmodSync(script, 0o755);
-  assert.ok(!existsSync(path.join(lone, "config/reviewer.json")));
-  const r = run(dir, ["codex"], { script });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.log, /codex exec .*-m gpt-6-astra/);
-  assert.match(r.log, /model_reasoning_effort=high/);
-});
-
-// A standalone launcher tree: <root>/scripts/reviewer.sh + <root>/config/reviewer.json.
-// Values differ from the repo's own config so the assertions below can only pass
-// if the file was actually read (and not the hard-coded defaults).
-function cfgTree(cfg) {
+// A standalone launcher tree: <root>/scripts/{reviewer.sh,config.mjs} + <root>/config/models.json.
+// Values differ from the repo's own config so the assertions can only pass if the file was read.
+function cfgTree(codex) {
   const root = tmp("rev-cfg-");
   mkdirSync(path.join(root, "scripts"), { recursive: true });
   mkdirSync(path.join(root, "config"), { recursive: true });
   const script = path.join(root, "scripts/reviewer.sh");
   copyFileSync(SCRIPT, script);
   chmodSync(script, 0o755);
-  writeFileSync(path.join(root, "config/reviewer.json"), JSON.stringify(cfg));
+  copyFileSync(fileURLToPath(new URL("../scripts/config.mjs", import.meta.url)), path.join(root, "scripts/config.mjs"));
+  const models = JSON.parse(readFileSync(fileURLToPath(new URL("../config/models.json", import.meta.url)), "utf8"));
+  models.codex = codex;
+  writeFileSync(path.join(root, "config/models.json"), JSON.stringify(models));
   return { root, script };
 }
+function localConfig(dir, obj) {
+  mkdirSync(path.join(dir, ".verus-skills"), { recursive: true });
+  writeFileSync(path.join(dir, ".verus-skills/config.json"), typeof obj === "string" ? obj : JSON.stringify(obj));
+}
 
-test("codex exec uses the model and reasoning effort from config/reviewer.json", () => {
+test("under the shipped default, codex exec gets neither -m nor model_reasoning_effort", () => {
   const dir = repo();
-  const { script } = cfgTree({ codexModel: "cfg-model", codexReasoning: "minimal" });
-  const r = run(dir, ["codex"], { script });
+  const r = run(dir, ["codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /^codex exec /m);
+  assert.doesNotMatch(r.log, / -m /);
+  assert.doesNotMatch(r.log, /model_reasoning_effort/);
+});
+
+test("under the shipped default, the Orca terminal command is plain codex", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /terminal create .*--command codex --title/);
+});
+
+test("env overrides model and effort, each independently", () => {
+  const dir = repo();
+  let r = run(dir, ["codex"], { env: { REVIEWER_CODEX_MODEL: "gpt-test", REVIEWER_CODEX_REASONING: "low" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /codex exec .*-m gpt-test/);
+  assert.match(r.log, /model_reasoning_effort=low/);
+  const dir2 = repo();
+  r = run(dir2, ["codex"], { env: { REVIEWER_CODEX_REASONING: "low" } });
+  assert.doesNotMatch(r.log, / -m /);
+  assert.match(r.log, /model_reasoning_effort=low/);
+});
+
+test("codex exec and the Orca terminal use config/models.json", () => {
+  const { script } = cfgTree({ model: "cfg-model", reasoning: "minimal" });
+  let r = run(repo(), ["codex"], { script });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.log, /codex exec .*-m cfg-model/);
   assert.match(r.log, /model_reasoning_effort=minimal/);
-  assert.doesNotMatch(r.log, /gpt-6-astra/);
-});
-
-test("the Orca terminal uses the model and reasoning effort from config/reviewer.json", () => {
-  const dir = repo();
-  const { script } = cfgTree({ codexModel: "cfg-model", codexReasoning: "minimal" });
-  const r = run(dir, ["orca", "codex"], { script });
-  assert.equal(r.status, 0, r.stderr);
+  r = run(repo(), ["orca", "codex"], { script });
   assert.match(r.log, /terminal create .*--command codex -m cfg-model -c model_reasoning_effort=minimal/);
-  assert.doesNotMatch(r.log, /gpt-6-astra/);
 });
 
-test("finds config/reviewer.json when launched through a symlink", () => {
+test("the local ~/.verus-skills/config.json overrides the repo config", () => {
+  const { script } = cfgTree({ model: "cfg-model", reasoning: "minimal" });
   const dir = repo();
-  const { script } = cfgTree({ codexModel: "link-model", codexReasoning: "minimal" });
-  const linkDir = tmp("rev-link-");
-  const link = path.join(linkDir, "reviewer-link.sh");
-  symlinkSync(path.relative(linkDir, script), link); // relative target on purpose
-  const r = run(dir, ["codex"], { script: link });
+  localConfig(dir, { codex: { model: "local-model" } });
+  const r = run(dir, ["codex"], { script });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.log, /codex exec .*-m link-model/);
+  assert.match(r.log, /codex exec .*-m local-model/);
   assert.match(r.log, /model_reasoning_effort=minimal/);
 });
 
-test("codex exec stays pinned when node is unavailable", () => {
+test("finds config.mjs next to itself when launched through a symlink", () => {
+  const { script } = cfgTree({ model: "link-model", reasoning: "minimal" });
+  const linkDir = tmp("rev-link-");
+  const link = path.join(linkDir, "reviewer-link.sh");
+  symlinkSync(path.relative(linkDir, script), link); // relative target on purpose
+  const r = run(repo(), ["codex"], { script: link });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /codex exec .*-m link-model/);
+});
+
+test("exits 1 when config/models.json is missing and node is available", () => {
+  const { root, script } = cfgTree({ model: "x", reasoning: "y" });
+  rmSync(path.join(root, "config/models.json"));
+  const r = run(repo(), ["codex"], { script });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /config\/models\.json/);
+  assert.doesNotMatch(r.log, /codex exec/);
+});
+
+test("a broken local config exits 1 without leaking the secret", () => {
   const dir = repo();
-  const r = run(dir, ["codex"], {
-    env: { NODE: path.join(tmpdir(), "no-such-node-bin"), REVIEWER_CODEX_MODEL: "gpt-envonly" },
+  localConfig(dir, '{"typesafe": {"apiKey": ts_DUMMY_SECRET_123}}');
+  const r = run(dir, ["codex"]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /invalid JSON in ~\/\.verus-skills\/config\.json/);
+  assert.ok(!r.stderr.includes("ts_DUMMY_SECRET_123") && !r.stdout.includes("ts_DUMMY_SECRET_123"));
+});
+
+test("without node the config is ignored: env or default only", () => {
+  const { script } = cfgTree({ model: "cfg-model", reasoning: "minimal" });
+  const dir = repo();
+  localConfig(dir, { codex: { model: "local-model", reasoning: "local-r" } });
+  let r = run(dir, ["codex"], { script, env: { NODE: path.join(tmpdir(), "no-such-node-bin") }, shims: { node: NODE_SHIM } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /node not found; Orca path disabled, config ignored \(env or default only\)/);
+  assert.doesNotMatch(r.log, /cfg-model|local-model|minimal|local-r/);
+  assert.doesNotMatch(r.log, / -m |model_reasoning_effort/);
+  const dir2 = repo();
+  r = run(dir2, ["codex"], { script, env: { NODE: path.join(tmpdir(), "no-such-node-bin"), REVIEWER_CODEX_MODEL: "gpt-envonly" }, shims: { node: NODE_SHIM } });
+  assert.match(r.log, /codex exec .*-m gpt-envonly/);
+  assert.doesNotMatch(r.log, /model_reasoning_effort/);
+});
+
+test("a Codex value that is not a single token stops the run before any reviewer starts, with or without node", () => {
+  for (const bad of ["gpt-x -c evil=1", "gpt-test\n", "gpt-test\r", "gpt-test\r\n"]) {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { REVIEWER_CODEX_MODEL: bad } });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /config: REVIEWER_CODEX_MODEL must be a single token/);
+  assert.doesNotMatch(r.stderr, /evil/);
+  assert.doesNotMatch(r.log, /codex exec|terminal create/);
+  const dir2 = repo();
+  const r2 = run(dir2, ["orca", "codex"], {
+    env: { REVIEWER_CODEX_MODEL: bad, NODE: path.join(tmpdir(), "no-such-node-bin") },
     shims: { node: NODE_SHIM },
   });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /node not found/);
-  assert.match(r.log, /codex exec .*-m gpt-envonly/);
-  assert.match(r.log, /model_reasoning_effort=high/);
+  assert.equal(r2.status, 1);
+  assert.match(r2.stderr, /config: REVIEWER_CODEX_MODEL must be a single token/);
+  assert.doesNotMatch(r2.stderr, /evil/);
+  assert.doesNotMatch(r2.log, /codex exec|terminal create/);
+  }
 });
 
 // --- the Orca path against a real Codex TUI ------------------------------------
@@ -294,7 +322,7 @@ test("answers the Codex directory-trust prompt and stays on the Orca path", () =
   assert.match(r.stdout, /reviewer: orca/);
   assert.match(r.log, /terminal read/);
   assert.match(r.log, /terminal send .*--text 1 --enter/);
-  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "orca report");
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), ORCA_REPORT);
 });
 
 test("abandons Orca and closes the terminal when the TUI stays on a prompt", () => {
@@ -314,7 +342,7 @@ test("waits the full budget for a report that arrives late", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /reviewer: orca/);
   assert.ok(elapsed >= 8, `gave up after ${elapsed}s, before the report existed`);
-  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "orca report");
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), ORCA_REPORT);
 });
 
 test("closes the terminal it created when no report ever appears", () => {
@@ -326,14 +354,152 @@ test("closes the terminal it created when no report ever appears", () => {
   assert.match(r.log, /terminal close --terminal term-1/);
 });
 
-test("a reused Orca session terminal is never closed", () => {
+test("reuses the terminal named by --session-file", () => {
   const dir = repo();
-  mkdirSync(path.join(dir, ".context"), { recursive: true });
-  writeFileSync(path.join(dir, ".context/t-session"), "term-1\n");
-  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_STUCK_PROMPT: "1" } });
+  const session = path.join(dir, ".context/review-x-session");
+  mkdirSync(path.dirname(session), { recursive: true });
+  writeFileSync(session, "term-1\n");
+  const r = run(dir, ["orca", "codex"], { extraArgs: ["--session-file", session] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: orca/);
+  assert.doesNotMatch(r.log, /terminal create/);
+  assert.doesNotMatch(r.log, /terminal close/);
+  assert.equal(readFileSync(session, "utf8").trim(), "term-1");
+});
+
+test("a terminal loaded from --session-file is never closed on fallback", () => {
+  const dir = repo();
+  const session = path.join(dir, ".context/review-x-session");
+  mkdirSync(path.dirname(session), { recursive: true });
+  writeFileSync(session, "term-1\n");
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_STUCK_PROMPT: "1" }, extraArgs: ["--session-file", session] });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /reviewer: codex-exec/);
   assert.doesNotMatch(r.log, /terminal close/);
+});
+
+test("without --session-file every run creates a terminal, closes it after the report, and ignores the old default file", () => {
+  const dir = repo();
+  mkdirSync(path.join(dir, ".context"), { recursive: true });
+  writeFileSync(path.join(dir, ".context/t-session"), "stale-handle\n");
+  assert.equal(run(dir, ["orca", "codex"]).status, 0);
+  const r = run(dir, ["orca", "codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(count(r.log, "terminal create"), 2);
+  assert.equal(count(r.log, "terminal close --terminal term-1"), 2);
+  assert.doesNotMatch(r.log, /stale-handle/);
+  assert.equal(readFileSync(path.join(dir, ".context/t-session"), "utf8").trim(), "stale-handle");
+});
+
+test("with --session-file a successful run keeps the terminal and records its handle", () => {
+  const dir = repo();
+  const session = path.join(dir, ".context/review-x-session");
+  const r = run(dir, ["orca", "codex"], { extraArgs: ["--session-file", session] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /terminal create/);
+  assert.doesNotMatch(r.log, /terminal close/);
+  assert.equal(readFileSync(session, "utf8").trim(), "term-1");
+});
+
+test("round 2 with the same --session-file reuses round 1's terminal", () => {
+  const dir = repo();
+  const session = path.join(dir, ".context/review-x-session");
+  run(dir, ["orca", "codex"], { extraArgs: ["--session-file", session] });
+  const r = run(dir, ["orca", "codex"], { extraArgs: ["--session-file", session] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(count(r.log, "terminal create"), 1);
+});
+
+test("a restarted review closes the orphan terminal first, then starts fresh with the new settings", () => {
+  const dir = repo();
+  const session = path.join(dir, ".context/plan-review-p-session");
+  run(dir, ["orca", "codex"], { extraArgs: ["--session-file", session] }); // interrupted review: file + terminal left behind
+  const c = closeSession(dir, session);
+  assert.equal(c.status, 0, c.stderr);
+  assert.match(c.log, /terminal close --terminal term-1/);
+  assert.ok(!existsSync(session));
+  const r = run(dir, ["orca", "codex"], { env: { REVIEWER_CODEX_MODEL: "gpt-new" }, extraArgs: ["--session-file", session] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(count(r.log, "terminal create"), 2);
+  assert.match(r.log, /terminal create .*--command codex -m gpt-new/);
+  assert.equal(readFileSync(session, "utf8").trim(), "term-1");
+});
+
+test("a later run without --session-file picks up changed settings", () => {
+  const dir = repo();
+  run(dir, ["orca", "codex"], { env: { REVIEWER_CODEX_MODEL: "gpt-old" } });
+  const r = run(dir, ["orca", "codex"]);
+  assert.match(r.log, /terminal create .*--command codex -m gpt-old/);
+  assert.match(r.log, /terminal create .*--command codex --title/);
+});
+
+test("--close-session closes exactly the terminal in the file and removes the file", () => {
+  const dir = repo();
+  const session = path.join(dir, "s");
+  writeFileSync(session, "term-9\n");
+  const r = closeSession(dir, session);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(count(r.log, "terminal close"), 1);
+  assert.match(r.log, /terminal close --terminal term-9 --json/);
+  assert.ok(!existsSync(session));
+});
+
+test("--close-session on a missing file, or without orca, exits 0", () => {
+  const dir = repo();
+  const r = closeSession(dir, path.join(dir, "absent"));
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.log, /terminal close/);
+  const session = path.join(dir, "s2");
+  writeFileSync(session, "term-2\n");
+  const r2 = closeSession(dir, session, []);
+  assert.equal(r2.status, 0, r2.stderr);
+  assert.ok(!existsSync(session));
+});
+
+test("--close-session exits 0 and removes the file when the terminal is already gone", () => {
+  const dir = repo();
+  const session = path.join(dir, "s3");
+  writeFileSync(session, "term-dead\n");
+  const r = closeSession(dir, session, ["orca"], { FAKE_ORCA_CLOSE_FAIL: "1" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.log, /terminal close --terminal term-dead --json/);
+  assert.ok(!existsSync(session));
+});
+
+test("a report written in chunks is accepted, and its terminal closed, only after the end marker", () => {
+  // Chunk 1 has no marker; chunk 2 lands 7 s later, after one 5 s poll saw an unchanged size.
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_REPORT_CHUNKS: "1" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: orca/);
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), "orca report, part 1\npart 2\n<!-- end of review -->\n");
+  const lines = r.log.split("\n");
+  const chunk2 = lines.indexOf("report chunk 2 written");
+  const close = lines.findIndex((l) => l.startsWith("orca terminal close --terminal term-1"));
+  assert.ok(chunk2 >= 0 && close > chunk2, `the terminal was closed before the report was complete:\n${r.log}`);
+  assert.doesNotMatch(r.log, /^codex/m);
+});
+
+test("an Orca report without the end marker is never accepted: the run falls back to codex exec", () => {
+  // ~60 s: the Orca budget (--timeout-min 1) runs out before the fallback.
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_NO_MARKER: "1", FAKE_CODEX_NO_REPORT: "1" } });
+  assert.equal(r.status, 3);
+  assert.match(r.stderr, /orca: no report produced \(end marker missing\), falling back/);
+  const lines = r.log.split("\n");
+  const close = lines.findIndex((l) => l.startsWith("orca terminal close --terminal term-1"));
+  const exec = lines.findIndex((l) => l.startsWith("codex exec"));
+  assert.ok(close >= 0 && exec > close, r.log);
+  assert.ok(!existsSync(path.join(dir, "docs/reviews/out.md")), "the unfinished Orca report must not pass as the codex result");
+});
+
+test("both reviewer prompts end the report with the marker reviewer.sh waits for", () => {
+  assert.match(readFileSync(SCRIPT, "utf8"), /^END_MARKER='<!-- end of review -->'$/m);
+  for (const skill of ["plan-review", "review"]) {
+    const body = readFileSync(fileURLToPath(new URL(`../skills/${skill}/reviewer.md`, import.meta.url)), "utf8");
+    assert.match(body, /End the report with this exact last line: `<!-- end of review -->`/, skill);
+    assert.match(body, /\n<!-- end of review -->\n```\n/, `${skill}: the report template ends with the marker`);
+  }
 });
 
 test("rejects a --timeout-min that is not a positive integer", () => {

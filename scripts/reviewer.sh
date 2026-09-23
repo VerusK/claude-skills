@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # External reviewer launcher: Orca-managed Codex -> `codex exec` -> exit 3.
-# Usage: reviewer.sh --prompt-file F --output REL_OUT --title T [--timeout-min N] [--session-file S] [--repo DIR]
+# Usage: reviewer.sh --prompt-file F --output REL_OUT --title T [--timeout-min N] [--session-file S] [--repo DIR] | --close-session S
 # Exit: 0 report written; 3 no external reviewer available; 1 usage error.
 set -uo pipefail
 
-PROMPT_FILE=""; OUTPUT=""; TITLE=""; TIMEOUT_MIN=15; SESSION_FILE=""; REPO=""
+PROMPT_FILE=""; OUTPUT=""; TITLE=""; TIMEOUT_MIN=15; SESSION_FILE=""; REPO=""; CLOSE_SESSION=""
 need_value() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 1; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -14,11 +14,24 @@ while [ $# -gt 0 ]; do
     --timeout-min) need_value $# "$1"; TIMEOUT_MIN="$2"; shift 2;;
     --session-file) need_value $# "$1"; SESSION_FILE="$2"; shift 2;;
     --repo) need_value $# "$1"; REPO="$2"; shift 2;;
+    --close-session) need_value $# "$1"; CLOSE_SESSION="$2"; shift 2;;
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
 done
+# --close-session <file>: end one review's Orca session. Closes only the terminal
+# named in the file, removes the file, and never fails the caller.
+if [ -n "$CLOSE_SESSION" ]; then
+  if [ -f "$CLOSE_SESSION" ]; then
+    H="$(cat "$CLOSE_SESSION" 2>/dev/null)"
+    if [ -n "$H" ] && command -v orca >/dev/null 2>&1; then
+      orca terminal close --terminal "$H" --json >/dev/null 2>&1 || true
+    fi
+    rm -f "$CLOSE_SESSION"
+  fi
+  exit 0
+fi
 if [ -z "$PROMPT_FILE" ] || [ -z "$OUTPUT" ] || [ -z "$TITLE" ]; then
-  echo "usage: reviewer.sh --prompt-file F --output REL_OUT --title T [--timeout-min N] [--session-file S] [--repo DIR]" >&2
+  echo "usage: reviewer.sh --prompt-file F --output REL_OUT --title T [--timeout-min N] [--session-file S] [--repo DIR] | --close-session S" >&2
   exit 1
 fi
 case "$OUTPUT" in
@@ -30,7 +43,7 @@ case "$TIMEOUT_MIN" in
 esac
 if [ -z "$TIMEOUT_MIN" ] || [ "$TIMEOUT_MIN" -lt 1 ]; then
   echo "--timeout-min must be a positive integer" >&2
-  echo "usage: reviewer.sh --prompt-file F --output REL_OUT --title T [--timeout-min N] [--session-file S] [--repo DIR]" >&2
+  echo "usage: reviewer.sh --prompt-file F --output REL_OUT --title T [--timeout-min N] [--session-file S] [--repo DIR] | --close-session S" >&2
   exit 1
 fi
 [ -f "$PROMPT_FILE" ] || { echo "prompt file not found: $PROMPT_FILE" >&2; exit 1; }
@@ -39,11 +52,11 @@ REPO="${REPO:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 NODE_BIN="${NODE:-node}"
 ORCA_DISABLED=""
 NODE_OK=1
-command -v "$NODE_BIN" >/dev/null 2>&1 || { echo "node not found; Orca path disabled" >&2; ORCA_DISABLED=1; NODE_OK=""; }
+command -v "$NODE_BIN" >/dev/null 2>&1 || { echo "node not found; Orca path disabled, config ignored (env or default only)" >&2; ORCA_DISABLED=1; NODE_OK=""; }
 
-# Codex model / reasoning effort: env > config/reviewer.json > hard defaults.
-# NB: without node the file cannot be parsed, so the codex path falls back to
-# env/defaults rather than losing the pinning altogether.
+# Codex model / reasoning effort come from scripts/config.mjs (env > local
+# ~/.verus-skills/config.json > config/models.json > default). Without node the
+# config cannot be read, so only env counts; "default" passes no flag at all.
 # Locate this script: BASH_SOURCE survives sourcing, and symlinks (including
 # relative ones, and chains of them) are followed before taking the dirname.
 SELF="${BASH_SOURCE[0]:-$0}"
@@ -57,16 +70,22 @@ while [ -L "$SELF" ] && [ "$HOPS" -lt 40 ]; do
   HOPS=$(( HOPS + 1 ))
 done
 SELF_DIR="$(cd "$(dirname "$SELF")" 2>/dev/null && pwd -P)"
-CFG="${SELF_DIR:-.}/../config/reviewer.json"
-cfg_get() { # cfg_get <key> <default>
-  local v=""
-  if [ -n "$NODE_OK" ] && [ -f "$CFG" ]; then
-    v="$("$NODE_BIN" -e 'const fs=require("fs");let j;try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch{process.exit(1)};const v=j&&j[process.argv[2]];if(typeof v!=="string"||!v.trim())process.exit(1);process.stdout.write(v.trim())' "$CFG" "$1" 2>/dev/null)" || v=""
-  fi
-  if [ -n "$v" ]; then printf '%s' "$v"; else printf '%s' "$2"; fi
-}
-CODEX_MODEL="${REVIEWER_CODEX_MODEL:-$(cfg_get codexModel gpt-6-astra)}"
-CODEX_REASONING="${REVIEWER_CODEX_REASONING:-$(cfg_get codexReasoning high)}"
+if [ -n "$NODE_OK" ]; then
+  # config.mjs prints its own field-only error ("config: …"); never echo config values here.
+  CFG_OUT="$("$NODE_BIN" "${SELF_DIR:-.}/config.mjs" codex)" || exit 1
+  CODEX_MODEL="$(printf '%s\n' "$CFG_OUT" | sed -n 1p)"
+  CODEX_REASONING="$(printf '%s\n' "$CFG_OUT" | sed -n 2p)"
+else
+  CODEX_MODEL="${REVIEWER_CODEX_MODEL:-default}"
+  CODEX_REASONING="${REVIEWER_CODEX_REASONING:-default}"
+  # The single-token rule config.mjs applies (/^[\w.:[\]-]+$/); the value is never echoed.
+  TOKEN_RE='^[][A-Za-z0-9_.:-]+$'
+  [[ "$CODEX_MODEL" =~ $TOKEN_RE ]] || { echo "config: REVIEWER_CODEX_MODEL must be a single token" >&2; exit 1; }
+  [[ "$CODEX_REASONING" =~ $TOKEN_RE ]] || { echo "config: REVIEWER_CODEX_REASONING must be a single token" >&2; exit 1; }
+fi
+CODEX_FLAGS=""
+[ "$CODEX_MODEL" != "default" ] && CODEX_FLAGS="$CODEX_FLAGS -m $CODEX_MODEL"
+[ "$CODEX_REASONING" != "default" ] && CODEX_FLAGS="$CODEX_FLAGS -c model_reasoning_effort=$CODEX_REASONING"
 
 # Stage the prompt inside the repo so a sandboxed Codex can read it.
 mkdir -p "$REPO/.context" "$REPO/$(dirname "$OUTPUT")"
@@ -94,7 +113,6 @@ if [ -d "$REPO/.git" ] || [ -f "$REPO/.git" ]; then
 fi
 PROMPT_REL=".context/${TITLE}-prompt.md"
 cp "$PROMPT_FILE" "$REPO/$PROMPT_REL"
-[ -z "$SESSION_FILE" ] && SESSION_FILE="$REPO/.context/${TITLE}-session"
 rm -f "$REPO/$OUTPUT"
 
 json_get() { # json_get '<js expr over j>'  (reads stdin)
@@ -103,24 +121,20 @@ json_get() { # json_get '<js expr over j>'  (reads stdin)
 # Prefer the documented shapes, then fall back to a generic walk for any {handle:"…"}.
 find_handle() { json_get '(j&&j.result&&j.result.terminal&&j.result.terminal.handle)||(j&&j.result&&j.result.startupTerminal&&j.result.startupTerminal.handle)||(function f(o){if(!o||typeof o!=="object")return;if(typeof o.handle==="string")return o.handle;for(const v of Object.values(o)){const r=f(v);if(r)return r}})(j)'; }
 
-# The reviewer streams the report as it writes it, so "the file exists" is not
-# "the file is finished": accept it only once its size held still across two
-# consecutive polls.
-output_size() { wc -c < "$REPO/$OUTPUT" 2>/dev/null | tr -d ' '; }
-wait_for_output() { # poll for a stable, non-empty report for N seconds
+# The reviewer streams the report and can pause between writes long enough for
+# the TUI to look idle, so neither "the file exists" nor "its size held still"
+# means "finished". reviewer.md makes every reviewer end the report with
+# END_MARKER as its last line; the Orca path accepts the report — and only then
+# closes a session-less terminal — once that line is in the file.
+END_MARKER='<!-- end of review -->'
+report_complete() { grep -qxF "$END_MARKER" "$REPO/$OUTPUT" 2>/dev/null; }
+wait_for_report_end() { # poll for the end marker for N seconds
   local deadline=$(( $(date +%s) + $1 ))
-  local prev="" cur=""
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    if [ -s "$REPO/$OUTPUT" ]; then
-      cur="$(output_size)"
-      [ -n "$prev" ] && [ "$cur" = "$prev" ] && return 0
-      prev="$cur"
-    else
-      prev=""
-    fi
+    report_complete && return 0
     sleep 5
   done
-  return 1
+  report_complete
 }
 
 # Codex's TUI can sit on a question (directory trust, an approval) that
@@ -137,12 +151,12 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
   # from the session file belongs to an earlier round.
   CREATED_HANDLE=""
   REPORTED=""
-  if [ -f "$SESSION_FILE" ]; then
+  if [ -n "$SESSION_FILE" ] && [ -f "$SESSION_FILE" ]; then
     HANDLE="$(cat "$SESSION_FILE")"
     orca terminal show --terminal "$HANDLE" --json >/dev/null 2>&1 || HANDLE=""
   fi
   if [ -z "$HANDLE" ]; then
-    CREATED_HANDLE="$(orca terminal create --worktree active --command "codex -m $CODEX_MODEL -c model_reasoning_effort=$CODEX_REASONING" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
+    CREATED_HANDLE="$(orca terminal create --worktree active --command "codex$CODEX_FLAGS" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
     if [ -n "$CREATED_HANDLE" ]; then
       orca terminal wait --terminal "$CREATED_HANDLE" --for tui-idle --timeout-ms 90000 --json 2>/dev/null | json_get 'j.result&&j.result.wait&&j.result.wait.satisfied===true' >/dev/null && HANDLE="$CREATED_HANDLE"
     fi
@@ -171,12 +185,16 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
         orca terminal wait --terminal "$HANDLE" --for tui-idle --timeout-ms $(( TIMEOUT_MIN * 60000 )) --json >/dev/null 2>&1 || true
         REMAIN=$(( DEADLINE - $(date +%s) ))
         [ "$REMAIN" -lt 10 ] && REMAIN=10
-        if wait_for_output "$REMAIN"; then
-          echo "$HANDLE" > "$SESSION_FILE"
+        if wait_for_report_end "$REMAIN"; then
+          if [ -n "$SESSION_FILE" ]; then
+            echo "$HANDLE" > "$SESSION_FILE"   # kept for this review's round 2
+          elif [ -n "$CREATED_HANDLE" ]; then
+            orca terminal close --terminal "$CREATED_HANDLE" --json >/dev/null 2>&1 || true
+          fi
           echo "reviewer: orca"
           exit 0
         fi
-        echo "orca: no report produced, falling back" >&2
+        echo "orca: no report produced (end marker missing), falling back" >&2
       fi
     else
       echo "orca: no report produced, falling back" >&2
@@ -190,7 +208,13 @@ fi
 # ---------- 2. codex exec ----------
 if command -v codex >/dev/null 2>&1; then
   LOG="$REPO/.context/${TITLE}-codex.log"
-  ( cd "$REPO" && codex exec -C "$REPO" -m "$CODEX_MODEL" -s workspace-write --enable web_search_cached -c model_reasoning_effort="$CODEX_REASONING" - < "$REPO/$PROMPT_REL" > "$LOG" 2>&1 ) &
+  rm -f "$REPO/$OUTPUT"   # an unfinished Orca report must never pass as codex's
+  EXEC_ARGS=(exec -C "$REPO")
+  [ "$CODEX_MODEL" != "default" ] && EXEC_ARGS+=(-m "$CODEX_MODEL")
+  EXEC_ARGS+=(-s workspace-write --enable web_search_cached)
+  [ "$CODEX_REASONING" != "default" ] && EXEC_ARGS+=(-c "model_reasoning_effort=$CODEX_REASONING")
+  EXEC_ARGS+=(-)
+  ( cd "$REPO" && codex "${EXEC_ARGS[@]}" < "$REPO/$PROMPT_REL" > "$LOG" 2>&1 ) &
   PID=$!
   deadline=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
   while kill -0 "$PID" 2>/dev/null; do

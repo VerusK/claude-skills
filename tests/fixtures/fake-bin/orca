@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Fake Orca CLI: records calls, writes the report when a prompt is sent.
+# Fake Orca CLI: records calls, writes the report when a prompt is sent. A complete
+# report ends with the line reviewer.sh waits for, <!-- end of review -->.
 # Env knobs:
 #   FAKE_ORCA_REACHABLE=false    -> `status --json` reports runtime.reachable=false
 #   FAKE_ORCA_TRUST_PROMPT=1     -> `terminal read` shows Codex's directory-trust
@@ -8,6 +9,13 @@
 #                                   agentWait.reason=agent-interactive-prompt
 #   FAKE_ORCA_REPORT_DELAY=<sec> -> the report is written <sec> seconds after the
 #                                   send, by a backgrounded subshell
+#   FAKE_ORCA_REPORT_CHUNKS=1    -> the report is written in two chunks: the first,
+#                                   without the end marker, at once; the rest, ending
+#                                   with the marker, 7 seconds later (longer than one
+#                                   poll). Each chunk logs "report chunk <n> written".
+#   FAKE_ORCA_NO_MARKER=1        -> the report is written at once, without the marker
+#   FAKE_ORCA_CLOSE_FAIL=1       -> `terminal close` exits 1 (the terminal is gone)
+END_MARKER='<!-- end of review -->'
 echo "orca $*" >> "${FAKE_LOG:?}"
 case "$1 $2" in
   "status "*)
@@ -30,14 +38,29 @@ case "$1 $2" in
       echo '{"ok":true,"result":{"screen":{"text":"codex ready"}}}'
     fi;;
   "terminal wait") echo '{"ok":true,"result":{"wait":{"satisfied":true}}}';;
+  "terminal close")
+    if [ "${FAKE_ORCA_CLOSE_FAIL:-}" = "1" ]; then
+      echo '{"ok":false,"error":{"message":"terminal not found"}}'
+      exit 1
+    fi
+    echo '{"ok":true}';;
   "terminal send")
     # extract the report path from the prompt text and create it
     out=$(printf '%s\n' "$@" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
     if [ -n "$out" ]; then
-      case "${FAKE_ORCA_REPORT_DELAY:-0}" in
-        ''|0|*[!0-9]*) mkdir -p "$(dirname "$out")"; echo "orca report" > "$out";;
-        *) ( sleep "$FAKE_ORCA_REPORT_DELAY"; mkdir -p "$(dirname "$out")"; echo "orca report" > "$out" ) >/dev/null 2>&1 &;;
-      esac
+      mkdir -p "$(dirname "$out")"
+      if [ "${FAKE_ORCA_REPORT_CHUNKS:-}" = "1" ]; then
+        printf 'orca report, part 1\n' > "$out"
+        echo "report chunk 1 written" >> "$FAKE_LOG"
+        ( sleep 7; printf 'part 2\n%s\n' "$END_MARKER" >> "$out"; echo "report chunk 2 written" >> "$FAKE_LOG" ) >/dev/null 2>&1 &
+      elif [ "${FAKE_ORCA_NO_MARKER:-}" = "1" ]; then
+        printf 'orca report\n' > "$out"
+      else
+        case "${FAKE_ORCA_REPORT_DELAY:-0}" in
+          ''|0|*[!0-9]*) printf 'orca report\n%s\n' "$END_MARKER" > "$out";;
+          *) ( sleep "$FAKE_ORCA_REPORT_DELAY"; printf 'orca report\n%s\n' "$END_MARKER" > "$out" ) >/dev/null 2>&1 &;;
+        esac
+      fi
     fi
     echo '{"ok":true,"result":{"accepted":true}}';;
   *) echo '{"ok":true}';;
