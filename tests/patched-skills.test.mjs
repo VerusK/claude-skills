@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const root = new URL("../skills/", import.meta.url).pathname;
@@ -127,4 +129,46 @@ test("the SDD model rule and the routing docs describe both hosts", () => {
   const using = readFileSync(new URL("../USING.md", import.meta.url), "utf8");
   assert.match(using, /spawn_agent/);
   assert.match(using, /subagent_type/);
+});
+
+const launchBlock = (file) => {
+  const body = readFileSync(path.join(root, file), "utf8");
+  return body.slice(body.indexOf("## 2. Launch the external reviewer"), body.indexOf("## 3."));
+};
+
+test("plan-review and review keep one reviewer session per review", () => {
+  const SESSION_RE = {
+    "plan-review/SKILL.md": /SESSION="\$\(git rev-parse --show-toplevel\)\/\.context\/plan-review-\$\(basename "\$ROUND1_REPORT" \.md\)-session"/,
+    "review/SKILL.md": /SESSION="\$\(git rev-parse --show-toplevel\)\/\.context\/review-\$\(printf '%s' "\$BRANCH" \| tr '\/' '-'\)\$SUFFIX-session"/,
+  };
+  for (const [file, re] of Object.entries(SESSION_RE)) {
+    const body = readFileSync(path.join(root, file), "utf8");
+    const launch = launchBlock(file);
+    assert.match(launch, re, file);
+    assert.match(launch, /\[ "\$ROUND" = 1 \] && bash "\$SKILLS_REPO\/scripts\/reviewer\.sh" --close-session "\$SESSION"/, file);
+    assert.match(launch, /--session-file "\$SESSION"/, file);
+    const handOff = body.slice(body.indexOf("## 6. Hand off"));
+    assert.match(handOff, /--close-session "\$SESSION"/, `${file}: closes the session at the end`);
+    assert.match(body, /Whenever this skill stops[^\n]*--close-session/, `${file}: rule for every exit`);
+  }
+  assert.doesNotMatch(launchBlock("review/SKILL.md"), /ROUND1_REPORT/, "review's session must not depend on a report");
+  assert.match(readFileSync(path.join(root, "review/SKILL.md"), "utf8"), /^echo "SUFFIX=\$SUFFIX"$/m, "section 0 prints SUFFIX for section 2");
+});
+
+test("review keys its session by branch and scope, so the next review of the same scope finds an interrupted one", () => {
+  const line = launchBlock("review/SKILL.md").split("\n").find((l) => l.startsWith("SESSION="));
+  assert.ok(line, "no SESSION= line in review's launch block");
+  assert.doesNotMatch(line, /REPORT|date/, "the session must not depend on the report name or the date");
+  const repo = realpathSync(mkdtempSync(path.join(tmpdir(), "review-session-")));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    execFileSync("git", ["checkout", "-q", "-b", "feat/x"], { cwd: repo });
+    const session = (suffix) =>
+      execFileSync("bash", ["-c", `BRANCH="$(git branch --show-current)"\nSUFFIX="${suffix}"\n${line}\nprintf '%s' "$SESSION"`], { cwd: repo, encoding: "utf8" });
+    assert.equal(session(""), path.join(repo, ".context", "review-feat-x-session"));
+    assert.equal(session("-all"), path.join(repo, ".context", "review-feat-x-all-session"));
+    assert.equal(session("-scripts-reviewer-sh"), path.join(repo, ".context", "review-feat-x-scripts-reviewer-sh-session"));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });

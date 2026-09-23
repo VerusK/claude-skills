@@ -29,7 +29,7 @@ Say nothing about models or reasoning effort in the prompt — the launcher pins
 
 ## 2. Launch the external reviewer
 
-Substitute the real paths for the two placeholders before running:
+Substitute the real values for the four placeholders before running:
 
 ```bash
 SKILLS_REPO=""
@@ -42,7 +42,12 @@ done
 
 PROMPT="<the temp prompt file from section 1>"
 REPORT="<REPORT, repo-relative>"
-bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPORT" --title plan-review --timeout-min 15
+ROUND="<1 or 2>"
+ROUND1_REPORT="<the round-1 REPORT; in round 2 the same value as in round 1>"
+SESSION="$(git rev-parse --show-toplevel)/.context/plan-review-$(basename "$ROUND1_REPORT" .md)-session"
+# Round 1 starts fresh: close an orphan left by an interrupted earlier review of this plan.
+[ "$ROUND" = 1 ] && bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
+bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPORT" --title plan-review --timeout-min 15 --session-file "$SESSION"
 echo "reviewer_exit=$?"
 ```
 
@@ -78,11 +83,24 @@ Commit: `git commit -am "docs(plan): apply plan-review round N"`.
 
 ## 5. Second round
 
-Skip round 2 if the round-1 report has no P0/P1 at confidence 7+. Otherwise, if `ROUND` is 1 and at least one finding was accepted: copy the round-1 report to `<REPORT>.round1.md` first (`reviewer.sh` deletes `REPORT` at startup, so the only copy would be lost), then set `ROUND` to 2, rebuild the prompt (section 1, reading the previous report from `<REPORT>.round1.md`), relaunch (section 2; in Orca the same terminal session is reused via the session file, so the reviewer sees its own earlier context), triage and revise again.
+Skip round 2 if the round-1 report has no P0/P1 at confidence 7+. Otherwise, if `ROUND` is 1 and at least one finding was accepted: copy the round-1 report to `<REPORT>.round1.md` first (`reviewer.sh` deletes `REPORT` at startup, so the only copy would be lost), then set `ROUND` to 2, rebuild the prompt (section 1, reading the previous report from `<REPORT>.round1.md`), relaunch (section 2; pass the same SESSION as round 1 — in Orca that reuses round 1's terminal, so the reviewer sees its own earlier context), triage and revise again.
 
 Stop after round 2.
 
 ## 6. Hand off
+
+First close this review's reviewer session:
+
+```bash
+SKILLS_REPO=""
+for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
+         "$HOME/.claude/skills/plan-review/../.." \
+         "$HOME/.codex/skills/plan-review/../.."; do
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
+done
+SESSION="<the SESSION value from section 2>"
+bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
+```
 
 Report to the user: rounds run, reviewer path used, findings accepted/rejected/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then say: "Plan review done. Next: `subagent-driven-development` on `<PLAN>`." and invoke `subagent-driven-development` (`verus-skills:subagent-driven-development` when installed as a plugin).
 
@@ -91,3 +109,4 @@ Report to the user: rounds run, reviewer path used, findings accepted/rejected/a
 - Never start implementation from this skill.
 - Never edit `REPORT`; it is the reviewer's artifact. Decisions go into the plan.
 - One re-review round maximum. Residual P2/P3 go to the plan's `Plan review decisions (round N)` section as "deferred" — a separate heading from the `Review decisions (round N)` section the `review` skill appends after the code exists, so the two never collide in one plan.
+- Whenever this skill stops — hand-off, a stop after round 1 or 2, report-only mode, a red suite — first run `reviewer.sh --close-session "$SESSION"` (section 6), so review terminals never pile up.

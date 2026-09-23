@@ -71,6 +71,7 @@ echo "KIND=$KIND"
 echo "BRANCH=$BRANCH"
 echo "BASE=$BASE"
 echo "REPORT=$REPORT"
+echo "SUFFIX=$SUFFIX"
 echo "MODE=$MODE"
 if [ "$MODE" = "report-only" ]; then printf 'report-only because the working tree is dirty:\n%s\n' "$DIRT"; fi
 
@@ -139,7 +140,7 @@ Say nothing about models or reasoning effort in the prompt — the launcher pins
 
 ## 2. Launch the external reviewer
 
-Substitute the real paths for the two placeholders before running:
+Substitute the real values for the four placeholders before running:
 
 ```bash
 SKILLS_REPO=""
@@ -152,7 +153,15 @@ done
 
 PROMPT="<the temp prompt file from section 1>"
 REPORT="<REPORT, repo-relative>"
-bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPORT" --title review --timeout-min 20
+ROUND="<1 or 2>"
+SUFFIX="<SUFFIX printed by section 0: empty in branch scope, -all in codebase scope, -<path slug> in path scope>"
+BRANCH="$(git branch --show-current)"
+# Keyed by branch and scope, never by the report: every run writes a new -N report,
+# and the next review of the same scope must still find an interrupted one's terminal.
+SESSION="$(git rev-parse --show-toplevel)/.context/review-$(printf '%s' "$BRANCH" | tr '/' '-')$SUFFIX-session"
+# Round 1 starts fresh: close an orphan left by an interrupted earlier review of this scope.
+[ "$ROUND" = 1 ] && bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
+bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPORT" --title review --timeout-min 20 --session-file "$SESSION"
 echo "reviewer_exit=$?"
 ```
 
@@ -190,13 +199,13 @@ Findings in the Appendix are not acted on; leave them in the report.
 
 ## 4. Fix wave (full mode only)
 
-In report-only mode skip this section and section 5: print the accepted findings as a checklist for the user to apply, then stop. Nothing is committed in report-only mode.
+In report-only mode skip this section and section 5: print the accepted findings as a checklist for the user to apply, close the reviewer session (the block at the start of section 6), then stop. Nothing is committed in report-only mode.
 
 The report is already committed by the step at the end of section 2, so the tree is clean here. Find the repo's test command, in this order: the plan's header, `CLAUDE.md` or `AGENTS.md`, then `package.json` scripts / `Makefile` targets / `pyproject.toml`. If none of them names one, say so in the hand-off and skip the suite rather than guessing.
 
 Collect every accepted finding into one list and dispatch ONE fix subagent — Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. Give it the list, the spec path, the test command you found, and the rules "fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
 
-If the suite is red after the fix wave, report the failing tests to the user and stop — do not start round 2 and do not hand off to `finishing-a-development-branch`.
+If the suite is red after the fix wave, report the failing tests to the user, close the reviewer session (the block at the start of section 6) and stop — do not start round 2 and do not hand off to `finishing-a-development-branch`.
 
 Then record the decisions. If `PLAN` is `none` — always the case in path and codebase scope unless the user named a plan — **skip the append and its commit entirely**: print the decision blocks in chat instead and go on to section 5. There is no file to write them to, and inventing one is out of scope.
 
@@ -211,11 +220,24 @@ Then commit the plan change: `git add "<PLAN>" && git commit -m "docs(plan): app
 
 ## 5. Second round
 
-Skip round 2 if the round-1 report has no P0/P1 at confidence 7+, or if the suite is red. Otherwise, if `ROUND` is 1 and at least one finding was fixed: set `ROUND` to 2, compute a fresh `REPORT` by re-running the suffix loop from section 0 (the round-1 report now exists, so round 2 gets the next `-N` name and `reviewer.sh` cannot delete the round-1 file), rebuild the prompt (section 1, reading the previous report from the round-1 path), relaunch (section 2; in Orca the same terminal session is reused via the session file, so the reviewer sees its own earlier context), and triage again. The round-2 report is committed by the step at the end of section 2, like every other round. Run one more fix wave only if a P0/P1 at confidence 7+ remains.
+Skip round 2 if the round-1 report has no P0/P1 at confidence 7+, or if the suite is red. Otherwise, if `ROUND` is 1 and at least one finding was fixed: set `ROUND` to 2, compute a fresh `REPORT` by re-running the suffix loop from section 0 (the round-1 report now exists, so round 2 gets the next `-N` name and `reviewer.sh` cannot delete the round-1 file), rebuild the prompt (section 1, reading the previous report from the round-1 path), relaunch (section 2; pass the same SESSION as round 1 — in Orca that reuses round 1's terminal, so the reviewer sees its own earlier context), and triage again. SESSION depends only on BRANCH and SUFFIX, so round 2 computes the same value although it writes a new -N report. The round-2 report is committed by the step at the end of section 2, like every other round. Run one more fix wave only if a P0/P1 at confidence 7+ remains.
 
 Stop after round 2.
 
 ## 6. Hand off
+
+First close this review's reviewer session:
+
+```bash
+SKILLS_REPO=""
+for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
+         "$HOME/.claude/skills/review/../.." \
+         "$HOME/.codex/skills/review/../.."; do
+  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
+done
+SESSION="<the SESSION value from section 2>"
+bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
+```
 
 Report to the user: scope reviewed, rounds run, reviewer path used, findings fixed/rejected/asked, path of every report written (round 1 and, if it ran, round 2), and suite status.
 
@@ -231,3 +253,4 @@ In branch scope and full mode, then say: "Review done. Using `finishing-a-develo
 - Report-only mode never commits, never dispatches a fix subagent, never hands off.
 - Path and codebase scope never hand off to `finishing-a-development-branch`.
 - Two rounds maximum. Residual P2/P3 are listed as deferred in the plan section above, so `finishing-a-development-branch` can show them.
+- Whenever this skill stops — hand-off, a stop after round 1 or 2, report-only mode, a red suite — first run `reviewer.sh --close-session "$SESSION"` (section 6), so review terminals never pile up.
