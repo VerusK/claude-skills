@@ -147,13 +147,15 @@ stuck_on_prompt() { # stuck_on_prompt <handle>
 # ---------- 1. Orca ----------
 if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --json 2>/dev/null | json_get 'j.result&&j.result.runtime&&j.result.runtime.reachable===true' >/dev/null; then
   HANDLE=""
-  # Only a terminal this run created may be closed on the way out; one loaded
-  # from the session file belongs to an earlier round.
+  # The terminals this review owns: one this run created, or one loaded from the
+  # session file (an earlier round of the same review). Both are closed on fallback.
   CREATED_HANDLE=""
+  LOADED_HANDLE=""
   REPORTED=""
   if [ -n "$SESSION_FILE" ] && [ -f "$SESSION_FILE" ]; then
     HANDLE="$(cat "$SESSION_FILE")"
     orca terminal show --terminal "$HANDLE" --json >/dev/null 2>&1 || HANDLE=""
+    LOADED_HANDLE="$HANDLE"
   fi
   if [ -z "$HANDLE" ]; then
     CREATED_HANDLE="$(orca terminal create --worktree active --command "codex$CODEX_FLAGS" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
@@ -202,7 +204,12 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
   elif [ -z "$REPORTED" ]; then
     echo "orca: could not start a codex terminal, falling back" >&2
   fi
+  # No complete report: stop the Orca reviewer this review owns before codex exec
+  # writes the same report (a late writer could overwrite or interleave it), and
+  # drop the session so the next round starts a fresh terminal.
   [ -n "$CREATED_HANDLE" ] && { orca terminal close --terminal "$CREATED_HANDLE" --json >/dev/null 2>&1 || true; }
+  [ -n "$LOADED_HANDLE" ] && { orca terminal close --terminal "$LOADED_HANDLE" --json >/dev/null 2>&1 || true; }
+  [ -n "$SESSION_FILE" ] && rm -f "$SESSION_FILE"
 fi
 
 # ---------- 2. codex exec ----------

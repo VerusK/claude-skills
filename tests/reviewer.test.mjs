@@ -367,7 +367,16 @@ test("reuses the terminal named by --session-file", () => {
   assert.equal(readFileSync(session, "utf8").trim(), "term-1");
 });
 
-test("a terminal loaded from --session-file is never closed on fallback", () => {
+// On fallback the Orca reviewer this review owns must stop before codex exec writes the same report.
+function assertClosedBeforeExec(log) {
+  const lines = log.split("\n");
+  const close = lines.findIndex((l) => l.startsWith("orca terminal close --terminal term-1"));
+  const exec = lines.findIndex((l) => l.startsWith("codex exec"));
+  assert.ok(close >= 0, `the terminal was never closed:\n${log}`);
+  assert.ok(exec > close, `codex exec started before the terminal was closed:\n${log}`);
+}
+
+test("a terminal loaded from --session-file is closed, and the session file removed, on fallback", () => {
   const dir = repo();
   const session = path.join(dir, ".context/review-x-session");
   mkdirSync(path.dirname(session), { recursive: true });
@@ -375,7 +384,37 @@ test("a terminal loaded from --session-file is never closed on fallback", () => 
   const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_STUCK_PROMPT: "1" }, extraArgs: ["--session-file", session] });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /reviewer: codex-exec/);
-  assert.doesNotMatch(r.log, /terminal close/);
+  assert.doesNotMatch(r.log, /terminal create/);
+  assertClosedBeforeExec(r.log);
+  assert.equal(count(r.log, "terminal close"), 1);
+  assert.ok(!existsSync(session), "the session file still names a closed terminal");
+});
+
+test("a session-loaded reviewer that has not finished by the deadline is closed before codex exec takes over", () => {
+  // ~60 s: the delayed writer misses the Orca budget (--timeout-min 1).
+  const dir = repo();
+  const session = path.join(dir, ".context/review-x-session");
+  mkdirSync(path.dirname(session), { recursive: true });
+  writeFileSync(session, "term-1\n");
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_REPORT_DELAY: "999" }, extraArgs: ["--session-file", session] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.stderr, /orca: no report produced/);
+  assert.doesNotMatch(r.log, /terminal create/);
+  assertClosedBeforeExec(r.log);
+  assert.ok(!existsSync(session), "the session file still names a closed terminal");
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "codex report");
+});
+
+test("a terminal created for --session-file is closed, and no handle recorded, on fallback", () => {
+  const dir = repo();
+  const session = path.join(dir, ".context/review-x-session");
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_STUCK_PROMPT: "1" }, extraArgs: ["--session-file", session] });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.log, /terminal create/);
+  assertClosedBeforeExec(r.log);
+  assert.ok(!existsSync(session));
 });
 
 test("without --session-file every run creates a terminal, closes it after the report, and ignores the old default file", () => {
