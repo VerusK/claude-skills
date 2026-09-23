@@ -100,18 +100,29 @@ claude plugin marketplace add VerusK/claude-skills
 claude plugin install verus-skills@verus-skills
 ```
 
-Then restart Claude Code. For Codex, add to `~/.codex/config.toml`:
+Then restart Claude Code. Update with `claude plugin update verus-skills@verus-skills`.
 
-```toml
-[marketplaces.verus-skills]
-source_type = "git"
-source = "https://github.com/VerusK/claude-skills.git"
+For Codex:
 
-[plugins."verus-skills@verus-skills"]
-enabled = true
+```bash
+codex plugin marketplace add VerusK/claude-skills
+codex plugin add verus-skills@verus-skills
 ```
 
-Update with `claude plugin update verus-skills@verus-skills`.
+These write the same sections you could add to `~/.codex/config.toml` by hand
+(`[marketplaces.verus-skills]` with `source_type = "git"` and
+`[plugins."verus-skills@verus-skills"]` with `enabled = true`). Refresh the
+marketplace snapshot with `codex plugin marketplace upgrade verus-skills`.
+
+Codex runs a plugin's hooks only after you trust them: the first interactive
+`codex` start after installing shows **Hooks need review** — trust the
+`verus-skills` SessionStart hook there. Until then the hook does not run (and
+`codex exec` skips untrusted hooks silently), so the session gets no routing
+block and no `~/.verus-skills/root` pointer.
+
+Where the judge's SDK comes from: Claude Code runs `npm install` for a plugin
+with dependencies, so its plugin cache has `node_modules`. Codex does not, so
+under Codex the judge loads the copy vendored in `vendor-node/`.
 
 The plugin cannot uninstall another plugin, so if `superpowers` is still
 installed — its skills are vendored here — remove it yourself:
@@ -239,8 +250,19 @@ claude plugin marketplace remove verus-skills
 rm -rf ~/.verus-skills
 ```
 
-For Codex, also drop the `[marketplaces.verus-skills]` and
-`[plugins."verus-skills@verus-skills"]` sections from `~/.codex/config.toml`.
+For Codex:
+
+```bash
+codex plugin remove verus-skills@verus-skills
+codex plugin marketplace remove verus-skills
+```
+
+These drop the `[marketplaces.verus-skills]` and
+`[plugins."verus-skills@verus-skills"]` sections from `~/.codex/config.toml`;
+the symlink installer refuses while the plugin section is there.
+
+Reinstalling the symlinks with `make install` also uninstalls the `superpowers`
+plugin by default; pass `make install ARGS="--skip-plugin"` to keep it.
 
 ## License
 
