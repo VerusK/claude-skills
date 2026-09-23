@@ -147,6 +147,9 @@ test("plan-review and review keep one reviewer session per review", () => {
     assert.match(launch, re, file);
     assert.match(launch, /\[ "\$ROUND" = 1 \] && bash "\$SKILLS_REPO\/scripts\/reviewer\.sh" --close-session "\$SESSION"/, file);
     assert.match(launch, /--session-file "\$SESSION"/, file);
+    assert.match(launch, /^echo "SESSION=\$SESSION"$/m, `${file}: section 2 prints SESSION for section 6`);
+    assert.match(body, /SESSION="<the SESSION printed by section 2>"/, `${file}: section 6 takes the printed value`);
+    assert.doesNotMatch(body, /the SESSION value from section 2/, `${file}: no placeholder the agent must rebuild by hand`);
     const handOff = body.slice(body.indexOf("## 6. Hand off"));
     assert.match(handOff, /--close-session "\$SESSION"/, `${file}: closes the session at the end`);
     assert.match(body, /Whenever this skill stops[^\n]*--close-session/, `${file}: rule for every exit`);

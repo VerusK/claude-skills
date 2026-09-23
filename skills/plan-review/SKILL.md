@@ -45,6 +45,7 @@ REPORT="<REPORT, repo-relative>"
 ROUND="<1 or 2>"
 ROUND1_REPORT="<the round-1 REPORT; in round 2 the same value as in round 1>"
 SESSION="$(git rev-parse --show-toplevel)/.context/plan-review-$(basename "$ROUND1_REPORT" .md)-session"
+echo "SESSION=$SESSION"
 # Round 1 starts fresh: close an orphan left by an interrupted earlier review of this plan.
 [ "$ROUND" = 1 ] && bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPORT" --title plan-review --timeout-min 15 --session-file "$SESSION"
@@ -98,7 +99,7 @@ for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
          "$HOME/.codex/skills/plan-review/../.."; do
   [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
-SESSION="<the SESSION value from section 2>"
+SESSION="<the SESSION printed by section 2>"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 ```
 

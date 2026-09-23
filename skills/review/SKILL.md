@@ -159,6 +159,7 @@ BRANCH="$(git branch --show-current)"
 # Keyed by branch and scope, never by the report: every run writes a new -N report,
 # and the next review of the same scope must still find an interrupted one's terminal.
 SESSION="$(git rev-parse --show-toplevel)/.context/review-$(printf '%s' "$BRANCH" | tr '/' '-')$SUFFIX-session"
+echo "SESSION=$SESSION"
 # Round 1 starts fresh: close an orphan left by an interrupted earlier review of this scope.
 [ "$ROUND" = 1 ] && bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPORT" --title review --timeout-min 20 --session-file "$SESSION"
@@ -235,7 +236,7 @@ for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
          "$HOME/.codex/skills/review/../.."; do
   [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
 done
-SESSION="<the SESSION value from section 2>"
+SESSION="<the SESSION printed by section 2>"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 ```
 
