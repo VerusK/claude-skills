@@ -188,13 +188,14 @@ Re-installing from a second checkout of this repo (a fresh clone, or the old one
 
 Models and effort for every layer — Claude subagents, the Codex reviewer, the judge — are set as described in [Models and effort](#models-and-effort).
 
-Put the TypeSafe key in `~/.verus-skills/config.json` — one place for Claude Code and Codex, outside every repo, kept across plugin updates:
+Put the TypeSafe key in `~/.verus-skills/config.json` — one place for Claude Code and Codex, outside every repo, kept across plugin updates. If the file does not exist yet, create it readable only by you from the first byte (`umask 077`), and refuse to overwrite one that exists (`set -C`):
 
 ```bash
 mkdir -p ~/.verus-skills
-printf '{ "typesafe": { "apiKey": "ts_..." } }\n' > ~/.verus-skills/config.json
-chmod 600 ~/.verus-skills/config.json
+(umask 077; set -C; printf '{ "typesafe": { "apiKey": "ts_..." } }\n' > ~/.verus-skills/config.json)
 ```
+
+If the file already exists (it may hold your `codex` or `judge` overrides), the command above stops with an error (`file exists` in zsh, `cannot overwrite existing file` in bash) and changes nothing. Open the file in an editor instead and add `"typesafe": { "apiKey": "ts_..." }` as one more key of its top-level JSON object, keeping everything else; then run `chmod 600 ~/.verus-skills/config.json` if it is readable by group or others.
 
 `TYPESAFE_API_KEY` in the environment still works and wins over the file. The judge warns when the file is readable by group or others. `config/models.json` refuses any secret-like field, so a key can never be committed.
 
