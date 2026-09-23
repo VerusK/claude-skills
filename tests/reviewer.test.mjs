@@ -514,6 +514,38 @@ test("--close-session closes exactly the terminal in the file and removes the fi
   assert.ok(!existsSync(session));
 });
 
+// A reviewer terminal that could not be closed may still be writing the report: no fallback.
+test("a session-loaded terminal that cannot be closed stops the run: exit 1, no codex exec, session kept", () => {
+  // ~60 s: the markerless report keeps the run on Orca for the whole budget (--timeout-min 1).
+  const dir = repo();
+  const session = path.join(dir, ".context/review-x-session");
+  mkdirSync(path.dirname(session), { recursive: true });
+  writeFileSync(session, "term-1\n");
+  const r = run(dir, ["orca", "codex"], {
+    env: { FAKE_ORCA_NO_MARKER: "1", FAKE_ORCA_CLOSE_FAIL: "1" }, extraArgs: ["--session-file", session],
+  });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^orca: could not close reviewer terminal term-1; not falling back$/m);
+  assert.doesNotMatch(r.log, /terminal create/);
+  assert.match(r.log, /terminal close --terminal term-1/);
+  assert.doesNotMatch(r.log, /^codex exec/m);
+  assert.doesNotMatch(r.stdout, /reviewer:/);
+  assert.ok(existsSync(session), "the session file was removed, so --close-session can no longer reach the terminal");
+  assert.equal(readFileSync(session, "utf8").trim(), "term-1");
+});
+
+test("a created terminal that cannot be closed stops the run: exit 1, no codex exec", () => {
+  // ~60 s: the markerless report keeps the run on Orca for the whole budget (--timeout-min 1).
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_NO_MARKER: "1", FAKE_ORCA_CLOSE_FAIL: "1" } });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /^orca: could not close reviewer terminal term-1; not falling back$/m);
+  assert.match(r.log, /terminal create/);
+  assert.match(r.log, /terminal close --terminal term-1/);
+  assert.doesNotMatch(r.log, /^codex exec/m);
+  assert.doesNotMatch(r.stdout, /reviewer:/);
+});
+
 test("--close-session on a missing file, or without orca, exits 0", () => {
   const dir = repo();
   const r = closeSession(dir, path.join(dir, "absent"));

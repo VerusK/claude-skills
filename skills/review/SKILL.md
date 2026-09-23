@@ -168,7 +168,7 @@ echo "reviewer_exit=$?"
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
 - `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
-- `1`: fix the invocation; do not proceed.
+- `1`: fix the invocation; do not proceed. An Orca terminal that could not be closed is left recorded in the session file, and the section-6 close retries it.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 
 ### Commit the report

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # External reviewer launcher: Orca-managed Codex -> `codex exec` -> exit 3.
 # Usage: reviewer.sh --prompt-file F --output REL_OUT --title T [--timeout-min N] [--session-file S] [--repo DIR] | --close-session S
-# Exit: 0 report written; 3 no external reviewer available; 1 usage error.
+# Exit: 0 report written; 3 no external reviewer available; 1 usage error, or an
+# Orca reviewer terminal that could not be closed (left in the session file).
 set -uo pipefail
 
 PROMPT_FILE=""; OUTPUT=""; TITLE=""; TIMEOUT_MIN=15; SESSION_FILE=""; REPO=""; CLOSE_SESSION=""
@@ -208,9 +209,17 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
   fi
   # No complete report: stop the Orca reviewer this review owns before codex exec
   # writes the same report (a late writer could overwrite or interleave it), and
-  # drop the session so the next round starts a fresh terminal.
-  [ -n "$CREATED_HANDLE" ] && { orca terminal close --terminal "$CREATED_HANDLE" --json >/dev/null 2>&1 || true; }
-  [ -n "$LOADED_HANDLE" ] && { orca terminal close --terminal "$LOADED_HANDLE" --json >/dev/null 2>&1 || true; }
+  # drop the session so the next round starts a fresh terminal. If the close fails,
+  # that reviewer may still be alive: do not fall back, and keep its handle in the
+  # session file so a later --close-session can still reach it.
+  for OWNED in "$CREATED_HANDLE" "$LOADED_HANDLE"; do
+    [ -n "$OWNED" ] || continue
+    if ! orca terminal close --terminal "$OWNED" --json >/dev/null 2>&1; then
+      [ -n "$SESSION_FILE" ] && echo "$OWNED" > "$SESSION_FILE"
+      echo "orca: could not close reviewer terminal $OWNED; not falling back" >&2
+      exit 1
+    fi
+  done
   [ -n "$SESSION_FILE" ] && rm -f "$SESSION_FILE"
 fi
 
