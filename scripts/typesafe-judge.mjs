@@ -217,7 +217,9 @@ export function parseNumberArg(args, name) {
       i++;
     } else if (a.startsWith(`${flag}=`)) {
       raw = a.slice(flag.length + 1);
-    } else if (a.startsWith(flag)) {
+    } else {
+      // --name is the only argument; anything else (a removed flag, a typo, a
+      // stray positional) is an error rather than silently ignored.
       throw new Error(`unknown option: ${a}`);
     }
   }

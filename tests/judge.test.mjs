@@ -370,6 +370,20 @@ test("CLI exits 2 on an unknown --threshold* flag", () => {
   }
 });
 
+test("CLI exits 2 on any argument other than --threshold, before the key check", () => {
+  // No API key is set, so naming the argument rather than the missing key shows it
+  // was rejected first; the closed loopback port keeps any run that got further local.
+  for (const [args, bad] of [
+    [["--sufficiency", "0.6"], "--sufficiency"],
+    [["--sufficiency=0.6"], "--sufficiency=0.6"],
+    [["--threshold", "0.9", "extra"], "extra"],
+  ]) {
+    const r = runCli({ args, env: { TYPESAFE_BASE_URL: "http://127.0.0.1:9" } });
+    assert.equal(r.status, 2, `args=${args.join(" ")}`);
+    assert.equal(r.stderr.trim(), `judge failed: unknown option: ${bad}`, `args=${args.join(" ")}`);
+  }
+});
+
 test("CLI exits 2 when the input has no recommendation", () => {
   const stdin = JSON.stringify({ question: "q", options: [{ id: "A", label: "a" }, { id: "B", label: "b" }], context: "c" });
   // Port 9 on loopback is closed: should validation ever let this input through,
