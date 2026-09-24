@@ -50,6 +50,7 @@ fi
 [ -f "$PROMPT_FILE" ] || { echo "prompt file not found: $PROMPT_FILE" >&2; exit 1; }
 REPO="${REPO:-$(git rev-parse --show-toplevel 2>/dev/null)}"
 [ -d "$REPO" ] || { echo "not inside a git repo; pass --repo" >&2; exit 1; }
+REPO="$(cd "$REPO" && pwd -P)"   # absolute and physical: Orca resolves path: selectors in its own process
 NODE_BIN="${NODE:-node}"
 ORCA_DISABLED=""
 NODE_OK=1

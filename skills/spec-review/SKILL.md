@@ -35,7 +35,7 @@ Create a temp file outside the repo (under `$TMPDIR`) containing, in order:
 
 1. The full text of `reviewer.md` from this skill's directory.
 2. `THE SPEC:` followed by the spec file verbatim inside a fence longer than any backtick run in the spec — use seven backticks unless the spec contains a run of seven or more, then go longer still.
-3. `Referenced source files:` followed by the repo-relative paths mentioned in the spec that are real files: grep the spec for path-like tokens containing `/`, keep those that pass `test -f`, drop anything under `.claude/`, `.codex/`, `agents/` or `node_modules/`, deduplicate and sort, and keep at most 40 entries.
+3. `Referenced source files:` followed by the repo-relative paths mentioned in the spec that are real files: grep the spec for path-like tokens containing `/`, keep those that pass `test -f`, drop anything under `.codex/` or `node_modules/` (files under `agents/` and `.claude/` stay: the reviewer reads them as data), deduplicate and sort, and keep at most 40 entries.
 4. On round 2 only: `Previous report:` followed by the previous report verbatim (from `<REPORT>.round1.md`), then `Review the whole revised spec: report every finding from the previous report that is still present, mark fixed ones as resolved, and report new findings the spec changes introduced.`
 5. `Write the report to <REPORT>` on its own line — the last line of the file, in round 1 and round 2 alike. Self-check before launching: `[ "$(tail -1 "$PROMPT")" = "Write the report to $REPORT" ] || echo "prompt malformed"`. If it prints `prompt malformed`, rebuild the prompt in this order and re-check; do not launch the reviewer.
 

@@ -14,7 +14,7 @@ Skills are named below without a prefix. Under the plugin install each one is ad
 6. `review` — external review of the whole branch by Codex; one fix wave; one re-review. It also runs standalone: on given paths or globs, or over the whole codebase.
 7. `finishing-a-development-branch` — merge / PR / keep.
 
-Each skill names the next one; follow the chain. Never skip `spec-review`, `plan-review` or `review`.
+Each skill names the next one; follow the chain. Never skip `plan-review` or `review`, and never skip `spec-review` after an architectural kickoff — bounded and spike tasks write no spec and go straight to their own next step.
 
 ## Outside the flow
 

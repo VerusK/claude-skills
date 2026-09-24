@@ -1,6 +1,6 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, copyFileSync, chmodSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,8 +105,15 @@ test("the Orca terminal is created in the reviewed repository, not the active wo
   const dir = repo();
   const r = run(dir, ["orca", "codex"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(r.log.includes(`orca terminal create --worktree path:${dir} `), r.log);
+  assert.ok(r.log.includes(`orca terminal create --worktree path:${realpathSync(dir)} `), r.log);
   assert.doesNotMatch(r.log, /--worktree active/);
+});
+
+test("a relative --repo reaches Orca as an absolute path", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { repo: ".", cwd: dir });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.log.includes(`orca terminal create --worktree path:${realpathSync(dir)} `), r.log);
 });
 
 test("README says both reviewer paths require the end marker", () => {
