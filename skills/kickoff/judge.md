@@ -62,9 +62,10 @@ node "$SKILLS_REPO/scripts/typesafe-judge.mjs" < "$Q"; echo "judge_exit=$?"
 
 ## Act on the result
 
+An answer is accepted only when Jev, without seeing `recommended`, picks the same option with confidence at or above the threshold. Sufficiency (`Данных достаточно`) is printed for the reader and does not gate.
+
 - `judge_exit=0` and `"accepted": true` → the decision is made. Print the `block` field to the user verbatim, record the decision (see the calling skill), continue without waiting.
-- `judge_exit=0` and `"accepted": false` → ask the user. Show the same `block` first, then the options with your recommendation, then wait.
-- `judge_exit=0`, `"accepted": false` and the block's verdict ends in `(мало данных)` → the judge was confident but the `context` did not carry enough facts to justify it. Do not re-run with the same input. Either gather the missing facts (read the file, run the command) and judge once more, or ask the user. Never treat a `(мало данных)` result as agreement with your `recommended`.
+- `judge_exit=0` and `"accepted": false` → ask the user. Show the same `block` first, then the options with your recommendation, then wait. When the verdict ends in `(Jev ≠ рекомендация)`, Jev picked a different option: ask as is — do not re-judge, and do not switch your recommendation to Jev's pick.
 - `judge_exit` is anything other than 0 (no key, network error, bad input, or the script could not be run at all — e.g. exit 1/127 when the repo was not located or node is missing) → ask the user as you normally would and add one line: `TypeSafe judge unavailable: <stderr line>`. Never auto-accept without exit 0 and `accepted: true`.
 
 ## Rules
@@ -75,6 +76,7 @@ node "$SKILLS_REPO/scripts/typesafe-judge.mjs" < "$Q"; echo "judge_exit=$?"
 - `decisions` accumulates across rounds of the same interview: every answer already settled goes in, so later questions are judged against the design as it stands.
 - `constraints` holds the user's rules and the hard limits; `goal` is one sentence.
 - `context` must carry facts, never your opinion. Your opinion lives in `recommended`, which is shown to the user and is **never** sent to the judge — that is what keeps the judge an independent second read rather than an echo of your pick.
+- `recommended` is required and must be one of the option ids; without it the script exits 2. Commit to it before the call and never change it after seeing the judge's answer — acceptance means two independent reads agreed.
 - Total `context` must stay under 8 KB serialised; the script rejects more. Trim excerpts, not facts.
 - Escape `"` and `\` inside the JSON strings; write multi-line strings as `\n` — a parse error makes the judge look unavailable when the input was yours.
 - Questions about the user's personal taste, credentials, or anything outside the repo are never auto-accepted: skip the judge and ask.

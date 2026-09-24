@@ -53,12 +53,22 @@ const deps = (client, over = {}) => ({
   choice: fakeChoice,
   noul: fakeNoul,
   threshold: 0.7,
-  sufficiencyThreshold: 0.6,
   ...over,
 });
 
 test("validate rejects missing options", () => {
   assert.throws(() => validate({ question: "x", options: [{ id: "A", label: "a" }] }), /2\.\.6 options/);
+});
+
+test("validate rejects a recommendation that is missing or not an option id", () => {
+  // Acceptance compares Jev's pick with this id, so without a real one no answer can be accepted.
+  for (const recommended of [undefined, "", "Z", "a", 1]) {
+    assert.throws(
+      () => validate({ ...input, recommended }),
+      /recommended must be one of the option ids/,
+      `recommended=${JSON.stringify(recommended)}`,
+    );
+  }
 });
 
 test("validate accepts a string or an object context", () => {
@@ -126,30 +136,52 @@ test("buildState keeps a string context and defaults to an empty string", () => 
   assert.equal(buildState({ ...input, context: undefined }).context, "");
 });
 
-test("judge accepts above both thresholds", async () => {
+test("judge accepts a confident pick that matches the recommendation", async () => {
   const r = await judge(
     input,
     deps(fakeClient({ type: "choice", choice: "A", confidence: 0.82, probabilities: { A: 0.9, B: 0.1 } }, { type: "noul", noul: 0.71 })),
   );
   assert.equal(r.choice, "A");
+  assert.equal(r.recommended, "A");
+  assert.equal(r.agreed, true);
   assert.equal(r.accepted, true);
   assert.equal(r.threshold, 0.7);
   assert.equal(r.sufficiency, 0.71);
-  assert.equal(r.sufficiencyThreshold, 0.6);
-  assert.match(r.block, /Выбрано: A, confidence 0\.82, данных 0\.71, порог 0\.7\/0\.6 → принято автоматически/);
+  assert.match(r.block, /Выбрано: A, confidence 0\.82, данных 0\.71, порог 0\.7 → принято автоматически/);
 });
 
-test("judge accepts when sufficiency exactly equals its threshold", async () => {
+test("judge accepts an agreed pick however low the sufficiency", async () => {
+  // Sufficiency is reported, never gated: on 110 real decisions it blocked 22
+  // agreed picks the user then confirmed, and caught nothing agreement misses.
+  const r = await judge(
+    input,
+    deps(fakeClient({ type: "choice", choice: "A", confidence: 0.98, probabilities: { A: 0.99, B: 0.01 } }, { type: "noul", noul: 0.2 })),
+  );
+  assert.equal(r.sufficiency, 0.2);
+  assert.equal(r.accepted, true);
+  assert.match(r.block, /Данных достаточно: 20%/);
+});
+
+test("judge accepts when confidence exactly equals the threshold", async () => {
   // The gate is `>=`: a value sitting exactly on the boundary passes, and the
   // block prints three decimals so the reader can see it did not merely round there.
   const r = await judge(
     input,
-    deps(fakeClient({ type: "choice", choice: "A", confidence: 0.82, probabilities: { A: 0.9, B: 0.1 } }, { type: "noul", noul: 0.6 })),
+    deps(fakeClient({ type: "choice", choice: "A", confidence: 0.7, probabilities: { A: 0.8, B: 0.2 } })),
   );
-  assert.equal(r.sufficiency, 0.6);
   assert.equal(r.accepted, true);
-  assert.match(r.block, /данных 0\.600, порог 0\.7\/0\.6 → принято автоматически/);
-  assert.doesNotMatch(r.block, /мало данных/);
+  assert.match(r.block, /confidence 0\.700, .*→ принято автоматически/);
+});
+
+test("judge asks when a confident pick differs from the recommendation", async () => {
+  const r = await judge(
+    input,
+    deps(fakeClient({ type: "choice", choice: "B", confidence: 0.99, probabilities: { A: 0.01, B: 0.99 } })),
+  );
+  assert.equal(r.choice, "B");
+  assert.equal(r.agreed, false);
+  assert.equal(r.accepted, false);
+  assert.match(r.block, /Выбрано: B, .*→ спросить пользователя \(Jev ≠ рекомендация\)$/m);
 });
 
 test("judge sends a state without the recommendation end to end", async () => {
@@ -172,24 +204,14 @@ test("judge sends a state without the recommendation end to end", async () => {
   assert.match(r.block, /Рекомендация Claude: A/);
 });
 
-test("judge rejects below threshold", async () => {
+test("judge asks without a disagreement tag when an agreed pick is below threshold", async () => {
   const r = await judge(
     input,
-    deps(fakeClient({ type: "choice", choice: "B", confidence: 0.3, probabilities: { A: 0.4, B: 0.6 } })),
+    deps(fakeClient({ type: "choice", choice: "A", confidence: 0.3, probabilities: { A: 0.6, B: 0.4 } })),
   );
+  assert.equal(r.agreed, true);
   assert.equal(r.accepted, false);
-  assert.match(r.block, /спросить пользователя/);
-  assert.doesNotMatch(r.block, /мало данных/);
-});
-
-test("judge rejects a confident answer built on too little data", async () => {
-  const r = await judge(
-    input,
-    deps(fakeClient({ type: "choice", choice: "A", confidence: 0.99, probabilities: { A: 0.99, B: 0.01 } }, { type: "noul", noul: 0.2 })),
-  );
-  assert.equal(r.accepted, false);
-  assert.equal(r.sufficiency, 0.2);
-  assert.match(r.block, /спросить пользователя \(мало данных\)/);
+  assert.match(r.block, /→ спросить пользователя$/m);
 });
 
 test("formatDecision lists every option with percent", () => {
@@ -199,7 +221,6 @@ test("formatDecision lists every option with percent", () => {
     confidence: 0.64,
     threshold: 0.7,
     sufficiency: 0.71,
-    sufficiencyThreshold: 0.6,
     accepted: false,
   });
   assert.match(block, /A\. settings\.json env\s+82%/);
@@ -208,60 +229,32 @@ test("formatDecision lists every option with percent", () => {
   assert.match(block, /Данных достаточно: 71%/);
 });
 
-test("formatDecision prints a dash when Claude has no recommendation", () => {
-  const block = formatDecision({ ...input, recommended: undefined }, {
-    choice: "A",
-    probabilities: { A: 0.82, B: 0.18 },
-    confidence: 0.64,
-    threshold: 0.7,
-    sufficiency: 0.71,
-    sufficiencyThreshold: 0.6,
-    accepted: false,
-  });
-  assert.match(block, /Рекомендация Claude: —/);
-});
-
-test("formatDecision prints three decimals within 0.005 of a threshold", () => {
+test("formatDecision prints three decimals within 0.005 of the threshold", () => {
   const block = formatDecision(input, {
     choice: "A",
     probabilities: { A: 0.82, B: 0.18 },
     confidence: 0.699,
     threshold: 0.7,
-    sufficiency: 0.598,
-    sufficiencyThreshold: 0.6,
+    sufficiency: 0.71,
     accepted: false,
   });
-  // Two decimals would print "0.70" and "0.60" — numbers that read as accepted.
-  assert.match(block, /confidence 0\.699, данных 0\.598/);
+  // Two decimals would print "0.70" — a number that reads as accepted.
+  assert.match(block, /confidence 0\.699, данных 0\.71/);
 });
 
-test("formatDecision keeps two decimals away from the thresholds", () => {
+test("formatDecision keeps two decimals away from the threshold", () => {
   const block = formatDecision(input, {
     choice: "A",
     probabilities: { A: 0.82, B: 0.18 },
     confidence: 0.82,
     threshold: 0.7,
     sufficiency: 0.71,
-    sufficiencyThreshold: 0.6,
     accepted: true,
   });
-  assert.match(block, /confidence 0\.82, данных 0\.71/);
+  assert.match(block, /confidence 0\.82, данных 0\.71, порог 0\.7 →/);
 });
 
 test("formatDecision survives a missing sufficiency", () => {
-  for (const over of [{}, { sufficiency: 0.71 }, { sufficiencyThreshold: 0.6 }]) {
-    const block = formatDecision(input, {
-      choice: "A",
-      probabilities: { A: 0.82, B: 0.18 },
-      confidence: 0.82,
-      threshold: 0.7,
-      accepted: true,
-      ...over,
-    });
-    assert.match(block, /Данных достаточно: (—|71%)/);
-    // Nothing is known to be thin, so the tag must not appear.
-    assert.doesNotMatch(block, /мало данных/);
-  }
   const bare = formatDecision(input, {
     choice: "A",
     probabilities: { A: 0.82, B: 0.18 },
@@ -270,7 +263,7 @@ test("formatDecision survives a missing sufficiency", () => {
     accepted: true,
   });
   assert.match(bare, /Данных достаточно: —/);
-  assert.match(bare, /данных —, порог 0\.7\/—/);
+  assert.match(bare, /данных —, порог 0\.7 → принято автоматически/);
 });
 
 test("judge throws when the SDK picks an id that is not an option", async () => {
@@ -377,41 +370,13 @@ test("CLI exits 2 on an unknown --threshold* flag", () => {
   }
 });
 
-test("CLI exits 2 on a sufficiency outside (0,1]", () => {
-  for (const args of [["--sufficiency", "0"], ["--sufficiency", "1.5"], ["--sufficiency=-1"]]) {
-    const r = runCli({ args, env: { TYPESAFE_API_KEY: "dummy" } });
-    assert.equal(r.status, 2, `args=${args.join(" ")}`);
-    assert.match(r.stderr, /sufficiency must be in \(0,1\]/, `args=${args.join(" ")}`);
-  }
-});
-
-test("CLI reads both --sufficiency spellings", () => {
-  // 0.9 is a valid value, so the run must get past both sufficiency checks and
-  // fail on the empty stdin instead: stderr mentioning `input.question` and never
-  // `sufficiency` is what proves each spelling was parsed rather than ignored.
-  for (const args of [["--sufficiency=0.9"], ["--sufficiency", "0.9"]]) {
-    const ok = runCli({ args, env: { TYPESAFE_API_KEY: "dummy" } });
-    assert.equal(ok.status, 2, `args=${args.join(" ")}`);
-    assert.doesNotMatch(ok.stderr, /sufficiency/, `args=${args.join(" ")}`);
-    assert.match(ok.stderr, /judge failed: input\.question/, `args=${args.join(" ")}`);
-  }
-});
-
-test("CLI exits 2 on an unparsable sufficiency", () => {
-  for (const args of [["--sufficiency", "abc"], ["--sufficiency"], ["--sufficiency="], ["--sufficiency=abc"]]) {
-    const r = runCli({ args, env: { TYPESAFE_API_KEY: "dummy" } });
-    assert.equal(r.status, 2, `args=${args.join(" ")}`);
-    assert.match(r.stderr, /invalid sufficiency \(flag or config\/judge\.json\)/, `args=${args.join(" ")}`);
-  }
-});
-
-test("CLI exits 2 on an unknown --sufficiency* flag", () => {
-  for (const args of [["--sufficiencys=0.9"], ["--sufficiency-value", "0.9"]]) {
-    const r = runCli({ args, env: { TYPESAFE_API_KEY: "dummy" } });
-    assert.equal(r.status, 2, `args=${args.join(" ")}`);
-    assert.match(r.stderr, /unknown option/, `args=${args.join(" ")}`);
-    assert.doesNotMatch(r.stderr, /^\s+at /m);
-  }
+test("CLI exits 2 when the input has no recommendation", () => {
+  const stdin = JSON.stringify({ question: "q", options: [{ id: "A", label: "a" }, { id: "B", label: "b" }], context: "c" });
+  // Port 9 on loopback is closed: should validation ever let this input through,
+  // the run fails locally instead of reaching the TypeSafe API.
+  const r = runCli({ stdin, env: { TYPESAFE_API_KEY: "dummy", TYPESAFE_BASE_URL: "http://127.0.0.1:9" } });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /judge failed: input\.recommended must be one of the option ids/);
 });
 
 test("CLI exits 2 when the context is too large", () => {

@@ -19,8 +19,8 @@ same eleven skills, the same three agents and the same SessionStart hook.
   three-way merged into `skills/`, and our edits are recorded in `patches/`. A
   weekly GitHub Action opens a PR when upstream changes.
 - **Decisions by probability.** Multiple-choice questions are sent to the TypeSafe
-  judge (Jev). High-confidence answers are accepted automatically and printed with
-  their probabilities; low-confidence ones are asked.
+  judge (Jev). A confident answer that matches Claude's own pick is accepted
+  automatically and printed with its probabilities; the rest are asked.
 - **A second voice.** Specs, plans and branches are reviewed by Codex (through Orca when
   available), never only by the agent that wrote them.
 
@@ -74,7 +74,7 @@ A **clean** working tree gives full mode: review → findings judged → at most
 
 ### Decisions and reviewers
 
-- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`, overridable with `--threshold`). The key comes from `TYPESAFE_API_KEY`, else from `typesafe.apiKey` in `~/.verus-skills/config.json`; the model is `judge.model` (see [Models and effort](#models-and-effort)). A second gate guards against confidence built on a thin context: the judge also rates how well the supplied facts support any choice, and an answer is auto-accepted only when that sufficiency clears `sufficiencyThreshold` (default `0.6` in the same file, overridable with `--sufficiency`); otherwise the question goes to the user marked `(мало данных)`. Every auto-accepted answer is printed in chat as a decision block with the options, their probabilities and both numbers. When the judge is unavailable the script exits `2` and the skill asks the user instead of guessing.
+- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`, overridable with `--threshold`). The key comes from `TYPESAFE_API_KEY`, else from `typesafe.apiKey` in `~/.verus-skills/config.json`; the model is `judge.model` (see [Models and effort](#models-and-effort)). An answer is auto-accepted only when Jev also picks Claude's `recommended` option, which is never sent to it; a confident pick of another option goes to the user marked `(Jev ≠ рекомендация)`. The judge also rates how well the supplied facts support any choice (`sufficiency`); the number is printed, not gated. Every auto-accepted answer is printed in chat as a decision block with the options, their probabilities, confidence and sufficiency. When the judge is unavailable the script exits `2` and the skill asks the user instead of guessing.
 - The external reviewer is `scripts/reviewer.sh`: Orca-managed Codex when `orca status` answers, otherwise `codex exec`, with the Codex model and effort from [Models and effort](#models-and-effort). On either path a report counts as finished only once its last non-empty line is `<!-- end of review -->`, which every reviewer prompt requires; a `codex exec` report without it is moved to `.context/<title>-partial.md` and the launcher exits `3`. The Orca terminal opens in the reviewed repository (`--worktree path:<repo>`); a repository Orca does not manage goes to `codex exec`. If neither is available it exits `3` and the calling skill falls back to the `verus-reviewer` agent, dispatched unnamed and in the background.
 
 ## Skills

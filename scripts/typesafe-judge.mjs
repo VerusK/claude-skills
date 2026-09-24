@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Probabilistic judge for multiple-choice questions via TypeSafe (Jev).
-// stdin: {question, options:[{id,label,description?}], context?, recommended?}
+// stdin: {question, options:[{id,label,description?}], context?, recommended}
 //   context is a string or a structured object {goal, decisions, facts, constraints, consequences}.
-//   recommended is Claude's own pick: it is shown to the user and never sent to the judge,
-//   so the judge cannot simply echo it back as agreement.
-// stdout: {choice, probabilities, confidence, threshold, sufficiency, sufficiencyThreshold, accepted, block}
+//   recommended is Claude's own pick (an option id): it is never sent to the judge, so Jev
+//   cannot echo it; an answer is accepted only when Jev independently lands on the same id.
+// stdout: {choice, probabilities, confidence, threshold, sufficiency, recommended, agreed, accepted, block}
 // exit 0 ok; exit 2 judge unavailable or invalid input (caller must ask the user).
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -50,6 +50,7 @@ export function validate(input) {
   const ids = new Set(input.options.map((o) => o.id));
   if (ids.size !== input.options.length) throw new Error("option ids must be unique");
   validateContext(input.context);
+  if (!ids.has(input.recommended)) throw new Error("input.recommended must be one of the option ids");
 }
 
 export const CONTEXT_LIMIT = 8192;
@@ -79,9 +80,10 @@ function optionLabel(o) {
   return `${o.id}. ${o.label}`;
 }
 
-// A confident pick made from a thin state is the failure mode this gate catches:
 // Jev reports how well the state supports *any* choice, separately from how strongly
-// it prefers one option over the others.
+// it prefers one option over the others. The score is printed, not gated: on 110 real
+// decisions a 0.6 bar held back 22 picks that agreed with Claude and that the user then
+// confirmed, and the one wrong pick it caught also disagreed with Claude.
 export const SUFFICIENCY_QUESTION =
   "Does the state contain enough concrete information to choose one option confidently, without guessing the user's intent?";
 
@@ -124,24 +126,21 @@ export function formatDecision(input, result) {
   const pct = (v) => `${Math.round((v ?? 0) * 100)}%`;
   const width = Math.max(...input.options.map((o) => optionLabel(o).length));
   const lines = input.options.map((o) => `  ${optionLabel(o).padEnd(width)}  ${pct(result.probabilities[o.id])}`);
-  // A result without a sufficiency reading (an older caller, a hand-built result)
-  // prints dashes rather than throwing, and is never labelled thin on no evidence.
-  const known = Number.isFinite(result.sufficiency) && Number.isFinite(result.sufficiencyThreshold);
-  // "мало данных" names the reason a confident-looking pick was still not accepted.
-  const thin = known && result.sufficiency < result.sufficiencyThreshold;
-  const verdict = result.accepted ? "принято автоматически" : `спросить пользователя${thin ? " (мало данных)" : ""}`;
+  // "Jev ≠ рекомендация" names the reason a confident-looking pick was still not accepted.
+  const differs = result.choice !== input.recommended;
+  const verdict = result.accepted ? "принято автоматически" : `спросить пользователя${differs ? " (Jev ≠ рекомендация)" : ""}`;
+  // A result without a sufficiency reading (a hand-built result) prints dashes rather than throwing.
   const sufficiencyPct = Number.isFinite(result.sufficiency) ? pct(result.sufficiency) : "—";
-  const sufficiencyThreshold = Number.isFinite(result.sufficiencyThreshold) ? result.sufficiencyThreshold : "—";
   return [
     `Решение (Jev): ${input.question}`,
     ...lines,
-    `  Рекомендация Claude: ${input.recommended || "—"}`,
+    `  Рекомендация Claude: ${input.recommended}`,
     `  Данных достаточно: ${sufficiencyPct}`,
-    `  Выбрано: ${result.choice}, confidence ${fixed(result.confidence, result.threshold)}, данных ${fixed(result.sufficiency, result.sufficiencyThreshold)}, порог ${result.threshold}/${sufficiencyThreshold} → ${verdict}`,
+    `  Выбрано: ${result.choice}, confidence ${fixed(result.confidence, result.threshold)}, данных ${fixed(result.sufficiency)}, порог ${result.threshold} → ${verdict}`,
   ].join("\n");
 }
 
-export async function judge(input, { client, choice, noul, threshold, sufficiencyThreshold, model }) {
+export async function judge(input, { client, choice, noul, threshold, model }) {
   validate(input);
   const response = await client.systemOne({
     state: buildState(input),
@@ -166,14 +165,16 @@ export async function judge(input, { client, choice, noul, threshold, sufficienc
   if (!input.options.some((o) => o.id === a.choice)) {
     throw new Error(`SDK returned an unknown choice: ${a.choice}`);
   }
+  const agreed = a.choice === input.recommended;
   const result = {
     choice: a.choice,
     probabilities: a.probabilities,
     confidence: a.confidence,
     threshold,
     sufficiency: s.noul,
-    sufficiencyThreshold,
-    accepted: a.confidence >= threshold && s.noul >= sufficiencyThreshold,
+    recommended: input.recommended,
+    agreed,
+    accepted: agreed && a.confidence >= threshold,
   };
   result.block = formatDecision(input, result);
   return result;
@@ -224,19 +225,12 @@ export function parseNumberArg(args, name) {
 }
 
 export const parseThresholdArg = (args) => parseNumberArg(args, "threshold");
-export const parseSufficiencyArg = (args) => parseNumberArg(args, "sufficiency");
 
 async function main() {
   let threshold;
-  let sufficiencyThreshold;
   try {
-    const args = process.argv.slice(2);
-    const rawThreshold = parseNumberArg(args, "threshold");
-    const rawSufficiency = parseNumberArg(args, "sufficiency");
-    const cfg = rawThreshold === null || rawSufficiency === null ? loadConfig() : {};
-    threshold = rawThreshold === null ? cfg.threshold : rawThreshold.trim() === "" ? Number.NaN : Number(rawThreshold);
-    sufficiencyThreshold =
-      rawSufficiency === null ? cfg.sufficiencyThreshold : rawSufficiency.trim() === "" ? Number.NaN : Number(rawSufficiency);
+    const rawThreshold = parseThresholdArg(process.argv.slice(2));
+    threshold = rawThreshold === null ? loadConfig().threshold : rawThreshold.trim() === "" ? Number.NaN : Number(rawThreshold);
   } catch (err) {
     console.error(`judge failed: ${err.message}`);
     process.exit(2);
@@ -247,14 +241,6 @@ async function main() {
   }
   if (!(threshold > 0 && threshold <= 1)) {
     console.error("threshold must be in (0,1]");
-    process.exit(2);
-  }
-  if (!Number.isFinite(sufficiencyThreshold)) {
-    console.error("invalid sufficiency (flag or config/judge.json)");
-    process.exit(2);
-  }
-  if (!(sufficiencyThreshold > 0 && sufficiencyThreshold <= 1)) {
-    console.error("sufficiency must be in (0,1]");
     process.exit(2);
   }
   let apiKey;
@@ -287,7 +273,7 @@ async function main() {
     // Its default logger would write info/debug to stdout (breaking the JSON) and debug-logs error bodies.
     const logLevel = process.env.TYPESAFE_LOG_LEVEL?.trim() || "off";
     const client = new TypeSafeClient({ apiKey, logLevel, logger: redactingLogger(apiKey) });
-    const result = await judge(input, { client, choice, noul, threshold, sufficiencyThreshold, model });
+    const result = await judge(input, { client, choice, noul, threshold, model });
     process.stdout.write(JSON.stringify(result) + "\n");
   } catch (err) {
     console.error(failureMessage(err, apiKey));
