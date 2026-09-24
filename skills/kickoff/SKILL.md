@@ -72,8 +72,8 @@ Open-ended questions (no sensible options) are asked directly, one per message, 
 2. Present the design in sections (architecture, components, data flow, error handling, testing). Ask after each section whether it is right.
 3. Write the spec to `docs/specs/YYYY-MM-DD-<topic>-design.md` with these sections: Goal, Non-goals, Design (the approved sections), Testing, **Decisions** (every decision block, auto-accepted ones marked `auto`, user-answered ones marked `user`).
 4. Self-review the spec: no placeholders, no contradictions, one interpretation per requirement, scoped for a single plan. Fix inline.
-5. Commit the spec. Tell the user: "Spec written and committed to `<path>`. Review it; when approved I will write the plan with `writing-plans`."
-6. On approval invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin). Invoke nothing else.
+5. Commit the spec. Tell the user: "Spec written and committed to `<path>`. Sending it to an external review before you approve it."
+6. Invoke `spec-review` (`verus-skills:spec-review` when installed as a plugin) with the spec path. It revises the spec, asks for the user's approval and hands off to the plan. Invoke nothing else.
 
 ## 5. Reporting decisions
 

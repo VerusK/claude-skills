@@ -48,7 +48,7 @@ test("writing-plans routes to docs/plans/ and plan-review", () => {
 });
 
 const HANDOFFS = [
-  ["kickoff/SKILL.md", "writing-plans"],
+  ["kickoff/SKILL.md", "spec-review"],
   ["kickoff/SKILL.md", "test-driven-development"],
   ["writing-plans/SKILL.md", "plan-review"],
   ["writing-plans/SKILL.md", "subagent-driven-development"],

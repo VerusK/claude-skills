@@ -140,3 +140,18 @@ test("the reviewer never edits the spec", () => {
 test("NOTICE credits gstack for the spec-review prompt", () => {
   assert.match(read("NOTICE"), /adapted into plan-review\/reviewer\.md and, with its Step 0 scope challenge, into\s+spec-review\/reviewer\.md/);
 });
+
+test("kickoff's architectural path hands the committed spec to spec-review, not to writing-plans", () => {
+  const arch = section(read("skills/kickoff/SKILL.md"), "**Architectural:**", "## 5. Reporting decisions");
+  const commit = arch.indexOf("5. Commit the spec.");
+  const invoke = arch.indexOf("Invoke `spec-review` (`verus-skills:spec-review` when installed as a plugin) with the spec path");
+  assert.ok(commit >= 0 && invoke > commit, "spec-review must follow the commit");
+  assert.doesNotMatch(arch, /On approval invoke `writing-plans`/);
+  assert.doesNotMatch(arch, /Review it; when approved I will write the plan/);
+});
+
+test("kickoff's bounded path still goes straight to test-driven-development", () => {
+  const bounded = section(read("skills/kickoff/SKILL.md"), "**Bounded:**", "**Architectural:**");
+  assert.match(bounded, /hand off to `test-driven-development`/);
+  assert.doesNotMatch(bounded, /spec-review/);
+});
