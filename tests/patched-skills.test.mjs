@@ -53,6 +53,7 @@ const HANDOFFS = [
   ["writing-plans/SKILL.md", "plan-review"],
   ["writing-plans/SKILL.md", "subagent-driven-development"],
   ["plan-review/SKILL.md", "subagent-driven-development"],
+  ["spec-review/SKILL.md", "writing-plans"],
   ["subagent-driven-development/SKILL.md", "review"],
   ["subagent-driven-development/SKILL.md", "finishing-a-development-branch"],
   ["review/SKILL.md", "finishing-a-development-branch"],
@@ -94,6 +95,7 @@ const DISPATCH_SITES = {
   "subagent-driven-development/re-review-prompt.md": ["reviewer"],
   "writing-plans/plan-document-reviewer-prompt.md": ["reviewer"],
   "plan-review/SKILL.md": ["reviewer"],
+  "spec-review/SKILL.md": ["reviewer"],
   "review/SKILL.md": ["reviewer", "worker"],
   "kickoff/SKILL.md": ["explorer"],
 };
@@ -114,7 +116,7 @@ test("every dispatch site names the agent type for Claude Code and spawn_agent f
     assert.doesNotMatch(body, /e\.g\. a Codex session/, file);
     sites += tiers.length;
   }
-  assert.equal(sites, 8);
+  assert.equal(sites, 9);
 });
 
 test("the SDD model rule and the routing docs describe both hosts", () => {
@@ -136,9 +138,10 @@ const launchBlock = (file) => {
   return body.slice(body.indexOf("## 2. Launch the external reviewer"), body.indexOf("## 3."));
 };
 
-test("plan-review and review keep one reviewer session per review", () => {
+test("every external review keeps one reviewer session per review", () => {
   const SESSION_RE = {
     "plan-review/SKILL.md": /SESSION="\$\(git rev-parse --show-toplevel\)\/\.context\/plan-review-\$\(basename "\$ROUND1_REPORT" \.md\)-session"/,
+    "spec-review/SKILL.md": /SESSION="\$\(git rev-parse --show-toplevel\)\/\.context\/spec-review-\$\(basename "\$ROUND1_REPORT" \.md\)-session"/,
     "review/SKILL.md": /SESSION="\$\(git rev-parse --show-toplevel\)\/\.context\/review-\$\(printf '%s' "\$BRANCH" \| tr '\/' '-'\)\$SUFFIX-session"/,
   };
   for (const [file, re] of Object.entries(SESSION_RE)) {

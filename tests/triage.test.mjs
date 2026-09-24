@@ -39,8 +39,8 @@ test("the collection block prints deferred minors, rulings and parked lines", ()
   assert.equal(r.stdout.trim().split("\n").length, 3, r.stdout);
 });
 
-test("review and plan-review triage asks how to fix, not whether to accept", () => {
-  for (const f of ["review/SKILL.md", "plan-review/SKILL.md"]) {
+test("review, plan-review and spec-review triage asks how to fix, not whether to accept", () => {
+  for (const f of ["review/SKILL.md", "plan-review/SKILL.md", "spec-review/SKILL.md"]) {
     const body = read(f);
     const s3 = body.slice(body.indexOf("## 3. Triage findings"), body.indexOf("## 4."));
     assert.match(s3, /How should .* be fixed\?/, f);
@@ -52,7 +52,7 @@ test("review and plan-review triage asks how to fix, not whether to accept", () 
 });
 
 test("section 4 applies every chosen action whatever its option letter, and every finding accepted without the judge", () => {
-  for (const f of ["review/SKILL.md", "plan-review/SKILL.md"]) {
+  for (const f of ["review/SKILL.md", "plan-review/SKILL.md", "spec-review/SKILL.md"]) {
     const body = read(f);
     const s4 = body.slice(body.indexOf("## 4."), body.indexOf("## 5."));
     assert.match(s4, /the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it/, f);

@@ -13,6 +13,7 @@ const SKILLS = [
   "kickoff",
   "plan-review",
   "review",
+  "spec-review",
   "subagent-driven-development",
   "systematic-debugging",
   "test-driven-development",
@@ -21,7 +22,7 @@ const SKILLS = [
   "writing-plans",
 ];
 
-test("skills/ holds exactly the ten skills, each with a SKILL.md", () => {
+test("skills/ holds exactly the eleven skills, each with a SKILL.md", () => {
   const dirs = readdirSync(path.join(ROOT, "skills"), { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)

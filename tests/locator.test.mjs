@@ -44,11 +44,13 @@ function runLocator(snippet, home) {
   return (res.stdout.match(/RESULT=(.*)/) ?? [])[1];
 }
 
-test("the locator is identical in all three skills apart from the skill name", () => {
+test("the locator is identical in all four skills apart from the skill name", () => {
   const kickoff = extractLocator("skills/kickoff/judge.md");
   const planReview = extractLocator("skills/plan-review/SKILL.md").replaceAll("plan-review", "kickoff");
+  const specReview = extractLocator("skills/spec-review/SKILL.md").replaceAll("spec-review", "kickoff");
   const review = extractLocator("skills/review/SKILL.md").replaceAll("/skills/review/", "/skills/kickoff/");
   assert.equal(planReview, kickoff);
+  assert.equal(specReview, kickoff);
   assert.equal(review, kickoff);
 });
 
