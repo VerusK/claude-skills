@@ -2,6 +2,8 @@
 # Fake codex CLI. Env knobs:
 #   FAKE_CODEX_STDOUT=<text>  -> echoed to stdout (the launcher captures it in the log)
 #   FAKE_CODEX_NO_REPORT=1    -> do not write the report file
+#   FAKE_CODEX_NO_MARKER=1    -> write the report without the end marker (a truncated review)
+#   FAKE_CODEX_TRAILING=1     -> write the marker, then more text after it
 echo "codex $*" >> "${FAKE_LOG:?}"
 prompt=$(cat)
 if [ -n "${FAKE_CODEX_STDOUT:-}" ]; then
@@ -9,6 +11,15 @@ if [ -n "${FAKE_CODEX_STDOUT:-}" ]; then
 fi
 if [ -z "${FAKE_CODEX_NO_REPORT:-}" ]; then
   out=$(printf '%s\n' "$prompt" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
-  [ -n "$out" ] && { mkdir -p "$(dirname "$out")"; echo "codex report" > "$out"; }
+  if [ -n "$out" ]; then
+    mkdir -p "$(dirname "$out")"
+    if [ -n "${FAKE_CODEX_NO_MARKER:-}" ]; then
+      echo "codex report" > "$out"
+    elif [ -n "${FAKE_CODEX_TRAILING:-}" ]; then
+      printf 'codex report\n<!-- end of review -->\npartial tail\n' > "$out"
+    else
+      printf 'codex report\n<!-- end of review -->\n' > "$out"
+    fi
+  fi
 fi
 exit 0

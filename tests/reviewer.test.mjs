@@ -58,6 +58,8 @@ function closeSession(dir, file, bins = ["orca"], env = {}) {
 const count = (text, re) => (text.match(new RegExp(re, "gm")) ?? []).length;
 // What the fake orca writes: every complete report ends with the line reviewer.sh waits for.
 const ORCA_REPORT = "orca report\n<!-- end of review -->\n";
+// What the fake codex writes by default: a complete report, marker included.
+const CODEX_REPORT = "codex report\n<!-- end of review -->\n";
 
 test("prefers Orca when available", () => {
   const dir = repo();
@@ -78,7 +80,39 @@ test("falls back to codex exec without Orca", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /reviewer: codex-exec/);
   assert.match(r.log, /codex exec/);
-  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "codex report");
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), CODEX_REPORT);
+});
+
+test("a codex exec report without the end marker is not accepted", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], { env: { FAKE_CODEX_NO_MARKER: "1" } });
+  assert.equal(r.status, 3, r.stderr);
+  assert.doesNotMatch(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.stderr, /codex exec: report incomplete \(end marker missing\); partial report kept at .*\.context\/t-partial\.md/);
+  assert.ok(!existsSync(path.join(dir, "docs/reviews/out.md")), "a truncated report must not stay at the output path");
+  assert.equal(readFileSync(path.join(dir, ".context/t-partial.md"), "utf8"), "codex report\n");
+});
+
+test("a codex exec report with text after the end marker is not accepted", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], { env: { FAKE_CODEX_TRAILING: "1" } });
+  assert.equal(r.status, 3, r.stderr);
+  assert.match(r.stderr, /codex exec: report incomplete \(end marker missing\)/);
+  assert.ok(!existsSync(path.join(dir, "docs/reviews/out.md")));
+});
+
+test("the Orca terminal is created in the reviewed repository, not the active worktree", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.log.includes(`orca terminal create --worktree path:${dir} `), r.log);
+  assert.doesNotMatch(r.log, /--worktree active/);
+});
+
+test("README says both reviewer paths require the end marker", () => {
+  const readme = readFileSync(fileURLToPath(new URL("../README.md", import.meta.url)), "utf8");
+  assert.match(readme, /On either path a report counts as finished only once its last non-empty line is `<!-- end of review -->`, which every reviewer prompt requires/);
+  assert.match(readme, /The Orca terminal opens in the reviewed repository \(`--worktree path:<repo>`\)/);
 });
 
 test("exits 3 when nothing is available", () => {
@@ -104,7 +138,7 @@ test("codex report mentioning auth still succeeds", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /reviewer: codex-exec/);
   assert.doesNotMatch(r.stderr, /codex exec failed/);
-  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "codex report");
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), CODEX_REPORT);
 });
 
 test("a codex failure reports the log tail verbatim, not a guessed cause", () => {
@@ -434,7 +468,7 @@ test("a session-loaded reviewer that has not finished by the deadline is closed 
   assert.doesNotMatch(r.log, /terminal create/);
   assertClosedBeforeExec(r.log);
   assert.ok(!existsSync(session), "the session file still names a closed terminal");
-  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "codex report");
+  assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), CODEX_REPORT);
 });
 
 test("a terminal created for --session-file is closed, and no handle recorded, on fallback", () => {

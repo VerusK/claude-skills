@@ -127,10 +127,11 @@ find_handle() { json_get '(j&&j.result&&j.result.terminal&&j.result.terminal.han
 # The reviewer streams the report and can pause between writes long enough for
 # the TUI to look idle, so neither "the file exists" nor "its size held still"
 # means "finished". reviewer.md makes every reviewer end the report with
-# END_MARKER as its last line; the Orca path accepts the report — and only then
-# closes a session-less terminal — once that line is in the file.
+# END_MARKER as its last line; both the Orca and the codex-exec path accept the
+# report only once that line is its last non-empty line, and the Orca path only
+# then closes a session-less terminal.
 END_MARKER='<!-- end of review -->'
-report_complete() { grep -qxF "$END_MARKER" "$REPO/$OUTPUT" 2>/dev/null; }
+report_complete() { [ "$(grep -v '^[[:space:]]*$' "$REPO/$OUTPUT" 2>/dev/null | tail -1)" = "$END_MARKER" ]; }
 wait_for_report_end() { # poll for the end marker for N seconds
   local deadline=$(( $(date +%s) + $1 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -161,7 +162,7 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
     LOADED_HANDLE="$HANDLE"
   fi
   if [ -z "$HANDLE" ]; then
-    CREATED_HANDLE="$(orca terminal create --worktree active --command "codex$CODEX_FLAGS" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
+    CREATED_HANDLE="$(orca terminal create --worktree "path:$REPO" --command "codex$CODEX_FLAGS" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
     if [ -n "$CREATED_HANDLE" ]; then
       orca terminal wait --terminal "$CREATED_HANDLE" --for tui-idle --timeout-ms 90000 --json 2>/dev/null | json_get 'j.result&&j.result.wait&&j.result.wait.satisfied===true' >/dev/null && HANDLE="$CREATED_HANDLE"
     fi
@@ -244,9 +245,14 @@ if command -v codex >/dev/null 2>&1; then
   # is a success. When there is no report, report what codex actually said —
   # the log opens with the echoed prompt, so guessing a cause out of it (an auth
   # grep, say) misreads the prompt's own text as codex's failure.
-  if [ -s "$REPO/$OUTPUT" ]; then
+  if report_complete; then
     echo "reviewer: codex-exec"
     exit 0
+  elif [ -s "$REPO/$OUTPUT" ]; then
+    # Killed at the timeout or cut short: a report without the marker is not a review.
+    PARTIAL="$REPO/.context/${TITLE}-partial.md"
+    mv -f "$REPO/$OUTPUT" "$PARTIAL"
+    echo "codex exec: report incomplete (end marker missing); partial report kept at $PARTIAL" >&2
   else
     TAIL="$(grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1)"
     echo "codex exec failed: ${TAIL:-(log empty)} (full log: $LOG)" >&2
