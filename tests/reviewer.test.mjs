@@ -595,9 +595,9 @@ test("an Orca report without the end marker is never accepted: the run falls bac
   assert.ok(!existsSync(path.join(dir, "docs/reviews/out.md")), "the unfinished Orca report must not pass as the codex result");
 });
 
-test("both reviewer prompts end the report with the marker reviewer.sh waits for", () => {
+test("every reviewer prompt ends the report with the marker reviewer.sh waits for", () => {
   assert.match(readFileSync(SCRIPT, "utf8"), /^END_MARKER='<!-- end of review -->'$/m);
-  for (const skill of ["plan-review", "review"]) {
+  for (const skill of ["plan-review", "review", "spec-review"]) {
     const body = readFileSync(fileURLToPath(new URL(`../skills/${skill}/reviewer.md`, import.meta.url)), "utf8");
     assert.match(body, /End the report with this exact last line: `<!-- end of review -->`/, skill);
     assert.match(body, /\n<!-- end of review -->\n```\n/, `${skill}: the report template ends with the marker`);

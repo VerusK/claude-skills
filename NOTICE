@@ -8,7 +8,8 @@ original copyright remains with their authors.
   https://github.com/obra/superpowers
 - typesafe-ai/skills (TypeSafe AI) — typesafe-ai. https://github.com/typesafe-ai/skills
 - garrytan/gstack (Garry Tan) — the plan-eng-review methodology (plan-eng-review/SKILL.md.tmpl,
-  tracked as a watch-only source) adapted into plan-review/reviewer.md.
+  tracked as a watch-only source) adapted into plan-review/reviewer.md and, with its Step 0 scope challenge, into
+  spec-review/reviewer.md.
   https://github.com/garrytan/gstack
 - mattpocock/skills (Matt Pocock) — grilling interview style adapted into kickoff.
   https://github.com/mattpocock/skills

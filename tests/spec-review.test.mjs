@@ -88,3 +88,55 @@ test("§6 waits for explicit approval before writing-plans", () => {
 test("the verus-reviewer agent lists spec-review among its callers", () => {
   assert.match(read("agents/verus-reviewer.md"), /writing-plans, spec-review, plan-review or review/);
 });
+
+const REVIEWER = "skills/spec-review/reviewer.md";
+const SECTIONS = [
+  "## 0. Scope challenge",
+  "## 1. Requirements",
+  "## 2. Scope",
+  "## 3. Feasibility and failure modes",
+  "## 4. Testability",
+  "## 5. Decisions",
+];
+
+test("reviewer.md evaluates sections 0-5 in order and reports each one", () => {
+  const body = read(REVIEWER);
+  let at = -1;
+  for (const h of SECTIONS) {
+    const i = body.indexOf(`\n${h}\n`);
+    assert.ok(i > at, `${h} missing or out of order`);
+    at = i;
+  }
+  for (const h of ["### 0. Scope challenge", "### 1. Requirements", "### 2. Scope", "### 3. Feasibility", "### 4. Testability", "### 5. Decisions"]) {
+    assert.ok(body.includes(`\n${h}\n`), `report template lacks ${h}`);
+  }
+  assert.match(body, /\n# Spec review: <spec title>\n## Verdict\n/);
+});
+
+test("the scope challenge is gstack's Step 0, made non-interactive", () => {
+  const s0 = section(read(REVIEWER), "## 0. Scope challenge", "## 1. Requirements");
+  for (const re of [/existing code already partially or fully solves/, /minimum set of changes/, /8\+ files or introduces 2\+ new services or classes/, /built-in/, /Completeness/, /Distribution/]) {
+    assert.match(s0, re);
+  }
+  assert.match(s0, /do not search the web/);
+  assert.match(s0, /Do not stop to ask questions/);
+});
+
+test("decision findings name the decision and its marker", () => {
+  const s5 = section(read(REVIEWER), "## 5. Decisions", "## Confidence calibration");
+  assert.match(s5, /`Decisions: 7\. Where the report lives \(auto\)`/);
+  assert.match(read(REVIEWER), /Any finding, in any section, whose fix would change a recorded decision names that decision the same way/);
+});
+
+test("reviewer.md handles a spec with no Decisions section", () => {
+  const s5 = section(read(REVIEWER), "## 5. Decisions", "## Confidence calibration");
+  assert.match(s5, /If the spec has no Decisions section, write "No Decisions section" under 5 and raise no findings here/);
+});
+
+test("the reviewer never edits the spec", () => {
+  assert.match(read(REVIEWER), /Do not edit the spec or any other file\. Do not run tests or builds\./);
+});
+
+test("NOTICE credits gstack for the spec-review prompt", () => {
+  assert.match(read("NOTICE"), /adapted into plan-review\/reviewer\.md and, with its Step 0 scope challenge, into\s+spec-review\/reviewer\.md/);
+});
