@@ -14,7 +14,7 @@ original copyright remains with their authors.
 - mattpocock/skills (Matt Pocock) — grilling interview style adapted into kickoff.
   https://github.com/mattpocock/skills
 
-kickoff, plan-review and review are this repository's own skills; they are marked "own" in
+kickoff, spec-review, plan-review and review are this repository's own skills; they are marked "own" in
 README.md. Local modifications to vendored skills are recorded in patches/ and the upstream
 revision each one was merged from is recorded in sources.lock.json.
 

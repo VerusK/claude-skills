@@ -155,3 +155,37 @@ test("kickoff's bounded path still goes straight to test-driven-development", ()
   assert.match(bounded, /hand off to `test-driven-development`/);
   assert.doesNotMatch(bounded, /spec-review/);
 });
+
+const DESCRIPTION = "Personal skills distro: kickoff to spec, external spec review, plan, external plan review, subagent execution, branch review, finish — with multiple-choice decisions judged by TypeSafe.";
+
+test("USING.md puts spec-review between kickoff and writing-plans and forbids skipping it", () => {
+  const flow = section(read("USING.md"), "## The flow", "## Outside the flow");
+  const at = (s) => flow.indexOf(s);
+  assert.ok(at("1. `kickoff`") >= 0 && at("1. `kickoff`") < at("2. `spec-review`") && at("2. `spec-review`") < at("3. `writing-plans`"), flow);
+  assert.match(flow, /4\. `plan-review`[\s\S]*5\. `subagent-driven-development`[\s\S]*6\. `review`[\s\S]*7\. `finishing-a-development-branch`/);
+  assert.match(flow, /Never skip `spec-review`, `plan-review` or `review`\./);
+});
+
+test("README shows spec-review in the flow and the skills table", () => {
+  const readme = read("README.md");
+  assert.match(readme, /K\[kickoff<br\/>interview \+ spec\] --> SR\[spec-review<br\/>Codex\]\n  SR --> W\[writing-plans\]/);
+  assert.match(readme, /  SR -\. findings \.-> J/);
+  assert.match(readme, /^kickoff → spec-review → writing-plans → plan-review → subagent-driven-development → review → finishing-a-development-branch$/m);
+  assert.match(readme, /^\| 2 \| `spec-review` \|/m);
+  assert.match(readme, /^\| 7 \| `finishing-a-development-branch` \|/m);
+  assert.match(readme, /^\| `spec-review` \| own \|/m);
+  assert.match(readme, /same eleven skills/);
+  assert.match(readme, /Specs, plans and branches are reviewed by Codex/);
+  assert.match(readme, /the fallback external reviewer of spec-review, plan-review and review\)/);
+  assert.doesNotMatch(readme, /same ten skills/);
+});
+
+test("NOTICE lists spec-review among the own skills", () => {
+  assert.match(read("NOTICE"), /kickoff, spec-review, plan-review and review are this repository's own skills/);
+});
+
+test("the plugin and marketplace descriptions mention the spec review", () => {
+  assert.equal(JSON.parse(read(".claude-plugin/plugin.json")).description, DESCRIPTION);
+  assert.equal(JSON.parse(read(".codex-plugin/plugin.json")).description, DESCRIPTION);
+  assert.equal(JSON.parse(read(".claude-plugin/marketplace.json")).plugins[0].description, DESCRIPTION);
+});

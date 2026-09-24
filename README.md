@@ -9,7 +9,7 @@ checkout. The plugin is the normal path: updates arrive through
 `claude plugin update`. The symlink install is the development path: edits in the
 checkout are live with no release. They are mutually exclusive — the symlink
 installer refuses to run while the plugin is installed, because both ship the
-same ten skills, the same three agents and the same SessionStart hook.
+same eleven skills, the same three agents and the same SessionStart hook.
 
 - **One flow, one place.** Skills from different authors are wired to call each
   other by name; the routing lives in `USING.md`, injected into every session by a
@@ -21,39 +21,42 @@ same ten skills, the same three agents and the same SessionStart hook.
 - **Decisions by probability.** Multiple-choice questions are sent to the TypeSafe
   judge (Jev). High-confidence answers are accepted automatically and printed with
   their probabilities; low-confidence ones are asked.
-- **A second voice.** Plans and branches are reviewed by Codex (through Orca when
+- **A second voice.** Specs, plans and branches are reviewed by Codex (through Orca when
   available), never only by the agent that wrote them.
 
 ## The flow
 
 ```mermaid
 flowchart LR
-  K[kickoff<br/>interview + spec] --> W[writing-plans]
+  K[kickoff<br/>interview + spec] --> SR[spec-review<br/>Codex]
+  SR --> W[writing-plans]
   W --> PR[plan-review<br/>Codex]
   PR --> SDD[subagent-driven-development<br/>verus-worker + verus-reviewer]
   SDD --> BR[review<br/>Codex]
   BR --> F[finishing-a-development-branch]
   K -. questions .-> J[(TypeSafe judge)]
+  SR -. findings .-> J
   PR -. findings .-> J
   BR -. findings .-> J
 ```
 
 ```
-kickoff → writing-plans → plan-review → subagent-driven-development → review → finishing-a-development-branch
-   │                          │  ▲                   │                  │
-   │                          ├──┘ 1 re-review       │                  │
-   │                          │                      └ per-task reviews │
-   └─ questions → TypeSafe    └─ findings → TypeSafe                    └ findings → TypeSafe, 1 fix wave, 1 re-review
+kickoff → spec-review → writing-plans → plan-review → subagent-driven-development → review → finishing-a-development-branch
+   │         │  ▲                          │  ▲                       │                  │
+   │         ├──┘ 1 re-review + approval   ├──┘ 1 re-review           │                  │
+   │         └─ findings → TypeSafe        └─ findings → TypeSafe     └ per-task reviews │
+   └─ questions → TypeSafe                                                               └ findings → TypeSafe, 1 fix wave, 1 re-review
 ```
 
 | Step | Skill | What happens |
 |---|---|---|
 | 1 | `kickoff` | Classifies the task, interviews through a decision tree, judges each multiple-choice question, writes `docs/specs/<date>-<topic>-design.md` with a Decisions section. |
-| 2 | `writing-plans` | Bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
-| 3 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review. |
-| 4 | `subagent-driven-development` | Fresh `verus-worker` subagent per task, a `verus-reviewer` spec + quality review after each. |
-| 5 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 6. |
-| 6 | `finishing-a-development-branch` | Merge, PR, or keep. |
+| 2 | `spec-review` | Codex reviews the spec (scope challenge, requirements, scope, feasibility, testability, `auto` decisions) and writes the report next to the spec as `<spec-name>.review.md`. Findings rated 7+/10 are judged — those against the user's own decisions go to the user — the spec is revised, one re-review, then the user approves the spec. |
+| 3 | `writing-plans` | Bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
+| 4 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review. |
+| 5 | `subagent-driven-development` | Fresh `verus-worker` subagent per task, a `verus-reviewer` spec + quality review after each. |
+| 6 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 7. |
+| 7 | `finishing-a-development-branch` | Merge, PR, or keep. |
 
 Outside the flow: `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `typesafe-ai`.
 
@@ -80,6 +83,7 @@ A **clean** working tree gives full mode: review → findings judged → at most
 |---|---|---|---|---|
 | `kickoff` | own | inspired by [superpowers brainstorming](https://github.com/obra/superpowers) and [mattpocock grilling](https://github.com/mattpocock/skills) | this repo | MIT |
 | `plan-review` | own | methodology from [gstack plan-eng-review](https://github.com/garrytan/gstack) (watched) | this repo | MIT |
+| `spec-review` | own | scope challenge from [gstack plan-eng-review](https://github.com/garrytan/gstack) (watched) | this repo | MIT |
 | `review` | own | prompt from [superpowers requesting-code-review](https://github.com/obra/superpowers) (watched) | this repo | MIT |
 | `writing-plans` | copy + patch | [obra/superpowers](https://github.com/obra/superpowers) | Jesse Vincent | MIT |
 | `subagent-driven-development` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
@@ -107,7 +111,7 @@ Every model and effort setting lives in `config/models.json`:
 }
 ```
 
-- **Claude subagents** run as the agent types `verus-worker` (implementers, fix waves), `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer) and `verus-explorer` (kickoff lookups); `make install` links them into `~/.claude/agents/`, the plugin ships them. After editing `subagents`, run `make models` — it rewrites the `model:`/`effort:` lines of `agents/verus-*.md`; a test fails if they drift. The symlink install sees the change at once; the plugin after a release. Effort: `low|medium|high|xhigh|max`.
+- **Claude subagents** run as the agent types `verus-worker` (implementers, fix waves), `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer of spec-review, plan-review and review) and `verus-explorer` (kickoff lookups); `make install` links them into `~/.claude/agents/`, the plugin ships them. After editing `subagents`, run `make models` — it rewrites the `model:`/`effort:` lines of `agents/verus-*.md`; a test fails if they drift. The symlink install sees the change at once; the plugin after a release. Effort: `low|medium|high|xhigh|max`.
 - **The `opus` alias** follows the newest Opus only when the main session is not itself pinned to an older Opus: a session on an older Opus keeps its subagents on that exact version. To pin, write a full model id (e.g. `claude-opus-5-6`) and run `make models`.
 - **Codex reviewer:** `default` passes no `-m`/`model_reasoning_effort`, so Codex uses `~/.codex/config.toml`. Override per run with `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`. Every Codex value must be a single token (letters, digits, `_ . : [ ] -`); anything else stops the review with an error that names the setting, never its value. Each review starts a fresh Codex terminal, so a change applies from the next review.
 - **Judge:** `jev-latest` by default; override per run with `TYPESAFE_DEFAULT_MODEL`.
