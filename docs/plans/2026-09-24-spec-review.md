@@ -1117,3 +1117,39 @@ accepted without the judge: `git commit -am` sweeps unrelated tracked changes in
 ```
 
 Deferred: none. Round 2 was the last round.
+
+## Review decisions (round 1)
+
+Reviewer: Codex via Orca (`reviewer: orca`), report `docs/reviews/VerusK-spec-review-2026-09-24.md`. Fixes: commit `ea5f217`.
+
+accepted without the judge: "Never skip `spec-review`" in USING.md also covered bounded and spike tasks, which write no spec — USING.md:17 vs skills/kickoff/SKILL.md Bounded path "hand off to test-driven-development … no plan document". The rule is now scoped to an architectural kickoff.
+
+accepted without the judge: acceptance scenario 10 reused scenario 5, whose finding is against a `user` decision and never reaches the judge — plan Acceptance rows 5 and 10. Row 10 now uses a spec with an untested requirement (a finding with more than one fix).
+
+accepted without the judge: a relative `--repo` reached Orca as `path:<relative>` — scripts/reviewer.sh stored `--repo` as given, checked only `-d`, then built `--worktree "path:$REPO"`. REPO is now normalized with `cd && pwd -P`; a test covers a relative `--repo`.
+
+```
+Решение (Jev): How should the spec-review reviewer prompt's ban on reading agents/ and .claude/ be reconciled with verifying the spec's file claims?
+  A. Allow repo agents as data  76%
+  B. Exempt those claims        23%
+  C. Leave as plan-review       1%
+  Рекомендация Claude: A
+  Данных достаточно: 46%
+  Выбрано: A, confidence 0.65, данных 0.46, порог 0.7/0.6 → спросить пользователя (мало данных)
+```
+
+User chose **A**: the reviewer may read this repository's `agents/` and `.claude/` as data when the spec names them; SKILL.md §1 keeps them in Referenced source files.
+
+```
+Решение (Jev): When and how should the eleven manual acceptance scenarios for spec-review be run?
+  A. Before merge, from worktree  99%
+  B. After merge                  0%
+  C. Controller dry-run now       1%
+  Рекомендация Claude: A
+  Данных достаточно: 66%
+  Выбрано: A, confidence 0.98, данных 0.66, порог 0.7/0.6 → принято автоматически
+```
+
+The user consented to `make install` from this worktree for the acceptance run and back from the main checkout afterwards.
+
+Ledger triage (reviewer): the two lines marked BLOCKS MERGE (reviewer ban on `agents/`, relative `--repo`) are fixed above; the other fifteen deferred minors were judged OK for merge.
