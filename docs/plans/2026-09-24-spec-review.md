@@ -18,7 +18,7 @@
 - Every reviewer prompt ends its report template with `<!-- end of review -->` and contains ``End the report with this exact last line: `<!-- end of review -->` ``.
 - Do not change `skills/plan-review/`, `skills/review/`, `skills/writing-plans/`, `scripts/`, versions in `package.json` or the plugin manifests.
 - Skill text is English; the spec and plan are Russian/English as written.
-- Run `npm test` before every commit (the full suite takes over two minutes: run it with a 10-minute timeout; single files with `node --test tests/<file>.test.mjs`).
+- Run `npm test` before every commit (the full suite takes about six and a half minutes — 256 tests on main: run it with a 10-minute timeout or in the background; single files with `node --test tests/<file>.test.mjs`).
 - Commit messages end with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## Review Focus
