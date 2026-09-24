@@ -1153,3 +1153,11 @@ User chose **A**: the reviewer may read this repository's `agents/` and `.claude
 The user consented to `make install` from this worktree for the acceptance run and back from the main checkout afterwards.
 
 Ledger triage (reviewer): the two lines marked BLOCKS MERGE (reviewer ban on `agents/`, relative `--repo`) are fixed above; the other fifteen deferred minors were judged OK for merge.
+
+## Review decisions (round 2)
+
+Reviewer: Codex via Orca (`reviewer: orca`), report `docs/reviews/VerusK-spec-review-2026-09-24-2.md`. All four round-1 fixes marked resolved; both BLOCKS MERGE ledger lines now OK.
+
+Remaining finding [P2]: the acceptance file `docs/plans/2026-09-24-spec-review.acceptance.md` is absent — covered by the round-1 decision (run before merge from this worktree); pending the user's fresh-session run. No code change.
+
+Deferred (P2/P3 from the ledger, judged OK for merge by the reviewer): the fifteen `minor (deferred)` lines in `.superpowers/sdd/2026-09-24-spec-review/progress.md`, notably stale "ten skills" counts in `docs/plugin-acceptance.md`, the unchecked `mv` in reviewer.sh's partial-report branch, and the stale reviewer.sh exit header.
