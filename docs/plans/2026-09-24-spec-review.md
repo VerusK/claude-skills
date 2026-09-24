@@ -4,7 +4,7 @@
 
 **Goal:** Add a `spec-review` skill that sends the kickoff spec to an external Codex review before the user approves it, triages findings through the TypeSafe judge (findings against the user's own decisions go to the user), revises the spec, and owns the approval gate and the hand-off to `writing-plans`.
 
-**Architecture:** `spec-review` is a sibling of `plan-review`: the same launcher (`scripts/reviewer.sh`), the same judge protocol (`skills/kickoff/judge.md`), the same triage rules and round structure, with its own design-document reviewer prompt whose section 0 is gstack's Step 0 scope challenge made non-interactive. `kickoff`'s architectural path commits the spec and invokes `spec-review` instead of asking for approval itself. Everything is Markdown skill text guarded by string-contract tests on `node:test`; no script changes.
+**Architecture:** `spec-review` is a sibling of `plan-review`: the same launcher (`scripts/reviewer.sh`), the same judge protocol (`skills/kickoff/judge.md`), the same triage rules and round structure, with its own design-document reviewer prompt whose section 0 is gstack's Step 0 scope challenge made non-interactive. `kickoff`'s architectural path commits the spec and invokes `spec-review` instead of asking for approval itself. Everything is Markdown skill text guarded by string-contract tests on `node:test`, plus one launcher fix: `scripts/reviewer.sh`'s `codex exec` path accepts a report only with the end marker, as the Orca path already does (Task 5).
 
 **Tech Stack:** Markdown skills, Node.js `node:test` contract tests, bash launcher `scripts/reviewer.sh` (unchanged).
 
@@ -16,7 +16,7 @@
 - Every subagent dispatch site uses exactly these two lines (tests compare them byte for byte): ``Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter.`` and `In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model.` No `general-purpose`, no `model: opus`, no line starting with `name:` outside frontmatter.
 - The locator block in a skill is byte-identical to `skills/kickoff/judge.md`'s apart from the skill name.
 - Every reviewer prompt ends its report template with `<!-- end of review -->` and contains ``End the report with this exact last line: `<!-- end of review -->` ``.
-- Do not change `skills/plan-review/`, `skills/review/`, `skills/writing-plans/`, `scripts/`, versions in `package.json` or the plugin manifests.
+- Do not change `skills/plan-review/`, `skills/review/`, `skills/writing-plans/`, versions in `package.json` or the plugin manifests. In `scripts/` only `scripts/reviewer.sh` changes, in Task 5.
 - Skill text is English; the spec and plan are Russian/English as written.
 - Run `npm test` before every commit (the full suite takes about six and a half minutes — 256 tests on main: run it with a 10-minute timeout or in the background; single files with `node --test tests/<file>.test.mjs`).
 - Commit messages end with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -80,6 +80,16 @@ test("§0 stops when there is no spec and puts the report beside the spec", () =
   assert.match(s0, /<directory of SPEC>\/<spec basename without \.md>\.review\.md/);
 });
 
+test("§0 normalizes an absolute or relative spec path to a repo-relative one", () => {
+  const s0 = section(read(SKILL), "## 0. Inputs", "## 1.");
+  assert.match(s0, /SPEC_ABS="\$\(cd "\$\(dirname "\$ARG"\)" && pwd -P\)\/\$\(basename "\$ARG"\)"/);
+  assert.match(s0, /TOP="\$\(git -C "\$\(dirname "\$SPEC_ABS"\)" rev-parse --show-toplevel 2>\/dev\/null\)"/);
+  assert.match(s0, /SPEC="\$\{SPEC_ABS#"\$TOP"\/\}"/);
+  for (const msg of ["spec not found", "spec is not inside a git repository", "spec is outside the repository"]) {
+    assert.ok(s0.includes(msg), msg);
+  }
+});
+
 test("§1 fences the spec and ends with the report line", () => {
   const s1 = section(read(SKILL), "## 1. Build the prompt", "## 2.");
   assert.match(s1, /`THE SPEC:` followed by the spec file verbatim inside a fence longer than any backtick run in the spec/);
@@ -103,6 +113,7 @@ test("§4 appends Spec review decisions and leaves the Decisions section alone",
   const s4 = section(read(SKILL), "## 4. Revise the spec", "## 5.");
   assert.match(s4, /## Spec review decisions \(round N\)/);
   assert.match(s4, /Do not edit the spec's Decisions section/);
+  assert.match(s4, /If the report has no confidence-7\+ finding \(`None` under `## Findings \(confidence 7\+\)`\), skip this section: append nothing and commit nothing/);
   assert.match(s4, /git commit -am "docs\(spec\): apply spec-review round N"/);
 });
 
@@ -118,6 +129,9 @@ test("§6 waits for explicit approval before writing-plans", () => {
   const invoke = s6.indexOf("invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin)");
   assert.ok(wait >= 0 && invoke > wait, "approval must come before the writing-plans hand-off");
   assert.match(s6, /Invoke nothing else/);
+  assert.match(s6, /if the changes touch Goal, Non-goals, Design or Decisions and round 2 has not run, run round 2 on the edited spec/);
+  assert.match(s6, /naming the edits no reviewer saw/);
+  assert.doesNotMatch(s6, /do not re-run the reviewer/);
 });
 
 test("the verus-reviewer agent lists spec-review among its callers", () => {
@@ -197,7 +211,20 @@ argument-hint: "<path to spec .md>"
 
 ## 0. Inputs
 
-- `SPEC`: the argument, or the newest spec by modification time — `ls -t docs/specs/*-design.md 2>/dev/null | head -1`; print which file was chosen. Stop with a message if none; do not launch a reviewer.
+- `SPEC`: the argument, or the newest spec by modification time — `ls -t docs/specs/*-design.md 2>/dev/null | head -1`; print which file was chosen. Stop with a message if none; do not launch a reviewer. Then normalize it to a path relative to the repository that contains it, so an absolute or `../` argument works:
+
+  ```bash
+  ARG="<the argument, or the ls -t result>"
+  [ -f "$ARG" ] || { echo "spec not found: $ARG"; exit 1; }
+  SPEC_ABS="$(cd "$(dirname "$ARG")" && pwd -P)/$(basename "$ARG")"
+  TOP="$(git -C "$(dirname "$SPEC_ABS")" rev-parse --show-toplevel 2>/dev/null)"
+  [ -n "$TOP" ] || { echo "spec is not inside a git repository: $SPEC_ABS"; exit 1; }
+  case "$SPEC_ABS" in "$TOP"/*) ;; *) echo "spec is outside the repository: $SPEC_ABS"; exit 1;; esac
+  SPEC="${SPEC_ABS#"$TOP"/}"
+  echo "TOP=$TOP"; echo "SPEC=$SPEC"
+  ```
+
+  If it prints `spec not found`, `spec is not inside a git repository` or `spec is outside the repository`, stop with that message. Run every later block from `TOP` (`cd "$TOP"` first), with `SPEC` as printed.
 - `REPORT`: `<directory of SPEC>/<spec basename without .md>.review.md` — beside the spec, always repo-relative; `reviewer.sh` rejects an absolute path. It is relative to the repo `reviewer.sh` works in, so run from the repo containing `SPEC`, or pass `--repo <that repo>` to `reviewer.sh`.
 - `ROUND`: 1.
 - Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `spec-review`). Every fenced block below is one shell call, so a block that uses `$SKILLS_REPO` must run the locator itself.
@@ -270,7 +297,9 @@ Findings in the Appendix are not acted on; leave them in the report.
 
 ## 4. Revise the spec
 
-Apply to `SPEC` directly (edit the affected sections) the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it, the user's answer to every finding against a `user` decision, and every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the spec. Do not edit the spec's Decisions section: it is the interview record, and a later section supersedes it. Append to the spec a section:
+If the report has no confidence-7+ finding (`None` under `## Findings (confidence 7+)`), skip this section: append nothing and commit nothing; the section-6 summary says the report was CLEAR.
+
+Otherwise apply to `SPEC` directly (edit the affected sections) the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it, the user's answer to every finding against a `user` decision, and every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the spec. Do not edit the spec's Decisions section: it is the interview record, and a later section supersedes it. Append to the spec a section:
 
 ```
 ## Spec review decisions (round N)
@@ -302,7 +331,7 @@ bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 
 Report to the user: rounds run, reviewer path used, findings accepted/left/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then say: "Spec written and reviewed: `<SPEC>`. Review it; when approved I will write the plan with `writing-plans`."
 
-Wait for the user's explicit approval. If they ask for changes instead, edit the spec, commit it, and ask again; do not re-run the reviewer. On approval invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin) with the spec path. Invoke nothing else.
+Wait for the user's explicit approval. If they ask for changes instead, apply them to the spec and commit (`git commit -am "docs(spec): apply user changes after spec-review"`). Then, if the changes touch Goal, Non-goals, Design or Decisions and round 2 has not run, run round 2 on the edited spec: copy the round-1 report to `<REPORT>.round1.md`, set `ROUND` to 2, go through sections 1–4 again (section 2 with the same SESSION value — the session was closed, so the launcher opens a fresh terminal), close the session again, and come back to this paragraph. Otherwise ask for approval again, naming the edits no reviewer saw. On approval invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin) with the spec path. Invoke nothing else.
 
 ## Rules
 
@@ -642,7 +671,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `USING.md:9-16`
-- Modify: `README.md:29-56` (mermaid, ASCII flow, step table), `README.md:75` (reviewer prompts sentence), `README.md:79-83` (skills table)
+- Modify: `README.md:12`, `README.md:24`, `README.md:29-56` (mermaid, ASCII flow, step table), `README.md:79-83` (skills table), `README.md:110`
 - Modify: `NOTICE:16` (own skills list)
 - Modify: `.claude-plugin/plugin.json:3`, `.codex-plugin/plugin.json:3`, `.claude-plugin/marketplace.json:13`
 - Modify: `tests/spec-review.test.mjs` (append)
@@ -674,7 +703,10 @@ test("README shows spec-review in the flow and the skills table", () => {
   assert.match(readme, /^\| 2 \| `spec-review` \|/m);
   assert.match(readme, /^\| 7 \| `finishing-a-development-branch` \|/m);
   assert.match(readme, /^\| `spec-review` \| own \|/m);
-  assert.match(readme, /which every reviewer prompt requires/);
+  assert.match(readme, /same eleven skills/);
+  assert.match(readme, /Specs, plans and branches are reviewed by Codex/);
+  assert.match(readme, /the fallback external reviewer of spec-review, plan-review and review\)/);
+  assert.doesNotMatch(readme, /same ten skills/);
 });
 
 test("NOTICE lists spec-review among the own skills", () => {
@@ -747,7 +779,7 @@ In the step table, insert after the `| 1 | \`kickoff\` | … |` row:
 
 and renumber the following rows 2→3, 3→4, 4→5, 5→6, 6→7; in the `review` row change `then the hand-off to step 6.` to `then the hand-off to step 7.`
 
-On line 75 change `which both reviewer prompts require` to `which every reviewer prompt requires`.
+On line 12 change `same ten skills` to `same eleven skills`. On line 24 change `Plans and branches are reviewed by Codex` to `Specs, plans and branches are reviewed by Codex`. On line 110 change `` `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer) `` to `` `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer of spec-review, plan-review and review) ``. (Line 75 is Task 5's.)
 
 In the skills table, insert after the `plan-review` row:
 
@@ -788,6 +820,214 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+### Task 5: `reviewer.sh` accepts a `codex exec` report only with the end marker
+
+**Files:**
+- Modify: `scripts/reviewer.sh:126-131` (comment), `scripts/reviewer.sh:243-249` (codex-exec result check)
+- Modify: `tests/fixtures/fake-bin/codex`
+- Modify: `tests/reviewer.test.mjs` (three `"codex report"` assertions at lines 81, 107, 437; one new test)
+- Modify: `README.md:75`
+
+**Interfaces:**
+- Consumes: `END_MARKER` and `report_complete()` already defined in `scripts/reviewer.sh:132-133` (`grep -qxF "$END_MARKER" "$REPO/$OUTPUT"`).
+- Produces: on the `codex exec` path, exit `0` only when the report contains the marker line; a non-empty report without it is moved to `.context/<title>-partial.md`, stderr says `codex exec: report incomplete (end marker missing); partial report kept at <path>`, and the launcher falls through to exit `3` — so `spec-review`, `plan-review` and `review` all dispatch their fallback reviewer instead of triaging a truncated report.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `tests/fixtures/fake-bin/codex`, add a knob line to the header comment and write the marker by default:
+
+```bash
+#!/usr/bin/env bash
+# Fake codex CLI. Env knobs:
+#   FAKE_CODEX_STDOUT=<text>  -> echoed to stdout (the launcher captures it in the log)
+#   FAKE_CODEX_NO_REPORT=1    -> do not write the report file
+#   FAKE_CODEX_NO_MARKER=1    -> write the report without the end marker (a truncated review)
+echo "codex $*" >> "${FAKE_LOG:?}"
+prompt=$(cat)
+if [ -n "${FAKE_CODEX_STDOUT:-}" ]; then
+  printf '%s\n' "$FAKE_CODEX_STDOUT"
+fi
+if [ -z "${FAKE_CODEX_NO_REPORT:-}" ]; then
+  out=$(printf '%s\n' "$prompt" | grep -o 'Write the report to [^ ]*' | awk '{print $5}')
+  if [ -n "$out" ]; then
+    mkdir -p "$(dirname "$out")"
+    if [ -n "${FAKE_CODEX_NO_MARKER:-}" ]; then
+      echo "codex report" > "$out"
+    else
+      printf 'codex report\n<!-- end of review -->\n' > "$out"
+    fi
+  fi
+fi
+exit 0
+```
+
+In `tests/reviewer.test.mjs`, next to `const ORCA_REPORT = …`, add:
+
+```js
+// What the fake codex writes by default: a complete report, marker included.
+const CODEX_REPORT = "codex report\n<!-- end of review -->\n";
+```
+
+Replace each of the three assertions
+`assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8").trim(), "codex report");`
+with
+`assert.equal(readFileSync(path.join(dir, "docs/reviews/out.md"), "utf8"), CODEX_REPORT);`
+
+Add after the test `"falls back to codex exec without Orca"`:
+
+```js
+test("a codex exec report without the end marker is not accepted", () => {
+  const dir = repo();
+  const r = run(dir, ["codex"], { env: { FAKE_CODEX_NO_MARKER: "1" } });
+  assert.equal(r.status, 3, r.stderr);
+  assert.doesNotMatch(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.stderr, /codex exec: report incomplete \(end marker missing\); partial report kept at .*\.context\/t-partial\.md/);
+  assert.ok(!existsSync(path.join(dir, "docs/reviews/out.md")), "a truncated report must not stay at the output path");
+  assert.equal(readFileSync(path.join(dir, ".context/t-partial.md"), "utf8"), "codex report\n");
+});
+
+test("README says both reviewer paths require the end marker", () => {
+  const readme = readFileSync(fileURLToPath(new URL("../README.md", import.meta.url)), "utf8");
+  assert.match(readme, /On either path a report counts as finished only once it contains the line `<!-- end of review -->`, which every reviewer prompt requires/);
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `node --test tests/reviewer.test.mjs`
+Expected: FAIL in the two new tests only — the markerless report exits `0` with `reviewer: codex-exec`, and README still has the old sentence. The three rewritten assertions pass (the fake now writes the marker).
+
+- [ ] **Step 3: Change the `codex exec` result check in `scripts/reviewer.sh`**
+
+Replace
+
+```bash
+  if [ -s "$REPO/$OUTPUT" ]; then
+    echo "reviewer: codex-exec"
+    exit 0
+  else
+    TAIL="$(grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1)"
+    echo "codex exec failed: ${TAIL:-(log empty)} (full log: $LOG)" >&2
+  fi
+```
+
+with
+
+```bash
+  if report_complete; then
+    echo "reviewer: codex-exec"
+    exit 0
+  elif [ -s "$REPO/$OUTPUT" ]; then
+    # Killed at the timeout or cut short: a report without the marker is not a review.
+    PARTIAL="$REPO/.context/${TITLE}-partial.md"
+    mv -f "$REPO/$OUTPUT" "$PARTIAL"
+    echo "codex exec: report incomplete (end marker missing); partial report kept at $PARTIAL" >&2
+  else
+    TAIL="$(grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1)"
+    echo "codex exec failed: ${TAIL:-(log empty)} (full log: $LOG)" >&2
+  fi
+```
+
+In the comment above `END_MARKER` (lines 126–131), change `the Orca path accepts the report — and only then` / `# closes a session-less terminal — once that line is in the file.` to say that both paths accept the report only once that line is in the file, and the Orca path only then closes a session-less terminal:
+
+```bash
+# The reviewer streams the report and can pause between writes long enough for
+# the TUI to look idle, so neither "the file exists" nor "its size held still"
+# means "finished". reviewer.md makes every reviewer end the report with
+# END_MARKER as its last line; both the Orca and the codex-exec path accept the
+# report only once that line is in the file, and the Orca path only then closes
+# a session-less terminal.
+```
+
+- [ ] **Step 4: Update `README.md:75`**
+
+Replace the sentence `On the Orca path a report counts as finished only once its last line is `<!-- end of review -->`, which both reviewer prompts require.` with:
+
+`On either path a report counts as finished only once it contains the line `<!-- end of review -->`, which every reviewer prompt requires; a `codex exec` report without it is moved to `.context/<title>-partial.md` and the launcher exits `3`.`
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `node --test tests/reviewer.test.mjs`
+Expected: PASS.
+
+- [ ] **Step 6: Run the full suite**
+
+Run: `npm test` (timeout 10 minutes)
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add scripts/reviewer.sh tests/fixtures/fake-bin/codex tests/reviewer.test.mjs README.md
+git commit -m "fix(reviewer): codex exec report counts only with the end marker
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
 ## Acceptance (manual, after all tasks)
 
-In a fresh session in this repo, run `spec-review docs/specs/2026-09-24-spec-review-design.md`. Expected: the report appears at `docs/specs/2026-09-24-spec-review-design.review.md` and ends with `<!-- end of review -->`; the spec gains `## Spec review decisions (round 1)` (or has no changes and the report is CLEAR); the skill asks for approval and does not invoke `writing-plans` until the user says yes. Record the result in the branch review.
+Run each scenario in a fresh session, record the observed result next to the expected one in `docs/plans/2026-09-24-spec-review.acceptance.md` (a table: scenario, expected, observed, pass/fail), and commit that file. Scenarios 1–5 use a scratch repo: `S=$(mktemp -d) && git -C "$S" init -q && mkdir -p "$S/docs/specs"`, with the session started in `$S`. Scenario 6 uses this repo.
+
+| # | Setup | Action | Expected |
+|---|---|---|---|
+| 1 | `$S` with an empty `docs/specs/` | `spec-review` (no argument) | Stops with a message that no spec was found; no `.context/spec-review-*-session` file, no reviewer launched. |
+| 2 | `$S/docs/specs/2026-01-01-a-design.md` with Goal/Non-goals/Design/Testing/Decisions, committed | `spec-review $S/docs/specs/2026-01-01-a-design.md` (absolute path) | `SPEC=docs/specs/2026-01-01-a-design.md` printed; the report appears at `docs/specs/2026-01-01-a-design.review.md` and contains `<!-- end of review -->`. |
+| 3 | A spec in `$S` whose Design contains a line of seven backticks inside a four-backtick code sample | `spec-review <that spec>` | The prompt file under `$TMPDIR` wraps the spec in a fence of eight or more backticks (`grep -n '^````````' <prompt>` shows the opening and closing fence). |
+| 4 | A spec in `$S` with no Decisions section | `spec-review <that spec>` | The report's `### 5. Decisions` says `No Decisions section`; no finding cites `Decisions:`. |
+| 5 | A spec in `$S` whose Decisions has `### 1. Report location — user` choosing `/tmp/report.md` while Design says the report is beside the spec | `spec-review <that spec>` | The contradiction finding arrives as a question to the user with the decision named; no judge decision block is printed for it. |
+| 6 | This repo, after all tasks, on `docs/specs/2026-09-24-spec-review-design.md` | Run `spec-review`; at the approval question ask for a change to Non-goals | If round 2 has not run, it runs on the edited spec before approval is asked again; if it has, the approval question names the unreviewed edit. `writing-plans` is not invoked until an explicit yes; answer no at the end. |
+
+
+## Plan review decisions (round 1)
+
+Reviewer: Codex via Orca (`reviewer: orca`), report `docs/plans/2026-09-24-spec-review.review.md`.
+
+accepted without the judge: an absolute SPEC path produces an absolute REPORT that reviewer.sh rejects — `scripts/reviewer.sh:39`: `/*) echo "--output must be repo-relative" >&2; exit 1;;`. Task 1 §0 now normalizes SPEC to a repo-relative path and stops on a missing file, a non-git location or a path outside the repository.
+
+accepted without the judge: README prose not updated for spec-review — `README.md:12` "same ten skills", `README.md:24` "Plans and branches are reviewed by Codex", `README.md:110` reviewer roles. Task 4 now edits all three and asserts them.
+
+```
+Решение (Jev): How should a user's change request after the external spec review, before approval, be handled?
+  A. Re-review within budget  100%
+  B. Name unreviewed edits    0%
+  C. Always re-review         0%
+  Рекомендация Claude: A
+  Данных достаточно: 78%
+  Выбрано: A, confidence 0.99, данных 0.78, порог 0.7/0.6 → принято автоматически
+```
+
+```
+Решение (Jev): How should spec-review §4 handle a round with nothing to record (report CLEAR or no confidence-7+ findings)?
+  A. Skip section and commit  93%
+  B. Record a CLEAR section   7%
+  Рекомендация Claude: A
+  Данных достаточно: 80%
+  Выбрано: A, confidence 0.87, данных 0.80, порог 0.7/0.6 → принято автоматически
+```
+
+```
+Решение (Jev): How should spec-review guard against a reviewer report that exists but lacks the end marker after reviewer.sh exits 0?
+  A. Check, then fallback  82%
+  B. Check, then stop      10%
+  C. Fix reviewer.sh       6%
+  D. Leave as plan-review  2%
+  Рекомендация Claude: C
+  Данных достаточно: 51%
+  Выбрано: A, confidence 0.76, данных 0.51, порог 0.7/0.6 → спросить пользователя (мало данных)
+```
+
+User chose **C**: Task 5 fixes the `codex exec` path in `scripts/reviewer.sh`; the spec's Non-goal "no reviewer.sh changes" is revised (spec §7).
+
+```
+Решение (Jev): How should the plan verify spec-review's behaviour beyond string-contract tests?
+  A. Contract tests + one run   0%
+  B. Scripted manual scenarios  99%
+  C. Automated harness          1%
+  Рекомендация Claude: B
+  Данных достаточно: 56%
+  Выбрано: B, confidence 0.97, данных 0.56, порог 0.7/0.6 → спросить пользователя (мало данных)
+```
+
+User chose **B**: the Acceptance section is now six scripted scenarios with expected outcomes, recorded in `docs/plans/2026-09-24-spec-review.acceptance.md`.
