@@ -9,10 +9,16 @@
     {
       "name": "verus-skills",
       "source": "./",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "description": "Personal skills distro: kickoff to spec, external spec review, plan, external plan review, subagent execution, branch review, finish — with multiple-choice decisions judged by TypeSafe.",
       "category": "workflow",
-      "tags": ["skills", "workflow", "planning", "code-review", "tdd"]
+      "tags": [
+        "skills",
+        "workflow",
+        "planning",
+        "code-review",
+        "tdd"
+      ]
     }
   ]
 }
