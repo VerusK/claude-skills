@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
---- vendor/subagent-driven-development/SKILL.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/SKILL.md	2026-09-23 07:46:28
+--- vendor/subagent-driven-development/SKILL.md	2026-09-28 12:51:26.567790744 +0000
++++ skills/subagent-driven-development/SKILL.md	2026-09-28 12:51:18.582365286 +0000
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -99,27 +99,16 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  Never start implementation on a main/master branch without your human
  partner's explicit consent.
  
-@@ -183,41 +174,20 @@
+@@ -183,40 +174,19 @@
  
  ## Model Selection
  
 -Use the least powerful model that can handle each role to conserve cost and increase speed.
-+Subagents run on the distro's agent types, whose model and effort come from
-+`config/models.json` (regenerated into the agent files by `make models`), never
-+from the dispatch:
- 
+-
 -**Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
-+- Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Never pass a `model` parameter: it would override the agent's configured model.
-+- In a Codex session: dispatch with spawn_agent and pass no model.
- 
+-
 -**Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
-+Dispatch subagents unnamed and in the background: never give them a `name`
-+or turn them into named teammates, because every named agent opens its own
-+window on this machine. The user does not watch subagents work; you collect
-+their reports. For fix rounds, resume the agent by the id the dispatch
-+returned, or dispatch a fresh unnamed implementer with the brief and report
-+file paths.
- 
+-
 -**Architecture and design tasks**: use the most capable available model.
 -The final whole-branch review is one of these — dispatch it on the most
 -capable available model, not the session default.
@@ -148,10 +137,22 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -- Touches 1-2 files with a complete spec → cheap model
 -- Touches multiple files with integration concerns → standard model
 -- Requires design judgment or broad codebase understanding → most capable model
--
++Subagents run on the distro's agent types, whose model and effort come from
++`config/models.json` (regenerated into the agent files by `make models`), never
++from the dispatch:
++
++- Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Never pass a `model` parameter: it would override the agent's configured model.
++- In a Codex session: dispatch with spawn_agent and pass no model.
++
++Dispatch subagents unnamed and in the background: never give them a `name`
++or turn them into named teammates, because every named agent opens its own
++window on this machine. The user does not watch subagents work; you collect
++their reports. For fix rounds, resume the agent by the id the dispatch
++returned, or dispatch a fresh unnamed implementer with the brief and report
++file paths.
+ 
  ## The Task Loop
  
- **Batch small same-shape work.** When the plan lists several tasks that are
 @@ -295,7 +265,7 @@
  
  **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
@@ -179,7 +180,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  **Every round, either way:** the implementer fixes, re-runs the tests
  covering the amended code, appends its fix report to the same report file,
-@@ -444,30 +413,16 @@
+@@ -444,29 +413,15 @@
  
  ## Final Review
  
@@ -193,9 +194,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -[code-reviewer.md](../requesting-code-review/code-reviewer.md). Point it at
 -the ledger's deferred-minor and parked lines so it can triage which must be
 -fixed before merge.
-+The final whole-branch review is done by an external reviewer through the
-+`review` skill. After the last task:
- 
+-
 -If the final whole-branch review returns findings, dispatch ONE fix subagent
 -with the complete findings list — not one fixer per finding.
 -Per-finding fixers each rebuild context and re-run suites; a real
@@ -208,16 +207,18 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -the four classes above stop you here. There is no second fix wave —
 -residual load-bearing findings surface to your human partner when
 -finishing-a-development-branch presents the options.
++The final whole-branch review is done by an external reviewer through the
++`review` skill. After the last task:
++
 +1. Run `scripts/review-package PLAN_FILE MERGE_BASE HEAD` (MERGE_BASE = `git merge-base main HEAD`) so the package exists for reference.
 +2. Invoke the `review` (`verus-skills:review` when installed as a plugin) skill with the merge base: `review <MERGE_BASE>`. It launches Codex (via Orca, then `codex exec`, then a fallback reviewer agent), routes findings through the TypeSafe judge, applies accepted fixes with ONE fix subagent, and runs exactly one re-review round. It reads this plan's ledger itself, from `.superpowers/sdd/<plan basename without .md>/progress.md`, and sends the reviewer every `Minor (deferred)`, `Ruling` and `parked` line — so leave those lines in the ledger rather than summarising them into the invocation.
 +3. `review` hands off to `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself in branch scope and full mode. Invoke it yourself only if `review` stopped without handing off (report-only mode, or a red suite).
- 
++
 +There is no second fix wave here; residual findings surface to your human
 +partner when finishing-a-development-branch presents the options.
-+
+ 
  ## Finish
  
- Before you delete anything, collect every ledger line containing `Ruling:` —
 @@ -484,7 +439,7 @@
  the record now. Sibling directories belong to other plans; leave them
  alone.
@@ -254,8 +255,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +Done! review handed off to finishing-a-development-branch.
  ```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
---- vendor/subagent-driven-development/implementer-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-09-23 07:46:10
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-09-28 12:51:26.567937448 +0000
++++ skills/subagent-driven-development/implementer-prompt.md	2026-09-28 12:51:18.582986872 +0000
 @@ -2,11 +2,11 @@
  
  Use this template when dispatching an implementer subagent.
@@ -281,8 +282,8 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
  
      ## Before Reporting Back: Self-Review
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
---- vendor/subagent-driven-development/re-review-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-09-23 07:46:10
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-09-28 12:51:26.567059214 +0000
++++ skills/subagent-driven-development/re-review-prompt.md	2026-09-28 12:51:18.582986872 +0000
 @@ -7,11 +7,11 @@
  **Purpose:** Verify each finding from the previous review was addressed, and
  that the fix itself broke nothing.
@@ -308,8 +309,8 @@ diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent
  - `[FINDINGS]` — the Critical/Important findings and spec gaps from the
    previous review, copied verbatim, one per bullet
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
---- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-23 07:46:10
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-09-28 12:51:26.568050260 +0000
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-28 12:51:18.583187036 +0000
 @@ -7,11 +7,11 @@
  **Purpose:** Verify one task's implementation matches its requirements (nothing
  more, nothing less) and is well-built (clean, tested, maintainable)
