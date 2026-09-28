@@ -1,6 +1,6 @@
 diff -ruN vendor/systematic-debugging/SKILL.md skills/systematic-debugging/SKILL.md
---- vendor/systematic-debugging/SKILL.md	2026-09-22 12:12:16
-+++ skills/systematic-debugging/SKILL.md	2026-09-22 12:19:38
+--- vendor/systematic-debugging/SKILL.md	2026-09-28 12:51:28.617489643 +0000
++++ skills/systematic-debugging/SKILL.md	2026-09-28 12:51:18.583436373 +0000
 @@ -174,7 +174,7 @@
     - Automated test if possible
     - One-off test script if no framework
