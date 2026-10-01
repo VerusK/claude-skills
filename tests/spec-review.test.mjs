@@ -174,14 +174,14 @@ test("README shows spec-review in the flow and the skills table", () => {
   assert.match(readme, /^\| 2 \| `spec-review` \|/m);
   assert.match(readme, /^\| 7 \| `finishing-a-development-branch` \|/m);
   assert.match(readme, /^\| `spec-review` \| own \|/m);
-  assert.match(readme, /same eleven skills/);
+  assert.match(readme, /same twelve skills/);
   assert.match(readme, /Specs, plans and branches are reviewed by Codex/);
   assert.match(readme, /the fallback external reviewer of spec-review, plan-review and review\)/);
   assert.doesNotMatch(readme, /same ten skills/);
 });
 
 test("NOTICE lists spec-review among the own skills", () => {
-  assert.match(read("NOTICE"), /kickoff, spec-review, plan-review and review are this repository's own skills/);
+  assert.match(read("NOTICE"), /kickoff, spec-review, plan-review, review and host-audit are this repository's own skills/);
 });
 
 test("the plugin and marketplace descriptions mention the spec review", () => {
