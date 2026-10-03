@@ -22,7 +22,6 @@ Each skill names the next one; follow the chain. Never skip `plan-review` or `re
 - `test-driven-development` — any implementation or bugfix, before writing code.
 - `verification-before-completion` — before claiming anything is done, fixed or passing.
 - `typesafe-ai` — when the project itself builds features on TypeSafe.
-- `host-audit` — read-only security audit of one or more hosts over SSH; several hosts fan out to one `verus-worker` per host.
 
 ## Decisions
 

@@ -9,7 +9,7 @@ checkout. The plugin is the normal path: updates arrive through
 `claude plugin update`. The symlink install is the development path: edits in the
 checkout are live with no release. They are mutually exclusive — the symlink
 installer refuses to run while the plugin is installed, because both ship the
-same twelve skills, the same three agents and the same SessionStart hook.
+same eleven skills, the same three agents and the same SessionStart hook.
 
 - **One flow, one place.** Skills from different authors are wired to call each
   other by name; the routing lives in `USING.md`, injected into every session by a
@@ -58,7 +58,7 @@ kickoff → spec-review → writing-plans → plan-review → subagent-driven-de
 | 6 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 7. |
 | 7 | `finishing-a-development-branch` | Merge, PR, or keep. |
 
-Outside the flow: `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `typesafe-ai`, `host-audit`.
+Outside the flow: `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `typesafe-ai`.
 
 ### `review` outside the flow
 
@@ -71,35 +71,6 @@ Outside the flow: `systematic-debugging`, `test-driven-development`, `verificati
 | `all` | every tracked text file, minus `vendor/`, `vendor-node/`, `node_modules/`, `docs/reviews/`, `.superpowers/`, `.context/` and lockfiles |
 
 A **clean** working tree gives full mode: review → findings judged → at most one fix wave and one re-review; each round's report is committed as soon as it is written. In branch scope it then hands off to `finishing-a-development-branch`; path and codebase scope end with the summary. A **dirty** working tree gives report-only mode, so the skill is usable mid-task: findings are still judged and printed, but no fix subagent runs and nothing is committed.
-
-### `host-audit`
-
-A standalone, read-only security audit of running hosts over SSH; it is not part of the flow and
-hands off to nothing. Ask for it in plain words or name it:
-
-```
-/host-audit 10.0.0.12
-/host-audit db-1 db-2 lb-1 SSH_USER=ops
-/host-audit 10.0.0.31 IR_MODE=1 IR_WINDOW_START=2026-09-23
-```
-
-- **Before it starts** it asks, in one prompt, the language of the reports and, for several hosts,
-  how many audit subagents may run at once. Several hosts fan out to one `verus-worker` per host;
-  a single host is audited in the current session.
-- **Access:** key-based SSH as `SSH_USER` (default `$USER`) and passwordless `sudo -n` for full
-  coverage. Nothing on the host is changed; whatever needs a password is recorded as a coverage gap.
-- **Output** goes to `audits/<YYYYMMDD>/<host>_<agent>_<HHMM>/` under the current directory: masked
-  evidence, `findings.json` and `AUDIT_<host>_<date>.md` with findings ranked P0/P1/P2. Several hosts
-  also get `audits/<date>/INDEX_<date>.md`, which links the hosts through shared keys, templates and
-  backup trust. Secrets are masked before they reach disk.
-- **Incident response:** `IR_MODE=1` adds a sweep for an incident's IOCs. The IOCs live outside the
-  repository in `~/.verus-skills/host-audit/ioc.md` (override with `IR_IOC_FILE`), keep it
-  `chmod 600`; the file format is Appendix B of `skills/host-audit/references/methodology.md`.
-  Without the file the skill asks where the IOCs are and skips the sweep.
-
-The method itself (phases, per-role blocks for Docker, Kubernetes, web, data, storage, backups,
-telemetry, versions/EOL, the self-check and the report layout) is in
-`skills/host-audit/references/methodology.md`.
 
 ### Decisions and reviewers
 
@@ -114,7 +85,6 @@ telemetry, versions/EOL, the self-check and the report layout) is in
 | `plan-review` | own | methodology from [gstack plan-eng-review](https://github.com/garrytan/gstack) (watched) | this repo | MIT |
 | `spec-review` | own | scope challenge from [gstack plan-eng-review](https://github.com/garrytan/gstack) (watched) | this repo | MIT |
 | `review` | own | prompt from [superpowers requesting-code-review](https://github.com/obra/superpowers) (watched) | this repo | MIT |
-| `host-audit` | own | — | this repo | MIT |
 | `writing-plans` | copy + patch | [obra/superpowers](https://github.com/obra/superpowers) | Jesse Vincent | MIT |
 | `subagent-driven-development` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
 | `systematic-debugging` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
@@ -141,7 +111,7 @@ Every model and effort setting lives in `config/models.json`:
 }
 ```
 
-- **Claude subagents** run as the agent types `verus-worker` (implementers, fix waves, host-audit fan-out), `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer of spec-review, plan-review and review) and `verus-explorer` (kickoff lookups); `make install` links them into `~/.claude/agents/`, the plugin ships them. After editing `subagents`, run `make models` — it rewrites the `model:`/`effort:` lines of `agents/verus-*.md`; a test fails if they drift. The symlink install sees the change at once; the plugin after a release. Effort: `low|medium|high|xhigh|max`.
+- **Claude subagents** run as the agent types `verus-worker` (implementers, fix waves), `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer of spec-review, plan-review and review) and `verus-explorer` (kickoff lookups); `make install` links them into `~/.claude/agents/`, the plugin ships them. After editing `subagents`, run `make models` — it rewrites the `model:`/`effort:` lines of `agents/verus-*.md`; a test fails if they drift. The symlink install sees the change at once; the plugin after a release. Effort: `low|medium|high|xhigh|max`.
 - **The `opus` alias** follows the newest Opus only when the main session is not itself pinned to an older Opus: a session on an older Opus keeps its subagents on that exact version. To pin, write a full model id (e.g. `claude-opus-5-6`) and run `make models`.
 - **Codex reviewer:** `default` passes no `-m`/`model_reasoning_effort`, so Codex uses `~/.codex/config.toml`. Override per run with `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`. Every Codex value must be a single token (letters, digits, `_ . : [ ] -`); anything else stops the review with an error that names the setting, never its value. Each review starts a fresh Codex terminal, so a change applies from the next review.
 - **Judge:** `jev-latest` by default; override per run with `TYPESAFE_DEFAULT_MODEL`.
