@@ -69,10 +69,19 @@ test("the Codex manifest inlines the same hooks as hooks/hooks.json", () => {
 
 test("claude plugin validate accepts the repo", { skip: spawnSync("which", ["claude"]).status !== 0 }, () => {
   const res = spawnSync("claude", ["plugin", "validate", ROOT, "--strict", "--json"], { encoding: "utf8" });
-  assert.equal(res.status, 0, res.stdout + res.stderr);
+  const report = JSON.parse(res.stdout);
   // With no manifest at all the validator still exits 0 and reports
   // `"manifest": null`, so the exit code alone proves nothing.
-  assert.equal(JSON.parse(res.stdout).manifest?.type, "marketplace", res.stdout);
+  assert.equal(report.manifest?.type, "marketplace", res.stdout);
+  // --strict fails on any warning. The root CLAUDE.md is this repo's development
+  // instructions, not plugin context, so the "not loaded as project context"
+  // warning is expected; every other error or warning still fails the test.
+  const expected = (w) => /CLAUDE\.md$/.test(w.file) && /CLAUDE\.md at the plugin root is not loaded/.test(w.message);
+  const issues = [report.manifest, ...(report.contents ?? [])].flatMap((c) => [
+    ...(c?.errors ?? []).map((e) => ({ ...e, file: c.file })),
+    ...(c?.warnings ?? []).map((w) => ({ ...w, file: c.file })).filter((w) => !expected(w)),
+  ]);
+  assert.deepEqual(issues, [], res.stdout + res.stderr);
 });
 
 test("the plugin ships the three verus agents", () => {
