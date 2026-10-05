@@ -17,6 +17,9 @@
 #   FAKE_ORCA_CLOSE_FAIL=1       -> `terminal close` exits 1 (the terminal is gone)
 #   FAKE_ORCA_COMMAND_FILE=<f>   -> `terminal create` writes its --command value to <f>
 #                                   verbatim (the call log joins arguments with spaces)
+#   FAKE_ORCA_UPDATE_PROMPT=1    -> Codex shows its startup update screen: `terminal
+#                                   wait` reports blockedReason=agent-update-prompt
+#                                   unless the create command turned the check off
 END_MARKER='<!-- end of review -->'
 echo "orca $*" >> "${FAKE_LOG:?}"
 case "$1 $2" in
@@ -47,7 +50,12 @@ case "$1 $2" in
     else
       echo '{"ok":true,"result":{"screen":{"text":"codex ready"}}}'
     fi;;
-  "terminal wait") echo '{"ok":true,"result":{"wait":{"satisfied":true}}}';;
+  "terminal wait")
+    if [ "${FAKE_ORCA_UPDATE_PROMPT:-}" = "1" ] && ! grep -q -- 'check_for_update_on_startup=false' "$FAKE_LOG"; then
+      echo '{"ok":true,"result":{"wait":{"satisfied":false,"status":"running","blockedReason":"agent-update-prompt"}}}'
+    else
+      echo '{"ok":true,"result":{"wait":{"satisfied":true}}}'
+    fi;;
   "terminal close")
     if [ "${FAKE_ORCA_CLOSE_FAIL:-}" = "1" ]; then
       echo '{"ok":false,"error":{"message":"terminal not found"}}'

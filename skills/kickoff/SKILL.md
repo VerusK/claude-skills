@@ -69,8 +69,8 @@ Open-ended questions (no sensible options) are asked directly, one per message, 
 **Architectural:** after the tree is settled:
 
 1. Propose 2–3 approaches with trade-offs and a recommendation (this is itself a judge-able question).
-2. Present the design in sections (architecture, components, data flow, error handling, testing). Ask after each section whether it is right.
-3. Write the spec to `docs/specs/YYYY-MM-DD-<topic>-design.md` with these sections: Goal, Non-goals, Design (the approved sections), Testing, **Decisions** (every decision block, auto-accepted ones marked `auto`, user-answered ones marked `user`).
+2. Draft the design in sections (architecture, components, data flow, error handling, testing) straight through, without stopping between them: do not ask whether a section is right, do not wait for a nod, do not print the sections for approval one by one. Checking the design is the job of the external Codex review in `spec-review`, and the user approves the whole reviewed spec once at its end. A gap you find while drafting is a new frontier question — run it through the tree (section 3), not through a "does this look right?" check-in.
+3. Write the spec to `docs/specs/YYYY-MM-DD-<topic>-design.md` with these sections: Goal, Non-goals, Design (the drafted sections), Testing, **Decisions** (every decision block, auto-accepted ones marked `auto`, user-answered ones marked `user`).
 4. Self-review the spec: no placeholders, no contradictions, one interpretation per requirement, scoped for a single plan. Fix inline.
 5. Commit the spec. Tell the user: "Spec written and committed to `<path>`. Sending it to an external review before you approve it."
 6. Invoke `spec-review` (`verus-skills:spec-review` when installed as a plugin) with the spec path. It revises the spec, asks for the user's approval and hands off to the plan. Invoke nothing else.
@@ -90,4 +90,5 @@ one line. The Decisions section of the spec is the durable copy.
 | "The judge is down, I'll pick my recommendation" | Judge down means ask the user. Always. |
 | "Jev is 0.99 sure of another option, I'll switch my recommendation" | Then nothing independent agreed. Keep your pick and ask the user; both picks are in the block. |
 | "Too simple to need approval" | Simple means a short design, not no design. |
+| "I'll show this design section and ask before the next one" | Architectural designs are drafted straight through; the Codex spec review checks them and the user approves once, after it. |
 | "I'll batch the accepted decisions later" | Print each block as it happens. |

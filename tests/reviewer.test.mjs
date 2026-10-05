@@ -252,11 +252,30 @@ test("under the shipped default, codex exec gets neither -m nor model_reasoning_
   assert.doesNotMatch(r.log, /model_reasoning_effort/);
 });
 
-test("under the shipped default, the Orca terminal command is plain codex", () => {
+test("under the shipped default, the Orca terminal command is codex with only the update check off", () => {
   const dir = repo();
   const r = run(dir, ["orca", "codex"]);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.log, /terminal create .*--command codex --title/);
+  assert.match(r.log, /terminal create .*--command codex -c check_for_update_on_startup=false --title/);
+});
+
+test("Codex's startup update screen does not push the review to codex exec", () => {
+  const dir = repo();
+  const r = run(dir, ["orca", "codex"], { env: { FAKE_ORCA_UPDATE_PROMPT: "1" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /reviewer: orca/);
+  assert.doesNotMatch(r.log, /^codex exec/m);
+});
+
+test("a Codex terminal that never becomes ready names the reason before falling back", () => {
+  const dir = repo();
+  const fakeOrca = readFileSync(path.join(FIX, "orca"), "utf8")
+    .replace(/grep -q -- 'check_for_update_on_startup=false' "\$FAKE_LOG"/, "false");
+  const r = run(dir, ["codex"], { shims: { orca: fakeOrca }, env: { FAKE_ORCA_UPDATE_PROMPT: "1" } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /orca: could not start a codex terminal \(agent-update-prompt\), falling back/);
+  assert.match(r.stdout, /reviewer: codex-exec/);
+  assert.match(r.log, /terminal close --terminal term-1/);
 });
 
 test("env overrides model and effort, each independently", () => {
@@ -278,7 +297,7 @@ test("codex exec and the Orca terminal use config/models.json", () => {
   assert.match(r.log, /codex exec .*-m cfg-model/);
   assert.match(r.log, /model_reasoning_effort=minimal/);
   r = run(repo(), ["orca", "codex"], { script });
-  assert.match(r.log, /terminal create .*--command codex -m cfg-model -c model_reasoning_effort=minimal/);
+  assert.match(r.log, /terminal create .*--command codex -c check_for_update_on_startup=false -m cfg-model -c model_reasoning_effort=minimal/);
 });
 
 test("the Orca command passes a bracketed model to codex literally when a shell runs it", () => {
@@ -306,7 +325,7 @@ test("the Orca command passes a bracketed model to codex literally when a shell 
     assert.equal(s.status, 0, `${shell}: ${s.stderr}\ncommand: ${command}`);
     assert.deepEqual(
       readFileSync(argvFile, "utf8").split("\n").slice(0, -1),
-      ["-m", "gpt-test[1m]", "-c", "model_reasoning_effort=low"],
+      ["-c", "check_for_update_on_startup=false", "-m", "gpt-test[1m]", "-c", "model_reasoning_effort=low"],
       `${shell} ran: ${command}`,
     );
   }
@@ -532,7 +551,7 @@ test("a restarted review closes the orphan terminal first, then starts fresh wit
   const r = run(dir, ["orca", "codex"], { env: { REVIEWER_CODEX_MODEL: "gpt-new" }, extraArgs: ["--session-file", session] });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(count(r.log, "terminal create"), 2);
-  assert.match(r.log, /terminal create .*--command codex -m gpt-new/);
+  assert.match(r.log, /terminal create .*--command codex -c check_for_update_on_startup=false -m gpt-new/);
   assert.equal(readFileSync(session, "utf8").trim(), "term-1");
 });
 
@@ -540,8 +559,8 @@ test("a later run without --session-file picks up changed settings", () => {
   const dir = repo();
   run(dir, ["orca", "codex"], { env: { REVIEWER_CODEX_MODEL: "gpt-old" } });
   const r = run(dir, ["orca", "codex"]);
-  assert.match(r.log, /terminal create .*--command codex -m gpt-old/);
-  assert.match(r.log, /terminal create .*--command codex --title/);
+  assert.match(r.log, /terminal create .*--command codex -c check_for_update_on_startup=false -m gpt-old/);
+  assert.match(r.log, /terminal create .*--command codex -c check_for_update_on_startup=false --title/);
 });
 
 test("--close-session closes exactly the terminal in the file and removes the file", () => {

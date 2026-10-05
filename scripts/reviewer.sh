@@ -162,10 +162,21 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
     orca terminal show --terminal "$HANDLE" --json >/dev/null 2>&1 || HANDLE=""
     LOADED_HANDLE="$HANDLE"
   fi
+  START_FAIL=""
   if [ -z "$HANDLE" ]; then
-    CREATED_HANDLE="$(orca terminal create --worktree "path:$REPO" --command "codex$CODEX_FLAGS" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
+    # Codex's startup update screen ("Update available … 1. Update now") blocks the
+    # TUI, and Orca refuses input to it (agent_prompt_blocked): turn the check off.
+    CREATED_HANDLE="$(orca terminal create --worktree "path:$REPO" --command "codex -c check_for_update_on_startup=false$CODEX_FLAGS" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
     if [ -n "$CREATED_HANDLE" ]; then
-      orca terminal wait --terminal "$CREATED_HANDLE" --for tui-idle --timeout-ms 90000 --json 2>/dev/null | json_get 'j.result&&j.result.wait&&j.result.wait.satisfied===true' >/dev/null && HANDLE="$CREATED_HANDLE"
+      WAIT_OUT="$(orca terminal wait --terminal "$CREATED_HANDLE" --for tui-idle --timeout-ms 90000 --json 2>/dev/null)"
+      if printf '%s' "$WAIT_OUT" | json_get 'j.result&&j.result.wait&&j.result.wait.satisfied===true' >/dev/null; then
+        HANDLE="$CREATED_HANDLE"
+      else
+        START_FAIL="$(printf '%s' "$WAIT_OUT" | json_get 'j.result&&j.result.wait&&j.result.wait.blockedReason' 2>/dev/null)"
+        START_FAIL="${START_FAIL:-the TUI did not become idle in 90s}"
+      fi
+    else
+      START_FAIL="orca terminal create returned no handle"
     fi
     if [ -n "$HANDLE" ]; then
       # First run in a checkout: Codex asks "Do you trust the contents of this
@@ -207,7 +218,7 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
       echo "orca: no report produced, falling back" >&2
     fi
   elif [ -z "$REPORTED" ]; then
-    echo "orca: could not start a codex terminal, falling back" >&2
+    echo "orca: could not start a codex terminal (${START_FAIL:-unknown}), falling back" >&2
   fi
   # No complete report: stop the Orca reviewer this review owns before codex exec
   # writes the same report (a late writer could overwrite or interleave it), and

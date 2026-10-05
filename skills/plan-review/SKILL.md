@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: External engineering review of an implementation plan before any code is written. Launches Codex (via Orca, then codex exec, then a fallback reviewer agent), routes confidence-7+ findings through the TypeSafe judge, revises the plan, and runs exactly one re-review round. Use after writing-plans, when asked to "review the plan", or before subagent-driven-development.
+description: External engineering review of an implementation plan before any code is written. Launches Codex in an Orca terminal beside the session (codex exec only as the launcher's last resort, then a fallback reviewer agent), routes confidence-7+ findings through the TypeSafe judge, revises the plan, and runs exactly one re-review round. Use after writing-plans, when asked to "review the plan", or before subagent-driven-development.
 argument-hint: "<path to plan .md>"
 ---
 
@@ -29,6 +29,8 @@ Say nothing about models or reasoning effort in the prompt — the launcher pins
 
 ## 2. Launch the external reviewer
 
+The reviewer is Codex in an Orca terminal opened beside this session — a visible tab the user can watch. `codex exec` is only the launcher's last resort: `reviewer.sh` itself falls back to it when Orca cannot start a Codex terminal, and says why on stderr. So launch only by running the block below as written: never run `codex`, `codex exec` or `orca terminal …` yourself, never write your own launcher, never skip the block because Orca "looks unavailable". In Claude Code run the block with `dangerouslyDisableSandbox: true` (the sandbox can cut Orca's local socket and Codex's network, which silently turns the review into `codex exec`) and `run_in_background: true` (the review outlives the Bash timeout; you are notified when it exits).
+
 Substitute the real values for the four placeholders before running:
 
 ```bash
@@ -52,7 +54,7 @@ bash "$SKILLS_REPO/scripts/reviewer.sh" --prompt-file "$PROMPT" --output "$REPOR
 echo "reviewer_exit=$?"
 ```
 
-- `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`).
+- `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`). On `reviewer: codex-exec`, copy the `orca: …` stderr line into the section-6 summary as the reason the Orca terminal was not used; do not relaunch by hand.
 - `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
 - `1`: fix the invocation; do not proceed. An Orca terminal that could not be closed is left recorded in the session file, and the section-6 close retries it.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
