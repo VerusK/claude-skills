@@ -3,49 +3,49 @@
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/writing-plans",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
-    "hash": "1f64e484138498223db90792b30133ab2416b87d75acf5390f6f37ca2a8799e8",
-    "syncedAt": "2026-09-22T09:12:09.472Z"
+    "commit": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
+    "hash": "b96f84fcdd4fc87bf3264e960e7a423bf6d3612e2b3355b4d6cd5f61ef7fe45d",
+    "syncedAt": "2026-10-12T14:22:20.911Z"
   },
   "subagent-driven-development": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/subagent-driven-development",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
-    "hash": "82c02535618f6b0c5ef3c377e588873b0ec2a7b6c03a0029210721b30d2cc48d",
-    "syncedAt": "2026-09-22T09:12:10.933Z"
+    "commit": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
+    "hash": "7e4d873926af5e6b862214d334c0c03ce9d961553bd46bf524c9a0c4e86841fe",
+    "syncedAt": "2026-10-12T14:22:21.161Z"
   },
   "finishing-a-development-branch": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/finishing-a-development-branch",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
     "hash": "1da9182001d887c0fb8c62aeee35c8f65b438b32a30b79104baedcca9e0ebef6",
-    "syncedAt": "2026-09-22T09:12:12.455Z"
+    "syncedAt": "2026-10-12T14:22:21.432Z"
   },
   "test-driven-development": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/test-driven-development",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
     "hash": "8e8772822d25e4dfc9295cf4526c6251a10458c7417ac50c4b42e5d9fc91e0b0",
-    "syncedAt": "2026-09-22T09:12:13.673Z"
+    "syncedAt": "2026-10-12T14:22:21.669Z"
   },
   "verification-before-completion": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/verification-before-completion",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
     "hash": "d8a53168f152b6163bd3447f7d4c20b6b4cddf6bd907f9aa5856b514c032db0e",
-    "syncedAt": "2026-09-22T09:12:15.060Z"
+    "syncedAt": "2026-10-12T14:22:21.927Z"
   },
   "systematic-debugging": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/systematic-debugging",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
-    "hash": "37fd06e80f296251caf4eb3554ab8771d7cf14ba382efcf812d8f3247d64dcbe",
-    "syncedAt": "2026-09-22T09:12:16.327Z"
+    "commit": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
+    "hash": "7c2628773e52f1687e74f9d802f2ea1c2cbae24ef5ca3fda0b8f21340f50d590",
+    "syncedAt": "2026-10-12T14:22:22.157Z"
   },
   "typesafe-ai": {
     "repo": "typesafe-ai/skills",
@@ -53,22 +53,22 @@
     "path": "skills/typesafe-ai",
     "commit": "65a39f393687675ce170e6094757de20370365b9",
     "hash": "07d76735eed4b7e88e1d32c592ae6642f165bb9c004f337f3f90edc70ac7fbb9",
-    "syncedAt": "2026-09-22T09:12:20.478Z"
+    "syncedAt": "2026-10-12T14:22:22.409Z"
   },
   "gstack-plan-eng-review": {
     "repo": "garrytan/gstack",
     "ref": "main",
     "path": "plan-eng-review/SKILL.md.tmpl",
-    "commit": "35dd014c580037d1c009776d8b0584587c1bd42c",
-    "hash": "a59480833315e41e5ef9cbcbd0996e1ce512af1fbc5153bee29d814d4ffa45dc",
-    "syncedAt": "2026-09-22T09:12:24.357Z"
+    "commit": "e23f7b807ff4788f6d7c90af2ab82960bd8c5851",
+    "hash": "ccb8fdb71b338e2f99554457bc1a2ae25794e103644cf0ba4e04c456801c4eca",
+    "syncedAt": "2026-10-12T14:22:25.388Z"
   },
   "superpowers-code-reviewer": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/requesting-code-review/code-reviewer.md",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "bb92a77741419a4ab5f06e711a283343f1ada0c3",
     "hash": "6962a2b26441f7e47114ead70f658b345cfdf6bc2364300152cc86d6e65808f5",
-    "syncedAt": "2026-09-22T09:12:26.036Z"
+    "syncedAt": "2026-10-12T14:22:25.734Z"
   }
 }
