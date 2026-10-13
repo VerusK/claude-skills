@@ -74,15 +74,34 @@ test("§5 keeps the round-1 report before relaunching", () => {
   assert.match(s5, /copy the round-1 report to `<REPORT>\.round1\.md` first/);
 });
 
-test("§6 waits for explicit approval before writing-plans", () => {
+test("§6 goes on to writing-plans without waiting when the spec is clear", () => {
   const s6 = section(read(SKILL), "## 6. Hand off", "## Rules");
-  const wait = s6.indexOf("Wait for the user's explicit approval");
-  const invoke = s6.indexOf("invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin)");
+  assert.match(s6, /the last round run \(round 1 when round 2 was skipped, otherwise round 2\) has no P0\/P1 at confidence 7\+/);
+  assert.match(s6, /not from the in-session review on a host with no subagent tool/);
+  const clear = section(s6, "**Clear:**", "**Not clear:**");
+  assert.match(clear, /do not wait for approval/);
+  assert.match(clear, /invoke `writing-plans` \(`verus-skills:writing-plans` when installed as a plugin\) with the spec path right away/);
+  assert.doesNotMatch(clear, /Wait for the user's explicit approval/);
+});
+
+test("§6 still waits for explicit approval when the spec is not clear", () => {
+  const notClear = section(read(SKILL), "**Not clear:**", "## Rules");
+  const wait = notClear.indexOf("Wait for the user's explicit approval");
+  const invoke = notClear.indexOf("invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin)");
   assert.ok(wait >= 0 && invoke > wait, "approval must come before the writing-plans hand-off");
-  assert.match(s6, /Invoke nothing else/);
-  assert.match(s6, /if the changes touch Goal, Non-goals, Design or Decisions and round 2 has not run, run round 2 on the edited spec/);
-  assert.match(s6, /naming the edits no reviewer saw/);
-  assert.doesNotMatch(s6, /do not re-run the reviewer/);
+  assert.match(notClear, /Invoke nothing else/);
+  assert.match(notClear, /if the changes touch Goal, Non-goals, Design or Decisions and round 2 has not run, run round 2 on the edited spec/);
+  assert.match(notClear, /naming the edits no reviewer saw/);
+  assert.doesNotMatch(notClear, /do not re-run the reviewer/);
+});
+
+test("plan-review shows key architecture decisions and hands off without waiting", () => {
+  const s6 = section(read("skills/plan-review/SKILL.md"), "## 6. Hand off", "## Rules");
+  const show = s6.indexOf("Key architecture decisions (<PLAN>):");
+  const invoke = s6.indexOf("invoke `subagent-driven-development` (`verus-skills:subagent-driven-development` when installed as a plugin) right away");
+  assert.ok(show >= 0 && invoke > show, "decisions must be shown before the hand-off");
+  assert.match(s6, /3–7 bullets/);
+  assert.match(s6, /Do not wait for a reply: this is information, not a gate/);
 });
 
 test("the verus-reviewer agent lists spec-review among its callers", () => {

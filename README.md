@@ -43,7 +43,7 @@ flowchart LR
 ```
 kickoff → spec-review → writing-plans → plan-review → subagent-driven-development → review → finishing-a-development-branch
    │         │  ▲                          │  ▲                       │                  │
-   │         ├──┘ 1 re-review + approval   ├──┘ 1 re-review           │                  │
+   │         ├──┘ 1 re-review; clear → go  ├──┘ 1 re-review           │                  │
    │         └─ findings → TypeSafe        └─ findings → TypeSafe     └ per-task reviews │
    └─ questions → TypeSafe                                                               └ findings → TypeSafe, 1 fix wave, 1 re-review
 ```
@@ -51,9 +51,9 @@ kickoff → spec-review → writing-plans → plan-review → subagent-driven-de
 | Step | Skill | What happens |
 |---|---|---|
 | 1 | `kickoff` | Classifies the task, interviews through a decision tree, judges each multiple-choice question, writes `docs/specs/<date>-<topic>-design.md` with a Decisions section. |
-| 2 | `spec-review` | Codex reviews the spec (scope challenge, requirements, scope, feasibility, testability, `auto` decisions) and writes the report next to the spec as `<spec-name>.review.md`. Findings rated 7+/10 are judged — those against the user's own decisions go to the user — the spec is revised, one re-review, then the user approves the spec. |
+| 2 | `spec-review` | Codex reviews the spec (scope challenge, requirements, scope, feasibility, testability, `auto` decisions) and writes the report next to the spec as `<spec-name>.review.md`. Findings rated 7+/10 are judged — those against the user's own decisions go to the user — the spec is revised, one re-review; a clear spec goes straight on to the plan, otherwise the user approves it. |
 | 3 | `writing-plans` | Bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
-| 4 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review. |
+| 4 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review, then the key architecture decisions are shown and execution starts without stopping. |
 | 5 | `subagent-driven-development` | Fresh `verus-worker` subagent per task, a `verus-reviewer` spec + quality review after each. |
 | 6 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 7. |
 | 7 | `finishing-a-development-branch` | Merge, PR, or keep. |

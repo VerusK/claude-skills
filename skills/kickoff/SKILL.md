@@ -14,7 +14,8 @@ reach the user.
 
 <HARD-GATE>
 Do not write code, scaffold, or invoke implementation skills until the user has
-approved the design (bounded, spike) or the written spec (architectural).
+approved the design (bounded, spike), or until the written spec has passed
+`spec-review` (architectural).
 </HARD-GATE>
 
 ## 1. Classify
@@ -69,11 +70,11 @@ Open-ended questions (no sensible options) are asked directly, one per message, 
 **Architectural:** after the tree is settled:
 
 1. Propose 2–3 approaches with trade-offs and a recommendation (this is itself a judge-able question).
-2. Draft the design in sections (architecture, components, data flow, error handling, testing) straight through, without stopping between them: do not ask whether a section is right, do not wait for a nod, do not print the sections for approval one by one. Checking the design is the job of the external Codex review in `spec-review`, and the user approves the whole reviewed spec once at its end. A gap you find while drafting is a new frontier question — run it through the tree (section 3), not through a "does this look right?" check-in.
+2. Draft the design in sections (architecture, components, data flow, error handling, testing) straight through, without stopping between them: do not ask whether a section is right, do not wait for a nod, do not print the sections for approval one by one. Checking the design is the job of the external Codex review in `spec-review`; the user is asked to approve the reviewed spec only when that review does not come back clear. A gap you find while drafting is a new frontier question — run it through the tree (section 3), not through a "does this look right?" check-in.
 3. Write the spec to `docs/specs/YYYY-MM-DD-<topic>-design.md` with these sections: Goal, Non-goals, Design (the drafted sections), Testing, **Decisions** (every decision block, auto-accepted ones marked `auto`, user-answered ones marked `user`).
 4. Self-review the spec: no placeholders, no contradictions, one interpretation per requirement, scoped for a single plan. Fix inline.
-5. Commit the spec. Tell the user: "Spec written and committed to `<path>`. Sending it to an external review before you approve it."
-6. Invoke `spec-review` (`verus-skills:spec-review` when installed as a plugin) with the spec path. It revises the spec, asks for the user's approval and hands off to the plan. Invoke nothing else.
+5. Commit the spec. Tell the user: "Spec written and committed to `<path>`. Sending it to an external review; if it comes back clear I go straight on to the plan."
+6. Invoke `spec-review` (`verus-skills:spec-review` when installed as a plugin) with the spec path. It revises the spec and hands off to the plan — on its own when the review is clear, after the user's approval when it is not. Invoke nothing else.
 
 ## 5. Reporting decisions
 

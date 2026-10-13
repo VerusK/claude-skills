@@ -7,9 +7,9 @@ Skills are named below without a prefix. Under the plugin install each one is ad
 ## The flow for any non-trivial change
 
 1. `kickoff` — always first for a new task: classifies (spike / bounded / architectural), interviews via a decision tree, auto-answers multiple-choice questions through the TypeSafe judge, writes the spec to `docs/specs/`.
-2. `spec-review` — external review of the spec by Codex before the user approves it; findings judged (findings against the user's own decisions go to the user); one re-review round; then the user's approval.
-3. `writing-plans` — turns the approved spec into `docs/plans/<date>-<name>.md`.
-4. `plan-review` — external review of the plan by Codex; findings judged; one re-review round.
+2. `spec-review` — external review of the spec by Codex; findings judged (findings against the user's own decisions go to the user); one re-review round; a clear spec goes straight on to the plan, otherwise the user approves it.
+3. `writing-plans` — turns the reviewed spec into `docs/plans/<date>-<name>.md`.
+4. `plan-review` — external review of the plan by Codex; findings judged; one re-review round; then the key architecture decisions are shown without stopping.
 5. `subagent-driven-development` — executes the plan task by task with fresh subagents (the `verus-worker` and `verus-reviewer` agent types) and per-task reviews.
 6. `review` — external review of the whole branch by Codex; one fix wave; one re-review. It also runs standalone: on given paths or globs, or over the whole codebase.
 7. `finishing-a-development-branch` — merge / PR / keep.

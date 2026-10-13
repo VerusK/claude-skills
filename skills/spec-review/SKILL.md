@@ -1,6 +1,6 @@
 ---
 name: spec-review
-description: External review of a design spec before the user approves it. Launches Codex in an Orca terminal beside the session (codex exec only as the launcher's last resort, then a fallback reviewer agent), routes confidence-7+ findings through the TypeSafe judge (findings against the user's own decisions go to the user), revises the spec, runs at most one re-review round, then asks the user to approve the spec and hands off to writing-plans. Use after kickoff writes a spec, or when asked to "review the spec".
+description: External review of a design spec before the user approves it. Launches Codex in an Orca terminal beside the session (codex exec only as the launcher's last resort, then a fallback reviewer agent), routes confidence-7+ findings through the TypeSafe judge (findings against the user's own decisions go to the user), revises the spec, runs at most one re-review round, then hands off to writing-plans on its own when the last review round is clear of P0/P1 findings, and asks the user to approve the spec only when it is not. Use after kickoff writes a spec, or when asked to "review the spec".
 argument-hint: "<path to spec .md>"
 ---
 
@@ -131,13 +131,17 @@ SESSION="<the SESSION printed by section 2>"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 ```
 
-Report to the user: rounds run, reviewer path used, findings accepted/left/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then say: "Spec written and reviewed: `<SPEC>`. Review it; when approved I will write the plan with `writing-plans`."
+Report to the user: rounds run, reviewer path used, findings accepted/left/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`).
 
-Wait for the user's explicit approval. If they ask for changes instead, apply them to the spec and commit only the spec (`git add -- "$SPEC" && git commit -m "docs(spec): apply user changes after spec-review" -- "$SPEC"`). Then, if the changes touch Goal, Non-goals, Design or Decisions and round 2 has not run, run round 2 on the edited spec: copy the round-1 report to `<REPORT>.round1.md`, set `ROUND` to 2, go through sections 1–4 again (section 2 with the same SESSION value — the session was closed, so the launcher opens a fresh terminal), close the session again, and come back to this paragraph. Otherwise ask for approval again, naming the edits no reviewer saw. On approval invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin) with the spec path. Invoke nothing else.
+Then decide whether the spec is **clear**: the last round run (round 1 when round 2 was skipped, otherwise round 2) has no P0/P1 at confidence 7+, and its report came from Codex (`reviewer: orca` / `reviewer: codex-exec`) or the fallback reviewer agent — not from the in-session review on a host with no subagent tool.
+
+**Clear:** do not wait for approval. The user answered the interview and the reviewer found nothing blocking; the spec needs no second read. Say: "Spec reviewed and clear: `<SPEC>`. Moving on to the plan with `writing-plans` — write here at any time to stop or change the spec." and invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin) with the spec path right away. Invoke nothing else.
+
+**Not clear:** name why (the P0/P1 findings of the last round that no reviewer has seen fixed, or the in-session review), then say: "Spec written and reviewed: `<SPEC>`. Review it; when approved I will write the plan with `writing-plans`." Wait for the user's explicit approval. If they ask for changes instead, apply them to the spec and commit only the spec (`git add -- "$SPEC" && git commit -m "docs(spec): apply user changes after spec-review" -- "$SPEC"`). Then, if the changes touch Goal, Non-goals, Design or Decisions and round 2 has not run, run round 2 on the edited spec: copy the round-1 report to `<REPORT>.round1.md`, set `ROUND` to 2, go through sections 1–4 again (section 2 with the same SESSION value — the session was closed, so the launcher opens a fresh terminal), close the session again, and come back to this paragraph. Otherwise ask for approval again, naming the edits no reviewer saw. On approval invoke `writing-plans` (`verus-skills:writing-plans` when installed as a plugin) with the spec path. Invoke nothing else.
 
 ## Rules
 
-- Never start implementation or write the plan from this skill before the user approves the spec.
+- Never start implementation from this skill, and never write the plan from it: the plan is `writing-plans`' job, invoked only once the spec is clear or the user has approved it.
 - Never edit `REPORT`; it is the reviewer's artifact. Decisions go into the spec.
 - One re-review round maximum. Residual P2/P3 go to the spec's `Spec review decisions (round N)` section as "deferred".
 - Whenever this skill stops — hand-off, a stop after round 1 or 2, a failed launch, a user who does not approve — first run `reviewer.sh --close-session "$SESSION"` (section 6), so review terminals never pile up.

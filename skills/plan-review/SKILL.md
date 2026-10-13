@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: External engineering review of an implementation plan before any code is written. Launches Codex in an Orca terminal beside the session (codex exec only as the launcher's last resort, then a fallback reviewer agent), routes confidence-7+ findings through the TypeSafe judge, revises the plan, and runs exactly one re-review round. Use after writing-plans, when asked to "review the plan", or before subagent-driven-development.
+description: External engineering review of an implementation plan before any code is written. Launches Codex in an Orca terminal beside the session (codex exec only as the launcher's last resort, then a fallback reviewer agent), routes confidence-7+ findings through the TypeSafe judge, revises the plan, runs exactly one re-review round, then shows the user the plan's key architecture decisions and goes on to execution without stopping. Use after writing-plans, when asked to "review the plan", or before subagent-driven-development.
 argument-hint: "<path to plan .md>"
 ---
 
@@ -113,7 +113,16 @@ SESSION="<the SESSION printed by section 2>"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 ```
 
-Report to the user: rounds run, reviewer path used, findings accepted/rejected/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then say: "Plan review done. Next: `subagent-driven-development` on `<PLAN>`." and invoke `subagent-driven-development` (`verus-skills:subagent-driven-development` when installed as a plugin).
+Report to the user: rounds run, reviewer path used, findings accepted/rejected/asked, path of the final report, and — when round 2 ran — the path of the kept round-1 report (`<REPORT>.round1.md`). Then show the plan's key architecture decisions — the user does not read the whole plan, so this block is what they see of it:
+
+```
+Key architecture decisions (<PLAN>):
+- <decision> — <why, or what it rules out>
+```
+
+3–7 bullets, one line each, taken from the final plan: its Architecture line, new modules or files and the boundaries between them, new dependencies, data formats, schemas, public interfaces, CLI flags or config keys, migrations and anything hard to undo, places the plan departs from the spec, and plan-review decisions that changed any of these. Leave out routine choices (test layout, naming, task order). If the plan makes no such decision, print one bullet saying so.
+
+Do not wait for a reply: this is information, not a gate. Say: "Plan review done. Next: `subagent-driven-development` on `<PLAN>` — write here at any time to stop or change a decision." and invoke `subagent-driven-development` (`verus-skills:subagent-driven-development` when installed as a plugin) right away.
 
 ## Rules
 
