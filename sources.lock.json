@@ -3,72 +3,72 @@
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/writing-plans",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
-    "hash": "1f64e484138498223db90792b30133ab2416b87d75acf5390f6f37ca2a8799e8",
-    "syncedAt": "2026-09-22T09:12:09.472Z"
+    "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+    "hash": "b96f84fcdd4fc87bf3264e960e7a423bf6d3612e2b3355b4d6cd5f61ef7fe45d",
+    "syncedAt": "2026-10-26T12:13:17.050Z"
   },
   "subagent-driven-development": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/subagent-driven-development",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
-    "hash": "82c02535618f6b0c5ef3c377e588873b0ec2a7b6c03a0029210721b30d2cc48d",
-    "syncedAt": "2026-09-22T09:12:10.933Z"
+    "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+    "hash": "249b79397489aaf48e90da699e777cd1f88073a85160c45594107242b7e5a5a0",
+    "syncedAt": "2026-10-26T12:13:17.577Z"
   },
   "finishing-a-development-branch": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/finishing-a-development-branch",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
     "hash": "1da9182001d887c0fb8c62aeee35c8f65b438b32a30b79104baedcca9e0ebef6",
-    "syncedAt": "2026-09-22T09:12:12.455Z"
+    "syncedAt": "2026-10-26T12:13:17.979Z"
   },
   "test-driven-development": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/test-driven-development",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
     "hash": "8e8772822d25e4dfc9295cf4526c6251a10458c7417ac50c4b42e5d9fc91e0b0",
-    "syncedAt": "2026-09-22T09:12:13.673Z"
+    "syncedAt": "2026-10-26T12:13:18.388Z"
   },
   "verification-before-completion": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/verification-before-completion",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
     "hash": "d8a53168f152b6163bd3447f7d4c20b6b4cddf6bd907f9aa5856b514c032db0e",
-    "syncedAt": "2026-09-22T09:12:15.060Z"
+    "syncedAt": "2026-10-26T12:13:18.743Z"
   },
   "systematic-debugging": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/systematic-debugging",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
-    "hash": "37fd06e80f296251caf4eb3554ab8771d7cf14ba382efcf812d8f3247d64dcbe",
-    "syncedAt": "2026-09-22T09:12:16.327Z"
+    "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+    "hash": "7c2628773e52f1687e74f9d802f2ea1c2cbae24ef5ca3fda0b8f21340f50d590",
+    "syncedAt": "2026-10-26T12:13:19.077Z"
   },
   "typesafe-ai": {
     "repo": "typesafe-ai/skills",
     "ref": "main",
     "path": "skills/typesafe-ai",
-    "commit": "65a39f393687675ce170e6094757de20370365b9",
-    "hash": "07d76735eed4b7e88e1d32c592ae6642f165bb9c004f337f3f90edc70ac7fbb9",
-    "syncedAt": "2026-09-22T09:12:20.478Z"
+    "commit": "302eea662c54bca6730873fe245bec1d69ebc23d",
+    "hash": "cda787c5ac4388581f2e9857f05b341de2413427da2efa5e61779a55344c6172",
+    "syncedAt": "2026-10-26T12:13:19.467Z"
   },
   "gstack-plan-eng-review": {
     "repo": "garrytan/gstack",
     "ref": "main",
     "path": "plan-eng-review/SKILL.md.tmpl",
-    "commit": "35dd014c580037d1c009776d8b0584587c1bd42c",
-    "hash": "a59480833315e41e5ef9cbcbd0996e1ce512af1fbc5153bee29d814d4ffa45dc",
-    "syncedAt": "2026-09-22T09:12:24.357Z"
+    "commit": "8018ba52feab92262087e7236dc10d1b10e8c355",
+    "hash": "b10925128ca126156c9df0965022a94146ece7bbbdcaa4cdfed1e4037c4eae38",
+    "syncedAt": "2026-10-26T12:13:22.856Z"
   },
   "superpowers-code-reviewer": {
     "repo": "obra/superpowers",
     "ref": "main",
     "path": "skills/requesting-code-review/code-reviewer.md",
-    "commit": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+    "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
     "hash": "6962a2b26441f7e47114ead70f658b345cfdf6bc2364300152cc86d6e65808f5",
-    "syncedAt": "2026-09-22T09:12:26.036Z"
+    "syncedAt": "2026-10-26T12:13:23.306Z"
   }
 }
