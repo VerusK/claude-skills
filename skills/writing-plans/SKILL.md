@@ -13,7 +13,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Context:** Work happens in the current checkout (an Orca worktree). Do not create git worktrees.
+**Context:** Work happens in an Orca worktree — the current checkout, or one made with `orca worktree create` when the session runs in the main checkout. Never `git worktree add` by hand.
 
 **Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 - (User preferences for plan location override this default)

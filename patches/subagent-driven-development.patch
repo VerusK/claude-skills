@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
---- vendor/subagent-driven-development/SKILL.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/SKILL.md	2026-09-23 07:46:28
+--- vendor/subagent-driven-development/SKILL.md	2026-11-03 08:13:12
++++ skills/subagent-driven-development/SKILL.md	2026-11-03 08:46:51
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -76,7 +76,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
      "R = 5?" -> "Adjudicate each open finding" [label="yes - breaker trips"];
      "Adjudicate each open finding" -> "Any load-bearing finding?";
      "Any load-bearing finding?" -> "Rule and continue; stop only if every path forward is a guess" [label="yes"];
-@@ -114,17 +106,16 @@
+@@ -114,17 +106,22 @@
      "Park findings in ledger with rulings" -> "Append completion to ledger, mark todo complete";
      "Append completion to ledger, mark todo complete" -> "More tasks remain?";
      "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
@@ -95,11 +95,17 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
 -Ensure the work happens in an isolated workspace: use
 -superpowers:using-git-worktrees to create one or verify the existing one.
-+Work in the current checkout (an Orca worktree); never create git worktrees.
++Work in an Orca worktree: the current checkout, or one made with
++`orca worktree create` when the session runs in the main checkout. Never
++`git worktree add` by hand. Set `WORKTREE` to the absolute path of the
++branch's worktree and `BRANCH` to its branch. If `WORKTREE` is not the
++session's directory, run every command of this skill with
++`cd "$WORKTREE" && …`, and fill `[WORKTREE]`/`[BRANCH]` in every implementer
++prompt — subagents start in the session's directory, not in the worktree.
  Never start implementation on a main/master branch without your human
  partner's explicit consent.
  
-@@ -183,41 +174,20 @@
+@@ -183,41 +180,20 @@
  
  ## Model Selection
  
@@ -152,7 +158,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## The Task Loop
  
  **Batch small same-shape work.** When the plan lists several tasks that are
-@@ -295,7 +265,7 @@
+@@ -295,7 +271,7 @@
  
  **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
  1. If it's a context problem, provide more context and re-dispatch with the same model
@@ -161,7 +167,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  3. If the task is too large, break it into smaller pieces
  4. If the plan itself is wrong, rule on the correction, ledger it, and re-dispatch with the ruling carried in the dispatch
  
-@@ -378,12 +348,11 @@
+@@ -378,12 +354,11 @@
  dispatch a fresh implementer carrying the brief path, the report-file path,
  and the findings — the report file is the persistent memory either way.
  
@@ -179,7 +185,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  **Every round, either way:** the implementer fixes, re-runs the tests
  covering the amended code, appends its fix report to the same report file,
-@@ -444,30 +413,16 @@
+@@ -444,30 +419,16 @@
  
  ## Final Review
  
@@ -218,7 +224,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -484,7 +439,7 @@
+@@ -484,7 +445,7 @@
  the record now. Sibling directories belong to other plans; leave them
  alone.
  
@@ -227,7 +233,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  ## Common Rationalizations
  
-@@ -505,9 +460,9 @@
+@@ -505,9 +466,9 @@
  ```
  You: I'm using Subagent-Driven Development to execute this plan.
  
@@ -240,7 +246,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  [Create todos for all tasks]
  
  Task 1: Hook installation script
-@@ -559,10 +514,10 @@
+@@ -559,10 +520,10 @@
  ...
  
  [After all tasks]
@@ -254,8 +260,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +Done! review handed off to finishing-a-development-branch.
  ```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
---- vendor/subagent-driven-development/implementer-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-09-23 07:46:10
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-11-03 08:13:12
++++ skills/subagent-driven-development/implementer-prompt.md	2026-11-03 08:46:51
 @@ -2,11 +2,11 @@
  
  Use this template when dispatching an implementer subagent.
@@ -271,7 +277,20 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
    prompt: |
      You are implementing Task N: [task name]
  
-@@ -86,7 +86,7 @@
+@@ -39,7 +39,11 @@
+     5. Self-review (see below)
+     6. Report back
+ 
+-    Work from: [directory]
++    Work only in [WORKTREE] (absolute path), on branch [BRANCH]: run every
++    command there (`cd [WORKTREE] && …` or `git -C [WORKTREE]`); your shell may
++    start somewhere else. Before each commit check that
++    `git -C [WORKTREE] branch --show-current` prints [BRANCH]; if it does not,
++    commit nothing and report BLOCKED.
+ 
+     **While you work:** If you encounter something unexpected or unclear, **ask questions**.
+     It's always OK to pause and clarify. Don't guess or make assumptions.
+@@ -86,7 +90,7 @@
  
      **How to escalate:** Report back with status BLOCKED or NEEDS_CONTEXT. Describe
      specifically what you're stuck on, what you've tried, and what kind of help you need.
@@ -281,8 +300,8 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
  
      ## Before Reporting Back: Self-Review
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
---- vendor/subagent-driven-development/re-review-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-09-23 07:46:10
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-11-03 08:13:12
++++ skills/subagent-driven-development/re-review-prompt.md	2026-11-03 08:13:12
 @@ -7,11 +7,11 @@
  **Purpose:** Verify each finding from the previous review was addressed, and
  that the fix itself broke nothing.
@@ -308,8 +327,8 @@ diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent
  - `[FINDINGS]` — the Critical/Important findings and spec gaps from the
    previous review, copied verbatim, one per bullet
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
---- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-09-22 18:01:01
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-09-23 07:46:10
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-03 08:13:12
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-03 08:13:12
 @@ -7,11 +7,11 @@
  **Purpose:** Verify one task's implementation matches its requirements (nothing
  more, nothing less) and is well-built (clean, tested, maintainable)

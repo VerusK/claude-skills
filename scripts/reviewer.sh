@@ -166,7 +166,20 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
   if [ -z "$HANDLE" ]; then
     # Codex's startup update screen ("Update available … 1. Update now") blocks the
     # TUI, and Orca refuses input to it (agent_prompt_blocked): turn the check off.
-    CREATED_HANDLE="$(orca terminal create --worktree "path:$REPO" --command "codex -c check_for_update_on_startup=false$CODEX_FLAGS" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
+    # Open the reviewer beside the session that asked for it. Orca gives every
+    # terminal its workspace in ORCA_WORKTREE_ID (<repo-id>::<path>); when the
+    # reviewed repo is another worktree (a branch kept out of the main checkout),
+    # `--worktree path:$REPO` would make Orca adopt that path as a new workspace.
+    # Instead open in the session's workspace and cd into the repo.
+    ORCA_TARGET="path:$REPO"
+    CODEX_CMD="codex -c check_for_update_on_startup=false$CODEX_FLAGS"
+    SESSION_WT_PATH="${ORCA_WORKTREE_ID#*::}"
+    [ -d "$SESSION_WT_PATH" ] && SESSION_WT_PATH="$(cd "$SESSION_WT_PATH" && pwd -P)"
+    if [ -n "${ORCA_WORKTREE_ID:-}" ] && [ "$SESSION_WT_PATH" != "$ORCA_WORKTREE_ID" ] && [ "$SESSION_WT_PATH" != "$REPO" ]; then
+      ORCA_TARGET="id:$ORCA_WORKTREE_ID"
+      CODEX_CMD="cd $(printf '%q' "$REPO") && $CODEX_CMD"
+    fi
+    CREATED_HANDLE="$(orca terminal create --worktree "$ORCA_TARGET" --command "$CODEX_CMD" --title "$TITLE" --json 2>/dev/null | find_handle || true)"
     if [ -n "$CREATED_HANDLE" ]; then
       WAIT_OUT="$(orca terminal wait --terminal "$CREATED_HANDLE" --for tui-idle --timeout-ms 90000 --json 2>/dev/null)"
       if printf '%s' "$WAIT_OUT" | json_get 'j.result&&j.result.wait&&j.result.wait.satisfied===true' >/dev/null; then

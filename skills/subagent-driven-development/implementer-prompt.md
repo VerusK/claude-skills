@@ -39,7 +39,11 @@ Subagent (verus-worker):
     5. Self-review (see below)
     6. Report back
 
-    Work from: [directory]
+    Work only in [WORKTREE] (absolute path), on branch [BRANCH]: run every
+    command there (`cd [WORKTREE] && …` or `git -C [WORKTREE]`); your shell may
+    start somewhere else. Before each commit check that
+    `git -C [WORKTREE] branch --show-current` prints [BRANCH]; if it does not,
+    commit nothing and report BLOCKED.
 
     **While you work:** If you encounter something unexpected or unclear, **ask questions**.
     It's always OK to pause and clarify. Don't guess or make assumptions.

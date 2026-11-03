@@ -1,12 +1,12 @@
 diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
---- vendor/writing-plans/SKILL.md	2026-09-22 18:01:01
-+++ skills/writing-plans/SKILL.md	2026-09-22 20:40:24
+--- vendor/writing-plans/SKILL.md	2026-11-03 08:13:12
++++ skills/writing-plans/SKILL.md	2026-11-03 08:22:25
 @@ -13,9 +13,9 @@
  
  **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
  
 -**Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
-+**Context:** Work happens in the current checkout (an Orca worktree). Do not create git worktrees.
++**Context:** Work happens in an Orca worktree — the current checkout, or one made with `orca worktree create` when the session runs in the main checkout. Never `git worktree add` by hand.
  
 -**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
 +**Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
@@ -54,8 +54,8 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
 -- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
 +Then invoke the `plan-review` (`verus-skills:plan-review` when installed as a plugin) skill with the plan path. Do not start implementation before the plan review reports clean.
 diff -ruN vendor/writing-plans/plan-document-reviewer-prompt.md skills/writing-plans/plan-document-reviewer-prompt.md
---- vendor/writing-plans/plan-document-reviewer-prompt.md	2026-09-22 18:01:01
-+++ skills/writing-plans/plan-document-reviewer-prompt.md	2026-09-23 07:46:10
+--- vendor/writing-plans/plan-document-reviewer-prompt.md	2026-11-03 08:13:12
++++ skills/writing-plans/plan-document-reviewer-prompt.md	2026-11-03 08:13:12
 @@ -6,8 +6,10 @@
  
  **Dispatch after:** The complete plan is written.

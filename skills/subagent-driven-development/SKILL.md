@@ -115,7 +115,13 @@ digraph process {
 
 ## Setup
 
-Work in the current checkout (an Orca worktree); never create git worktrees.
+Work in an Orca worktree: the current checkout, or one made with
+`orca worktree create` when the session runs in the main checkout. Never
+`git worktree add` by hand. Set `WORKTREE` to the absolute path of the
+branch's worktree and `BRANCH` to its branch. If `WORKTREE` is not the
+session's directory, run every command of this skill with
+`cd "$WORKTREE" && …`, and fill `[WORKTREE]`/`[BRANCH]` in every implementer
+prompt — subagents start in the session's directory, not in the worktree.
 Never start implementation on a main/master branch without your human
 partner's explicit consent.
 

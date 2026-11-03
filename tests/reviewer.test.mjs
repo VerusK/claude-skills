@@ -109,6 +109,26 @@ test("the Orca terminal is created in the reviewed repository, not the active wo
   assert.doesNotMatch(r.log, /--worktree active/);
 });
 
+test("inside an Orca session in another worktree, Codex opens in the session's workspace and cds into the repo", () => {
+  const dir = repo();
+  const cmdFile = path.join(dir, "cmd.txt");
+  const sessionId = "repo-1::/Users/someone/Projects/main-checkout";
+  const r = run(dir, ["orca", "codex"], { env: { ORCA_WORKTREE_ID: sessionId, FAKE_ORCA_COMMAND_FILE: cmdFile } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.log.includes(`orca terminal create --worktree id:${sessionId} `), r.log);
+  const cmd = readFileSync(cmdFile, "utf8");
+  assert.ok(cmd.startsWith(`cd ${realpathSync(dir)} && codex -c check_for_update_on_startup=false`), cmd);
+});
+
+test("inside an Orca session in the reviewed repo itself, the terminal opens by path with no cd", () => {
+  const dir = repo();
+  const cmdFile = path.join(dir, "cmd.txt");
+  const r = run(dir, ["orca", "codex"], { env: { ORCA_WORKTREE_ID: `repo-1::${realpathSync(dir)}`, FAKE_ORCA_COMMAND_FILE: cmdFile } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.log.includes(`orca terminal create --worktree path:${realpathSync(dir)} `), r.log);
+  assert.match(readFileSync(cmdFile, "utf8"), /^codex -c /);
+});
+
 test("a relative --repo reaches Orca as an absolute path", () => {
   const dir = repo();
   const r = run(dir, ["orca", "codex"], { repo: ".", cwd: dir });
