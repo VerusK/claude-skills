@@ -6,7 +6,7 @@ Never skip or condense a section. If a section has no findings, write "No issues
 
 ## Inputs
 
-- THE SPEC (embedded below, verbatim). Its sections are Goal, Non-goals, Design, Testing and Decisions. A decision is marked `auto` (chosen by an automated judge from facts gathered in an interview) or `user` (answered by the user).
+- THE SPEC (embedded below, verbatim). Its sections are Goal, Non-goals, Design, Testing and Decisions. A decision is marked `auto` (chosen by an automated judge from facts gathered in an interview), `recommended` (the interviewer's own pick, taken when the judge did not confirm it) or `user` (answered by the user).
 - Source files referenced by the spec: read them directly (paths are listed after the spec). Read any other repository file you need to check a claim.
 
 ## 0. Scope challenge
@@ -40,7 +40,7 @@ For each requirement, check that the Testing section names a way to verify it (a
 
 ## 5. Decisions
 
-For each decision marked `auto`, check its chosen option against the repository's facts and the rest of the spec. Flag it when a fact contradicts it or the Design no longer matches it. Flag a decision marked `user` only when a repository fact makes it unworkable. Every finding in this section names the decision by its heading and marker, e.g. `Decisions: 7. Where the report lives (auto)`. If the spec has no Decisions section, write "No Decisions section" under 5 and raise no findings here.
+For each decision marked `auto` or `recommended`, check its chosen option against the repository's facts and the rest of the spec. Flag it when a fact contradicts it or the Design no longer matches it. Flag a decision marked `user` only when a repository fact makes it unworkable. Every finding in this section names the decision by its heading and marker, e.g. `Decisions: 7. Where the report lives (auto)`. If the spec has no Decisions section, write "No Decisions section" under 5 and raise no findings here.
 
 Any finding, in any section, whose fix would change a recorded decision names that decision the same way.
 

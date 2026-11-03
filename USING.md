@@ -25,7 +25,7 @@ Each skill names the next one; follow the chain. Never skip `plan-review` or `re
 
 ## Decisions
 
-Whenever a skill auto-accepts an answer via the TypeSafe judge, the decision block (question, options with probabilities, choice, confidence, sufficiency) is printed in chat immediately and recorded in the spec, plan or review report. The user always sees what was decided and from what.
+Whenever a skill auto-accepts an answer via the TypeSafe judge — or, when Jev does not confirm it, takes Claude's recommendation without asking — the decision block (question, options with probabilities, choice, confidence, sufficiency) is printed in chat immediately and recorded in the spec, plan or review report. The user always sees what was decided and from what.
 
 ## Rules
 

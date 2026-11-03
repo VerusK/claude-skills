@@ -77,7 +77,7 @@ echo "reviewer_exit=$?"
 
 Parse `## Findings (confidence 7+)`. For each finding, in order of severity:
 
-First check whether the finding touches a recorded decision. **A finding against a `user` decision** — it names a question in the spec's Decisions section marked `user`, or its fix would change what such a decision settled: do not call the judge. Ask the user directly: the finding verbatim, the decision it contradicts, 2–4 concrete ways to resolve it (keeping the decision is one of them, with its strongest argument), and your recommendation. A finding against an `auto` decision is triaged like any other finding below.
+First check whether the finding touches a recorded decision. **A finding against a `user` decision** — it names a question in the spec's Decisions section marked `user`, or its fix would change what such a decision settled: do not call the judge. Ask the user directly: the finding verbatim, the decision it contradicts, 2–4 concrete ways to resolve it (keeping the decision is one of them, with its strongest argument), and your recommendation. A finding against an `auto` decision is triaged like any other finding below. A `recommended` decision counts as `auto` here.
 
 Then decide whether the finding is a real choice.
 
@@ -93,7 +93,7 @@ Record that line with the decisions (section 4).
 - `context`: a structured object — `goal` (the spec's Goal, one sentence), `decisions` (the spec's recorded decisions the finding touches, and findings already triaged in this round), `facts` (the finding verbatim, the relevant spec excerpt, and the repository fact it rests on with file path and short excerpt), `constraints` (the user's rules and the spec's Non-goals), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language). Facts only — a stranger reading `facts` alone must be able to pick.
 - `recommended`: your pick. It is shown to the user and never sent to the judge.
 
-Run the judge exactly as `judge.md` says. Accepted → apply the decision; unaccepted or any non-zero judge exit → ask the user with the decision block. Print every decision block in chat as it happens.
+Run the judge exactly as `judge.md` says. Accepted → apply the decision; unaccepted → take your `recommended` option without asking and apply it the same way; any non-zero judge exit → ask the user. Print every decision block in chat as it happens.
 
 Findings in the Appendix are not acted on; leave them in the report.
 
@@ -101,7 +101,7 @@ Findings in the Appendix are not acted on; leave them in the report.
 
 If the report has no confidence-7+ finding (`None` under `## Findings (confidence 7+)`), skip this section: append nothing and commit nothing; the section-6 summary says the report was CLEAR.
 
-Otherwise apply to `SPEC` directly (edit the affected sections) the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it, the user's answer to every finding against a `user` decision, and every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the spec. Do not edit the spec's Decisions section: it is the interview record, and a later section supersedes it. Append to the spec a section:
+Otherwise apply to `SPEC` directly (edit the affected sections) the chosen action of every judged finding, whatever its option letter and whether the judge accepted it, it fell back to your recommendation, or the user chose it, the user's answer to every finding against a `user` decision, and every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the spec. Do not edit the spec's Decisions section: it is the interview record, and a later section supersedes it. Append to the spec a section:
 
 ```
 ## Spec review decisions (round N)

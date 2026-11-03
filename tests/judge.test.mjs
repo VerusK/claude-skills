@@ -173,7 +173,7 @@ test("judge accepts when confidence exactly equals the threshold", async () => {
   assert.match(r.block, /confidence 0\.700, .*→ принято автоматически/);
 });
 
-test("judge asks when a confident pick differs from the recommendation", async () => {
+test("judge falls back to the recommendation when a confident pick differs", async () => {
   const r = await judge(
     input,
     deps(fakeClient({ type: "choice", choice: "B", confidence: 0.99, probabilities: { A: 0.01, B: 0.99 } })),
@@ -181,7 +181,7 @@ test("judge asks when a confident pick differs from the recommendation", async (
   assert.equal(r.choice, "B");
   assert.equal(r.agreed, false);
   assert.equal(r.accepted, false);
-  assert.match(r.block, /Выбрано: B, .*→ спросить пользователя \(Jev ≠ рекомендация\)$/m);
+  assert.match(r.block, /Выбрано: B, .*→ принята рекомендация A \(Jev ≠ рекомендация\)$/m);
 });
 
 test("judge sends a state without the recommendation end to end", async () => {
@@ -204,14 +204,14 @@ test("judge sends a state without the recommendation end to end", async () => {
   assert.match(r.block, /Рекомендация Claude: A/);
 });
 
-test("judge asks without a disagreement tag when an agreed pick is below threshold", async () => {
+test("judge falls back to the recommendation, tagged below threshold, when an agreed pick is under it", async () => {
   const r = await judge(
     input,
     deps(fakeClient({ type: "choice", choice: "A", confidence: 0.3, probabilities: { A: 0.6, B: 0.4 } })),
   );
   assert.equal(r.agreed, true);
   assert.equal(r.accepted, false);
-  assert.match(r.block, /→ спросить пользователя$/m);
+  assert.match(r.block, /→ принята рекомендация A \(ниже порога\)$/m);
 });
 
 test("formatDecision lists every option with percent", () => {

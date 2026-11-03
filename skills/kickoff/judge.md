@@ -1,6 +1,6 @@
 # Judging a multiple-choice question with TypeSafe
 
-Use this whenever you are about to ask the user a question that has 2–6 concrete options.
+Use this whenever you are about to ask the user a question that has 2–6 concrete options. A judged question reaches the user only when the judge is unavailable: an accepted answer is taken as is, an unaccepted one falls back to your recommendation.
 
 Every fenced block below is one shell call; the locator must be at the top of any
 block that uses `$SKILLS_REPO`. It tries the pointer file the SessionStart hook
@@ -65,8 +65,8 @@ node "$SKILLS_REPO/scripts/typesafe-judge.mjs" < "$Q"; echo "judge_exit=$?"
 An answer is accepted only when Jev, without seeing `recommended`, picks the same option with confidence at or above the threshold. Sufficiency (`Данных достаточно`) is printed for the reader and does not gate.
 
 - `judge_exit=0` and `"accepted": true` → the decision is made. Print the `block` field to the user verbatim, record the decision (see the calling skill), continue without waiting.
-- `judge_exit=0` and `"accepted": false` → ask the user. Show the same `block` first, then the options with your recommendation, then wait. When the verdict ends in `(Jev ≠ рекомендация)`, Jev picked a different option: ask as is — do not re-judge, and do not switch your recommendation to Jev's pick.
-- `judge_exit` is anything other than 0 (no key, network error, bad input, or the script could not be run at all — e.g. exit 1/127 when the repo was not located or node is missing) → ask the user as you normally would and add one line: `TypeSafe judge unavailable: <stderr line>`. Never auto-accept without exit 0 and `accepted: true`.
+- `judge_exit=0` and `"accepted": false` → take your `recommended` option without asking (the user's rule: they pick the recommendation anyway). Print the `block` verbatim — its verdict reads `принята рекомендация <id> (Jev ≠ рекомендация)` or `(ниже порога)` — then one line `➡️ Recommended: <id>, because <reason>`, record the decision marked `recommended` (see the calling skill), continue without waiting. Do not re-judge, and do not switch to Jev's pick: the user sees both picks in the block and can overrule later.
+- `judge_exit` is anything other than 0 (no key, network error, bad input, or the script could not be run at all — e.g. exit 1/127 when the repo was not located or node is missing) → ask the user as you normally would and add one line: `TypeSafe judge unavailable: <stderr line>`. Without a judge answer there is no block to show, so never take the recommendation silently.
 
 ## Rules
 

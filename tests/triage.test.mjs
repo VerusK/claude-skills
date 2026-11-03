@@ -55,7 +55,7 @@ test("section 4 applies every chosen action whatever its option letter, and ever
   for (const f of ["review/SKILL.md", "plan-review/SKILL.md", "spec-review/SKILL.md"]) {
     const body = read(f);
     const s4 = body.slice(body.indexOf("## 4."), body.indexOf("## 5."));
-    assert.match(s4, /the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it/, f);
+    assert.match(s4, /the chosen action of every judged finding, whatever its option letter and whether the judge accepted it, it fell back to your recommendation, or the user chose it/, f);
     assert.match(s4, /every finding accepted without the judge/, f);
     assert.match(s4, /A "leave it as is" choice is recorded with the decisions but changes nothing/, f);
     assert.doesNotMatch(s4, /accepted `A`\/`B`|Collect every accepted finding|print the accepted findings|"Rejected: <finding> — <reason>"/, f);
@@ -66,4 +66,17 @@ test("judge.md forbids padding a question with an unargued option", () => {
   const rules = read("kickoff/judge.md").split("## Rules")[1] ?? "";
   assert.match(rules, /reasonable engineer could pick/);
   assert.match(rules, /only one real option is not judge-able/);
+});
+
+test("an unaccepted judge answer falls back to the recommendation instead of asking", () => {
+  const act = read("kickoff/judge.md").split("## Act on the result")[1].split("## Rules")[0];
+  assert.match(act, /"accepted": false` → take your `recommended` option without asking/);
+  assert.match(act, /marked `recommended`/);
+  assert.match(act, /`judge_exit` is anything other than 0[^\n]*→ ask the user/);
+  for (const f of ["review/SKILL.md", "plan-review/SKILL.md", "spec-review/SKILL.md"]) {
+    const body = read(f);
+    assert.match(body, /unaccepted → take your `recommended` option without asking/, f);
+    assert.doesNotMatch(body, /unaccepted or any non-zero judge exit → ask the user/, f);
+  }
+  assert.doesNotMatch(read("kickoff/SKILL.md"), /Unaccepted questions: ask them/);
 });

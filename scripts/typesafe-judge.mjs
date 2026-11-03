@@ -126,9 +126,12 @@ export function formatDecision(input, result) {
   const pct = (v) => `${Math.round((v ?? 0) * 100)}%`;
   const width = Math.max(...input.options.map((o) => optionLabel(o).length));
   const lines = input.options.map((o) => `  ${optionLabel(o).padEnd(width)}  ${pct(result.probabilities[o.id])}`);
-  // "Jev ≠ рекомендация" names the reason a confident-looking pick was still not accepted.
+  // Not accepted → the skill takes Claude's recommendation without asking (user rule).
+  // The tag names why Jev did not confirm it: a different pick, or confidence below threshold.
   const differs = result.choice !== input.recommended;
-  const verdict = result.accepted ? "принято автоматически" : `спросить пользователя${differs ? " (Jev ≠ рекомендация)" : ""}`;
+  const verdict = result.accepted
+    ? "принято автоматически"
+    : `принята рекомендация ${input.recommended} (${differs ? "Jev ≠ рекомендация" : "ниже порога"})`;
   // A result without a sufficiency reading (a hand-built result) prints dashes rather than throwing.
   const sufficiencyPct = Number.isFinite(result.sufficiency) ? pct(result.sufficiency) : "—";
   return [

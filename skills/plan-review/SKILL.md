@@ -77,13 +77,13 @@ Record that line with the decisions (section 4).
 - `context`: a structured object — `goal` (what the plan delivers, one sentence), `decisions` (findings already triaged in this round), `facts` (the plan's Goal and Architecture lines, the spec's relevant constraint, the finding verbatim, and the relevant plan excerpt), `constraints` (the user's rules and the plan's hard limits), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language). Facts only — a stranger reading `facts` alone must be able to pick.
 - `recommended`: your pick. It is shown to the user and never sent to the judge.
 
-Run the judge exactly as `judge.md` says. Accepted → apply the decision; unaccepted or any non-zero judge exit → ask the user with the decision block. Print every decision block in chat as it happens.
+Run the judge exactly as `judge.md` says. Accepted → apply the decision; unaccepted → take your `recommended` option without asking and apply it the same way; any non-zero judge exit → ask the user. Print every decision block in chat as it happens.
 
 Findings in the Appendix are not acted on; leave them in the report.
 
 ## 4. Revise the plan
 
-Apply to `PLAN` directly (edit tasks, add tests, add steps) the chosen action of every judged finding, whatever its option letter and whether the judge accepted it or the user chose it, and every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the plan. Append to the plan a section:
+Apply to `PLAN` directly (edit tasks, add tests, add steps) the chosen action of every judged finding, whatever its option letter and whether the judge accepted it, it fell back to your recommendation, or the user chose it, and every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the plan. Append to the plan a section:
 
 ```
 ## Plan review decisions (round N)
