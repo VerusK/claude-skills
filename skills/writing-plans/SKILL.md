@@ -13,7 +13,7 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
-**Context:** Work happens in an Orca worktree — the current checkout, or one made with `orca worktree create` when the session runs in the main checkout. Never `git worktree add` by hand.
+**Context:** Work happens in an Orca worktree — the current checkout, or one made with `orca worktree create --no-parent` when the session runs in the main checkout. An extra branch spawned from an Orca worktree is made with `--parent-worktree current`, so it nests under the task's workspace. Never `git worktree add` by hand.
 
 **Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
 - (User preferences for plan location override this default)

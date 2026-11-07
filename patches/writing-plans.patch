@@ -1,12 +1,12 @@
 diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
---- vendor/writing-plans/SKILL.md	2026-11-07 10:16:02
-+++ skills/writing-plans/SKILL.md	2026-11-07 10:34:25
+--- vendor/writing-plans/SKILL.md	2026-11-07 14:37:25
++++ skills/writing-plans/SKILL.md	2026-11-07 14:41:33
 @@ -13,15 +13,28 @@
  
  **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
  
 -**Context:** If working in an isolated worktree, it should have been created via the `superpowers:using-git-worktrees` skill at execution time.
-+**Context:** Work happens in an Orca worktree — the current checkout, or one made with `orca worktree create` when the session runs in the main checkout. Never `git worktree add` by hand.
++**Context:** Work happens in an Orca worktree — the current checkout, or one made with `orca worktree create --no-parent` when the session runs in the main checkout. An extra branch spawned from an Orca worktree is made with `--parent-worktree current`, so it nests under the task's workspace. Never `git worktree add` by hand.
  
 -**Save plans to:** `docs/superpowers/plans/YYYY-MM-DD-<feature-name>.md`
 +**Save plans to:** `docs/plans/YYYY-MM-DD-<feature-name>.md`
@@ -73,8 +73,8 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
 -- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
 +Then invoke the `plan-review` (`verus-skills:plan-review` when installed as a plugin) skill with the plan path. Do not start implementation before the plan review reports clean.
 diff -ruN vendor/writing-plans/plan-document-reviewer-prompt.md skills/writing-plans/plan-document-reviewer-prompt.md
---- vendor/writing-plans/plan-document-reviewer-prompt.md	2026-11-07 10:16:02
-+++ skills/writing-plans/plan-document-reviewer-prompt.md	2026-11-07 10:16:02
+--- vendor/writing-plans/plan-document-reviewer-prompt.md	2026-11-07 14:37:25
++++ skills/writing-plans/plan-document-reviewer-prompt.md	2026-11-07 14:37:25
 @@ -6,8 +6,10 @@
  
  **Dispatch after:** The complete plan is written.

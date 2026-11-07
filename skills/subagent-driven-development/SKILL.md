@@ -116,8 +116,10 @@ digraph process {
 ## Setup
 
 Work in an Orca worktree: the current checkout, or one made with
-`orca worktree create` when the session runs in the main checkout. Never
-`git worktree add` by hand. Set `WORKTREE` to the absolute path of the
+`orca worktree create --no-parent` when the session runs in the main
+checkout. An extra branch spawned from an Orca worktree is made with
+`orca worktree create --parent-worktree current`, so Orca nests it under
+the task's workspace instead of beside it. Never `git worktree add` by hand. Set `WORKTREE` to the absolute path of the
 branch's worktree and `BRANCH` to its branch. If `WORKTREE` is not the
 session's directory, run every command of this skill with
 `cd "$WORKTREE" && …`, and fill `[WORKTREE]`/`[BRANCH]` in every implementer
