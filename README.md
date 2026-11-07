@@ -54,13 +54,25 @@ kickoff → spec-review → writing-plans → plan-review → subagent-driven-de
 |---|---|---|
 | 1 | `kickoff` | Classifies the task, interviews through a decision tree, judges each multiple-choice question, writes `docs/specs/<date>-<topic>-design.md` with a Decisions section. |
 | 2 | `spec-review` | Codex reviews the spec (scope challenge, requirements, scope, feasibility, testability, `auto` decisions) and writes the report next to the spec as `<spec-name>.review.md`. Findings rated 7+/10 are judged — those against the user's own decisions go to the user — the spec is revised, one re-review; a clear spec goes straight on to the plan, otherwise the user approves it. |
-| 3 | `writing-plans` | Bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
-| 4 | `plan-review` | Codex reviews the plan (architecture, quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review, then the key architecture decisions are shown and execution starts without stopping. |
-| 5 | `subagent-driven-development` | Fresh `verus-worker` subagent per task, a `verus-reviewer` spec + quality review after each. |
-| 6 | `review` | Codex reviews the whole diff against plan and spec; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 7. |
+| 3 | `writing-plans` | Settles the design first (see [Design rules](#design-rules)), then writes a bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
+| 4 | `plan-review` | Codex reviews the plan (architecture and the [design rules](#design-rules), quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review, then the key architecture decisions are shown and execution starts without stopping. |
+| 5 | `subagent-driven-development` | Fresh `verus-worker` subagent per task, a `verus-reviewer` spec + quality + design review after each. |
+| 6 | `review` | Codex reviews the whole diff against plan, spec and the design rules; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 7. |
 | 7 | `finishing-a-development-branch` | Merge, PR, or keep. |
 
 Outside the flow: `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `typesafe-ai`.
+
+### Design rules
+
+Adapted from [unclebob/ub-mode](https://github.com/unclebob/ub-mode). `writing-plans` settles them before mapping files, and the plan, task and branch reviewers check them:
+
+- subtract before you add; redesign instead of bolting a new requirement onto a design it does not fit;
+- make illegal states unrepresentable;
+- parse outside input once at the boundary and trust it inside; keep business logic in pure functions;
+- make operations idempotent, including a rerun after a crash halfway;
+- one writer per shared mutable state.
+
+Clear, local existing code is left alone. Task and branch reviewers also reject a test that would still pass if every function under test returned nothing.
 
 ### `review` outside the flow
 
@@ -95,7 +107,7 @@ A **clean** working tree gives full mode: review → findings judged → at most
 | `verification-before-completion` | copy | obra/superpowers | Jesse Vincent | MIT |
 | `typesafe-ai` | copy | [typesafe-ai/skills](https://github.com/typesafe-ai/skills) | TypeSafe AI | MIT |
 
-Patches: `superpowers:*` references point at this distro's skill names, no git-worktree steps (work happens in Orca worktrees), every subagent dispatched as a `verus-*` agent type (see [Models and effort](#models-and-effort)), SDD's final review routed to `review`, docs under `docs/specs/` and `docs/plans/`; `test-driven-development` only has its citations rewritten. Full attribution is in `NOTICE`.
+Patches: `superpowers:*` references point at this distro's skill names, no git-worktree steps (work happens in Orca worktrees), every subagent dispatched as a `verus-*` agent type (see [Models and effort](#models-and-effort)), SDD's final review routed to `review`, the [design rules](#design-rules) in `writing-plans` and the SDD task reviewer, docs under `docs/specs/` and `docs/plans/`; `test-driven-development` only has its citations rewritten. Full attribution is in `NOTICE`.
 
 ## Models and effort
 

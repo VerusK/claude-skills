@@ -13,6 +13,9 @@ original copyright remains with their authors.
   https://github.com/garrytan/gstack
 - mattpocock/skills (Matt Pocock) — grilling interview style adapted into kickoff.
   https://github.com/mattpocock/skills
+- unclebob/ub-mode (Robert C. Martin) — design principles adapted into writing-plans, the
+  subagent-driven-development task reviewer, plan-review/reviewer.md and review/reviewer.md.
+  https://github.com/unclebob/ub-mode
 
 kickoff, spec-review, plan-review and review are this repository's own skills; they are marked "own" in
 README.md. Local modifications to vendored skills are recorded in patches/ and the upstream
