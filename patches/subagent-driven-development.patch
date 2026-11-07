@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
---- vendor/subagent-driven-development/SKILL.md	2026-11-03 08:13:12
-+++ skills/subagent-driven-development/SKILL.md	2026-11-03 08:46:51
+--- vendor/subagent-driven-development/SKILL.md	2026-11-07 10:16:02
++++ skills/subagent-driven-development/SKILL.md	2026-11-07 10:16:02
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -260,8 +260,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +Done! review handed off to finishing-a-development-branch.
  ```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
---- vendor/subagent-driven-development/implementer-prompt.md	2026-11-03 08:13:12
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-11-03 08:46:51
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-11-07 10:16:02
++++ skills/subagent-driven-development/implementer-prompt.md	2026-11-07 10:16:02
 @@ -2,11 +2,11 @@
  
  Use this template when dispatching an implementer subagent.
@@ -300,8 +300,8 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
  
      ## Before Reporting Back: Self-Review
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
---- vendor/subagent-driven-development/re-review-prompt.md	2026-11-03 08:13:12
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-11-03 08:13:12
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-11-07 10:16:02
++++ skills/subagent-driven-development/re-review-prompt.md	2026-11-07 10:16:02
 @@ -7,11 +7,11 @@
  **Purpose:** Verify each finding from the previous review was addressed, and
  that the fix itself broke nothing.
@@ -327,8 +327,8 @@ diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent
  - `[FINDINGS]` — the Critical/Important findings and spec gaps from the
    previous review, copied verbatim, one per bullet
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
---- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-03 08:13:12
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-03 08:13:12
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-07 10:16:02
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-07 10:34:32
 @@ -7,11 +7,11 @@
  **Purpose:** Verify one task's implementation matches its requirements (nothing
  more, nothing less) and is well-built (clean, tested, maintainable)
@@ -344,7 +344,28 @@ diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/suba
    prompt: |
      You are reviewing one task's implementation: first whether it matches its
      requirements, then whether it is well-built. This is a task-scoped gate,
-@@ -188,7 +188,6 @@
+@@ -120,8 +120,20 @@
+     - DRY without premature abstraction?
+     - Edge cases handled?
+ 
++    **Design:**
++    - Can the new types or structures hold an invalid state?
++    - Is outside input parsed once at the boundary and trusted inside —
++      not re-validated deep in the logic, not left unchecked where it
++      enters?
++    - Is the business logic a pure function, with the I/O around it?
++    - Does an operation end in the same state when run twice or rerun
++      after a crash halfway?
++    - Does shared mutable state have exactly one writer?
++
+     **Tests:**
+     - Do the new and changed tests verify real behavior, not mocks?
++    - Would a test still pass if every function under test returned
++      nothing (null, empty, default)? Then it asserts nothing.
+     - Are the task's edge cases covered?
+ 
+     **Structure:**
+@@ -188,7 +200,6 @@
  ```
  
  **Placeholders:**

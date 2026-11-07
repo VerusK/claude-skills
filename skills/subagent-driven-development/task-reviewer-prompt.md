@@ -120,8 +120,20 @@ Subagent (verus-reviewer):
     - DRY without premature abstraction?
     - Edge cases handled?
 
+    **Design:**
+    - Can the new types or structures hold an invalid state?
+    - Is outside input parsed once at the boundary and trusted inside —
+      not re-validated deep in the logic, not left unchecked where it
+      enters?
+    - Is the business logic a pure function, with the I/O around it?
+    - Does an operation end in the same state when run twice or rerun
+      after a crash halfway?
+    - Does shared mutable state have exactly one writer?
+
     **Tests:**
     - Do the new and changed tests verify real behavior, not mocks?
+    - Would a test still pass if every function under test returned
+      nothing (null, empty, default)? Then it asserts nothing.
     - Are the task's edge cases covered?
 
     **Structure:**

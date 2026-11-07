@@ -22,6 +22,19 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
 
+## Design Before Files
+
+Settle the design before you map files. Each rule below is a decision the plan states, not a hope for the implementer:
+
+- **Subtract before you add.** Take out the complexity the change makes unnecessary before planning anything new.
+- **Redesign, don't bolt on.** Ask what you would have built if the new requirement had been there from the start; plan that, delivered in pieces.
+- **Make illegal states unrepresentable.** Get the data shape right before the logic: pick types and structures in which an invalid combination cannot be written.
+- **Check data where it enters.** Parse and validate outside input once, at the boundary; inside, trust it. Keep the business logic in pure functions and the I/O around them.
+- **Make operations idempotent.** Running a step twice, or again after a crash halfway through, ends in the same state.
+- **One writer per shared mutable state.** If two parts do not need the same mutable thing, give each its own; if they do, the structure enforces a single writer.
+
+Where existing code is already clear and local, leave it — these rules shape what the plan adds, not a rewrite of what works.
+
 ## File Structure
 
 Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.

@@ -1,7 +1,7 @@
 diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
---- vendor/writing-plans/SKILL.md	2026-11-03 08:13:12
-+++ skills/writing-plans/SKILL.md	2026-11-03 08:22:25
-@@ -13,9 +13,9 @@
+--- vendor/writing-plans/SKILL.md	2026-11-07 10:16:02
++++ skills/writing-plans/SKILL.md	2026-11-07 10:34:25
+@@ -13,15 +13,28 @@
  
  **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
  
@@ -13,7 +13,26 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
  - (User preferences for plan location override this default)
  
  ## Scope Check
-@@ -58,7 +58,7 @@
+ 
+ If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
+ 
++## Design Before Files
++
++Settle the design before you map files. Each rule below is a decision the plan states, not a hope for the implementer:
++
++- **Subtract before you add.** Take out the complexity the change makes unnecessary before planning anything new.
++- **Redesign, don't bolt on.** Ask what you would have built if the new requirement had been there from the start; plan that, delivered in pieces.
++- **Make illegal states unrepresentable.** Get the data shape right before the logic: pick types and structures in which an invalid combination cannot be written.
++- **Check data where it enters.** Parse and validate outside input once, at the boundary; inside, trust it. Keep the business logic in pure functions and the I/O around them.
++- **Make operations idempotent.** Running a step twice, or again after a crash halfway through, ends in the same state.
++- **One writer per shared mutable state.** If two parts do not need the same mutable thing, give each its own; if they do, the structure enforces a single writer.
++
++Where existing code is already clear and local, leave it — these rules shape what the plan adds, not a rewrite of what works.
++
+ ## File Structure
+ 
+ Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.
+@@ -58,7 +71,7 @@
  ```markdown
  # [Feature Name] Implementation Plan
  
@@ -22,7 +41,7 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
  
  **Goal:** [One sentence describing what this builds]
  
-@@ -166,27 +166,8 @@
+@@ -166,27 +179,8 @@
  
  ## Execution Handoff
  
@@ -54,8 +73,8 @@ diff -ruN vendor/writing-plans/SKILL.md skills/writing-plans/SKILL.md
 -- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
 +Then invoke the `plan-review` (`verus-skills:plan-review` when installed as a plugin) skill with the plan path. Do not start implementation before the plan review reports clean.
 diff -ruN vendor/writing-plans/plan-document-reviewer-prompt.md skills/writing-plans/plan-document-reviewer-prompt.md
---- vendor/writing-plans/plan-document-reviewer-prompt.md	2026-11-03 08:13:12
-+++ skills/writing-plans/plan-document-reviewer-prompt.md	2026-11-03 08:13:12
+--- vendor/writing-plans/plan-document-reviewer-prompt.md	2026-11-07 10:16:02
++++ skills/writing-plans/plan-document-reviewer-prompt.md	2026-11-07 10:16:02
 @@ -6,8 +6,10 @@
  
  **Dispatch after:** The complete plan is written.

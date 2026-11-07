@@ -22,7 +22,9 @@ Never skip or condense a section. If a section has no findings, write "No issues
 
 **Code quality:** separation of concerns, error handling, type safety, DRY without premature abstraction, edge cases.
 
-**Tests:** tests verify real behavior, not mocks of the unit under test; edge cases covered; integration tests where behavior crosses modules; suite passes (run it if a test command is documented in the repo).
+**Design:** types or structures that let an invalid state be written; outside input validated deep inside instead of parsed once at the boundary, or re-checked after it was; business logic tangled with I/O instead of kept in pure functions; operations that leave a different state when run twice or rerun after a crash halfway; shared mutable state with more than one writer; a new requirement bolted onto a design it does not fit; complexity the change made unnecessary but left in place.
+
+**Tests:** tests verify real behavior, not mocks of the unit under test; a test that would still pass if every function under test returned nothing (null, empty, default) asserts nothing; edge cases covered; integration tests where behavior crosses modules; suite passes (run it if a test command is documented in the repo).
 
 **Production readiness:** migrations, backward compatibility, docs, secrets, no debug leftovers.
 

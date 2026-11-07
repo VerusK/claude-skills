@@ -14,6 +14,8 @@ Never skip or condense a section. If a section has no findings, write "No issues
 
 Evaluate: component boundaries and coupling; dependency graph; data flow and bottlenecks; single points of failure; security boundaries (auth, data access, API edges); whether key flows deserve a diagram in the plan. For each new code path or integration point describe one realistic production failure and whether the plan handles it. If the plan introduces a new artifact (binary, package, container, workflow), check that build/publish/update is part of the plan.
 
+Check the design decisions the plan makes: whether its data shapes let an invalid state be represented; whether outside input is parsed once at the boundary and trusted inside; whether business logic stays in pure functions with I/O around it; whether each operation is idempotent, including a rerun after a crash halfway; whether shared mutable state has a single writer; whether the plan bolts a new requirement onto a design it does not fit instead of reshaping it; and whether it adds complexity where removing some first would do.
+
 ## 2. Code quality review
 
 Evaluate: module organization; DRY violations (be aggressive); error handling and missing edge cases (name them); technical-debt hotspots; over- or under-engineering relative to the plan's stated constraints; whether existing diagrams or docs in touched files stay accurate.
