@@ -173,7 +173,8 @@ if [ -z "$ORCA_DISABLED" ] && command -v orca >/dev/null 2>&1 && orca status --j
     # Instead open in the session's workspace and cd into the repo.
     ORCA_TARGET="path:$REPO"
     CODEX_CMD="codex -c check_for_update_on_startup=false$CODEX_FLAGS"
-    SESSION_WT_PATH="${ORCA_WORKTREE_ID#*::}"
+    SESSION_WT_PATH="${ORCA_WORKTREE_ID:-}"  # unset outside an Orca terminal; `set -u` fails on `${unset#...}` in bash 4+
+    SESSION_WT_PATH="${SESSION_WT_PATH#*::}"
     [ -d "$SESSION_WT_PATH" ] && SESSION_WT_PATH="$(cd "$SESSION_WT_PATH" && pwd -P)"
     if [ -n "${ORCA_WORKTREE_ID:-}" ] && [ "$SESSION_WT_PATH" != "$ORCA_WORKTREE_ID" ] && [ "$SESSION_WT_PATH" != "$REPO" ]; then
       ORCA_TARGET="id:$ORCA_WORKTREE_ID"
