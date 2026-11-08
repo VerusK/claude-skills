@@ -1,17 +1,33 @@
 #!/usr/bin/env bash
-# Generate a review package: commit list, stat summary, and the net
-# diff with extended context, written to a file the reviewer reads in one
-# call. Using the recorded per-task BASE (not HEAD~1) keeps multi-commit
-# tasks intact.
+# Generate a review package: commit list, stat summary, and the changed hunks
+# (default 3 lines of context, lockfiles left out of the hunks), written to a
+# file the reviewer reads in one call. Using the recorded per-task BASE (not
+# HEAD~1) keeps multi-commit tasks intact.
 #
-# Usage: review-package PLAN_FILE BASE HEAD [OUTFILE]
+# --commits limits the package to the task's own commits when other tasks'
+# commits are interleaved in BASE..HEAD (tasks run in parallel): each listed
+# commit must lie in BASE..HEAD, and the package shows each one's stat and
+# hunks in history order instead of the net diff of the whole range.
+#
+# The summary line ends with "docs-only" when every changed path is
+# documentation (.md, .mdx, .markdown, .rst, .adoc): such a task skips the
+# per-task review, and the branch-level review covers it.
+#
+# Usage: review-package [--commits SHA[,SHA...]] PLAN_FILE BASE HEAD [OUTFILE]
 # Default OUTFILE: <repo-root>/.superpowers/sdd/<plan-basename>/review-<base7>..<head7>.diff
 # (named per range, so a re-review after fixes gets a distinct fresh file).
 set -euo pipefail
 
+usage() { echo "usage: review-package [--commits SHA[,SHA...]] PLAN_FILE BASE HEAD [OUTFILE]" >&2; exit 2; }
+
+commits=""
+if [ "${1:-}" = "--commits" ]; then
+  [ $# -ge 2 ] && [ -n "$2" ] || usage
+  commits=$(printf '%s' "$2" | tr ',' ' ')
+  shift 2
+fi
 if [ $# -lt 3 ] || [ $# -gt 4 ]; then
-  echo "usage: review-package PLAN_FILE BASE HEAD [OUTFILE]" >&2
-  exit 2
+  usage
 fi
 
 plan=$1
@@ -27,27 +43,76 @@ git rev-parse --verify --quiet "$head" >/dev/null || { echo "bad HEAD: $head" >&
 git merge-base --is-ancestor "$base" "$head" || { echo "HEAD is not a descendant of BASE: ${base}..${head}" >&2; exit 3; }
 [ "$(git rev-list --count "${base}..${head}")" -gt 0 ] || { echo "empty commit range: ${base}..${head}" >&2; exit 3; }
 
+# The listed commits, full SHAs, in history order; each must lie in BASE..HEAD.
+picked=""
+if [ -n "$commits" ]; then
+  want=""
+  for c in $commits; do
+    sha=$(git rev-parse --verify --quiet "${c}^{commit}") || { echo "bad commit: $c" >&2; exit 2; }
+    want="$want $sha"
+  done
+  for sha in $want; do
+    git rev-list "${base}..${head}" | grep -qx "$sha" || { echo "commit not in ${base}..${head}: $sha" >&2; exit 3; }
+  done
+  for sha in $(git rev-list --reverse "${base}..${head}"); do
+    case " $want " in *" $sha "*) picked="$picked $sha" ;; esac
+  done
+fi
+
 if [ $# -eq 4 ]; then
   out=$4
 else
   # Invoke via bash rather than direct exec: some extractors (Python zipfile)
   # strip Unix exec bits when unpacking marketplace packages (#2040).
   dir=$("${BASH:-bash}" "$(cd "$(dirname "$0")" && pwd)/sdd-workspace" "$plan")
-  out="$dir/review-$(git rev-parse --short "$base")..$(git rev-parse --short "$head").diff"
+  suffix=""
+  # One package per commit set: a short hash of the list keeps the name short.
+  [ -n "$picked" ] && suffix="-$(printf '%s' "$picked" | git hash-object --stdin | cut -c 1-7)"
+  out="$dir/review-$(git rev-parse --short "$base")..$(git rev-parse --short "$head")${suffix}.diff"
 fi
 
+# Lockfiles stay in the stat summary but out of the hunks.
+# Pathspecs are anchored at the repo root, so running from a subdirectory
+# still packages the whole change.
+nolock=(':/' ':(top,exclude)*package-lock.json' ':(top,exclude)*yarn.lock' ':(top,exclude)*pnpm-lock.yaml'
+  ':(top,exclude)*Cargo.lock' ':(top,exclude)*poetry.lock' ':(top,exclude)*composer.lock'
+  ':(top,exclude)*Gemfile.lock' ':(top,exclude)*go.sum')
+
 {
-  echo "# Review package: ${base}..${head}"
-  echo
-  echo "## Commits"
-  git log --oneline "${base}..${head}"
-  echo
-  echo "## Files changed"
-  git diff --stat "${base}..${head}"
-  echo
-  echo "## Diff"
-  git diff -U10 "${base}..${head}"
+  if [ -n "$picked" ]; then
+    echo "# Review package: ${base}..${head}, task commits only"
+    echo
+    echo "## Commits"
+    git log --no-walk=unsorted --oneline $picked
+    echo
+    echo "## Files changed"
+    git show --stat --format='%h %s' $picked
+    echo
+    echo "## Diff"
+    git show -U3 --format='### %h %s' $picked -- "${nolock[@]}"
+  else
+    echo "# Review package: ${base}..${head}"
+    echo
+    echo "## Commits"
+    git log --oneline "${base}..${head}"
+    echo
+    echo "## Files changed"
+    git diff --stat "${base}..${head}"
+    echo
+    echo "## Diff"
+    git diff -U3 "${base}..${head}" -- "${nolock[@]}"
+  fi
 } > "$out"
 
-commits=$(git rev-list --count "${base}..${head}")
-echo "wrote ${out}: ${commits} commit(s), $(wc -c < "$out" | tr -d ' ') bytes"
+if [ -n "$picked" ]; then
+  n=$(echo $picked | wc -w | tr -d ' ')
+  files=$(git show --name-only --format= $picked)
+else
+  n=$(git rev-list --count "${base}..${head}")
+  files=$(git diff --name-only "${base}..${head}")
+fi
+kind=""
+if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -v '^$' | grep -qviE '\.(md|mdx|markdown|rst|adoc)$'; then
+  kind=", docs-only"
+fi
+echo "wrote ${out}: ${n} commit(s), $(wc -c < "$out" | tr -d ' ') bytes${kind}"

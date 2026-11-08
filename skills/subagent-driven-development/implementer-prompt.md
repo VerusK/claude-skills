@@ -13,7 +13,9 @@ Subagent (verus-worker):
     ## Task Description
 
     Read your task brief first: [BRIEF_FILE]
-    It contains the full task text from the plan.
+    It contains the task text from the plan — or, for a task over the 10 KB
+    brief cap, a pointer brief: the task's intro and each step's line range
+    in the plan. Read each step's range when you reach it, once.
 
     ## Context
 
@@ -50,6 +52,16 @@ Subagent (verus-worker):
 
     While iterating, run the focused test for what you're changing; run the
     full suite once before committing, not after every edit.
+
+    ## Shell
+
+    - Never put `rm` or `find … -delete` in a command: permission settings
+      deny them, and the denial drops the whole compound command. Leave
+      scratch files where they are; the controller cleans up.
+    - No bare `sleep`: run long commands in the background instead.
+    - The shell may be zsh: quote globs (`--include='*.md'`) and variables
+      (`"$f"`), and pass several paths as separate arguments, not as one
+      space-joined variable.
 
     ## You Do Not Dispatch Subagents
 
@@ -124,8 +136,8 @@ Subagent (verus-worker):
 
     If the task review finds issues, you will be resumed with the findings.
     Fix them, re-run the tests that cover the amended code, and append a fix
-    report to your report file: what you changed, the covering tests you
-    ran, the command, and the output. Reviewers will not re-run tests for
+    report to your report file under a `## Fix round <R>` heading: what you
+    changed, the covering tests you ran, the command, and the output. Reviewers will not re-run tests for
     you — your report is the test evidence. Then reply with the same short
     status contract as your first report.
 

@@ -27,11 +27,21 @@
 # Single source of truth for the workspace location, so task-brief and
 # review-package cannot drift to different directories.
 #
-# Usage: sdd-workspace PLAN_FILE
+# --remove deletes the plan's workspace once the branch review is clean, so
+# no agent has to put `rm -rf` in a command (the owner's settings deny it).
+# It finds the workspace the same way, never creates one, and touches
+# nothing outside .superpowers/sdd/.
+#
+# Usage: sdd-workspace [--remove] PLAN_FILE
 set -euo pipefail
 
+remove=0
+if [ "${1:-}" = "--remove" ]; then
+  remove=1
+  shift
+fi
 if [ $# -ne 1 ]; then
-  echo "usage: sdd-workspace PLAN_FILE" >&2
+  echo "usage: sdd-workspace [--remove] PLAN_FILE" >&2
   exit 2
 fi
 
@@ -54,6 +64,27 @@ case "$plan_abs" in
   "$root"/*) plan_id=${plan_abs#"$root"/} ;;
   *)         plan_id=$plan_abs ;;
 esac
+
+if [ "$remove" = 1 ]; then
+  # Walk the candidates in resolution order without claiming any: the first
+  # one that is missing ends the search, a marker-less one would be adopted,
+  # a marker naming this plan is ours.
+  parent=$(basename "$plan_dir")
+  cands=("$base/$slug" "$base/$slug-$parent")
+  n=2
+  while [ -e "$base/$slug-$parent-$n" ]; do cands+=("$base/$slug-$parent-$n"); n=$((n + 1)); done
+  for d in "${cands[@]}"; do
+    [ -e "$d" ] || break
+    if [ ! -e "$d/plan-path" ] || [ "$(cat "$d/plan-path")" = "$plan_id" ]; then
+      case "$d" in "$base"/?*) ;; *) echo "refusing to remove $d" >&2; exit 3 ;; esac
+      rm -rf -- "$d"
+      echo "removed $d"
+      exit 0
+    fi
+  done
+  echo "no workspace for $plan_id"
+  exit 0
+fi
 
 # True when the workspace at $1 is (or becomes) this plan's: an existing
 # marker must name this plan; a missing marker means a new workspace or a

@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
---- vendor/subagent-driven-development/SKILL.md	2026-11-07 14:37:25
-+++ skills/subagent-driven-development/SKILL.md	2026-11-07 14:41:33
+--- vendor/subagent-driven-development/SKILL.md	2026-11-08 06:30:55
++++ skills/subagent-driven-development/SKILL.md	2026-11-08 06:40:25
 @@ -36,25 +36,17 @@
  digraph when_to_use {
      "Have implementation plan?" [shape=diamond];
@@ -29,7 +29,14 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  ## The Process
  
-@@ -72,7 +64,7 @@
+@@ -68,11 +60,13 @@
+         "Implementer asks questions?" [shape=diamond];
+         "Answer questions, provide context" [shape=box];
+         "Implementer implements, tests, commits, self-reviews" [shape=box];
+-        "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)" [shape=box];
++        "Generate review package" [shape=box];
++        "Package says docs-only?" [shape=diamond];
++        "Dispatch task reviewer (./task-reviewer-prompt.md)" [shape=box];
          "Spec ✅ and quality approved?" [shape=diamond];
          "Finding conflicts with plan text?" [shape=diamond];
          "Rule on the conflict, ledger the ruling" [shape=box];
@@ -38,7 +45,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
          "Dispatch scoped re-review (./re-review-prompt.md)" [shape=box];
          "All findings addressed?" [shape=diamond];
          "R = 5?" [shape=diamond];
-@@ -83,14 +75,14 @@
+@@ -83,30 +77,33 @@
          "Append completion to ledger, mark todo complete" [shape=box];
      }
  
@@ -58,7 +65,14 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
      "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer asks questions?";
      "Implementer asks questions?" -> "Answer questions, provide context" [label="yes"];
      "Answer questions, provide context" -> "Implementer implements, tests, commits, self-reviews";
-@@ -100,13 +92,13 @@
+     "Implementer asks questions?" -> "Implementer implements, tests, commits, self-reviews" [label="no"];
+-    "Implementer implements, tests, commits, self-reviews" -> "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)";
+-    "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)" -> "Spec ✅ and quality approved?";
++    "Implementer implements, tests, commits, self-reviews" -> "Generate review package";
++    "Generate review package" -> "Package says docs-only?";
++    "Package says docs-only?" -> "Append completion to ledger, mark todo complete" [label="yes - branch review covers it"];
++    "Package says docs-only?" -> "Dispatch task reviewer (./task-reviewer-prompt.md)" [label="no"];
++    "Dispatch task reviewer (./task-reviewer-prompt.md)" -> "Spec ✅ and quality approved?";
      "Spec ✅ and quality approved?" -> "Append completion to ledger, mark todo complete" [label="yes"];
      "Spec ✅ and quality approved?" -> "Finding conflicts with plan text?" [label="no"];
      "Finding conflicts with plan text?" -> "Rule on the conflict, ledger the ruling" [label="yes"];
@@ -76,7 +90,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
      "R = 5?" -> "Adjudicate each open finding" [label="yes - breaker trips"];
      "Adjudicate each open finding" -> "Any load-bearing finding?";
      "Any load-bearing finding?" -> "Rule and continue; stop only if every path forward is a guess" [label="yes"];
-@@ -114,17 +106,24 @@
+@@ -114,17 +111,24 @@
      "Park findings in ledger with rulings" -> "Append completion to ledger, mark todo complete";
      "Append completion to ledger, mark todo complete" -> "More tasks remain?";
      "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
@@ -107,7 +121,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  Never start implementation on a main/master branch without your human
  partner's explicit consent.
  
-@@ -183,41 +182,20 @@
+@@ -183,41 +187,20 @@
  
  ## Model Selection
  
@@ -160,7 +174,35 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## The Task Loop
  
  **Batch small same-shape work.** When the plan lists several tasks that are
-@@ -295,7 +273,7 @@
+@@ -249,10 +232,16 @@
+ and fix-round diffs need it.
+ 
+ - **Task brief:** before dispatching an implementer, run this skill's
+-  `bash scripts/task-brief PLAN_FILE N` — it extracts the task's full text to a
++  `bash scripts/task-brief PLAN_FILE N` — it extracts the task's text to a
+   uniquely named file and prints the path. Compose the dispatch so the
+   brief stays the single source of
+-  requirements. Your dispatch should contain: (1) one line on where this
++  requirements. **A brief is capped at ~10 KB:** every subagent of the task
++  reads it, and a 52 KB brief read by seven of them is 360 KB of tokens.
++  Over the cap the script writes a pointer brief — the task's intro and one
++  line per step with its line range in the plan — and readers open only the
++  sections they need. Never write a brief by hand, and never paste plan
++  text into a brief or a dispatch: point at the plan file and line range.
++  Your dispatch should contain: (1) one line on where this
+   task fits in the project; (2) the brief path, introduced as "read this
+   first — it is your requirements, with the exact values to use verbatim";
+   (3) interfaces and decisions from earlier tasks that the brief cannot
+@@ -287,7 +276,7 @@
+ 
+ Implementer subagents report one of four statuses. Handle each appropriately:
+ 
+-**DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path.
++**DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path — unless the printed line ends in `docs-only` (see step 3).
+ 
+ **DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
+ 
+@@ -295,7 +284,7 @@
  
  **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
  1. If it's a context problem, provide more context and re-dispatch with the same model
@@ -169,7 +211,42 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  3. If the task is too large, break it into smaller pieces
  4. If the plan itself is wrong, rule on the correction, ledger it, and re-dispatch with the ruling carried in the dispatch
  
-@@ -378,12 +356,11 @@
+@@ -308,19 +297,29 @@
+ ### 3. Review the task
+ 
+ Per-task reviews are task-scoped gates. The broad review happens once, at the
+-final whole-branch review. Never skip the task review, and never accept a
++final whole-branch review. Never skip the task review of a task that changes
++code, scripts or config, and never accept a
+ report missing either verdict — spec compliance AND task quality are both
+ required. Implementer self-review never replaces the task review; both are
+ needed.
+ 
++- **Docs-only tasks skip the task review.** When the review package's
++  printed line ends in `docs-only` (every changed path is `.md`, `.mdx`,
++  `.markdown`, `.rst` or `.adoc` — no code, no scripts, no config), do not
++  dispatch a reviewer: the branch-level `review` covers it. Ledger it as
++  `Task <N>: complete (commits <base7>..<head7>, docs-only, no task review)`.
+ - Hand the reviewer its diff as a file: run this skill's
+   `bash scripts/review-package PLAN_FILE BASE HEAD` and pass the reviewer the file path
+   it prints (or, without bash: `git log --oneline`, `git diff --stat`,
+-  and `git diff -U10` for the range, redirected to one uniquely named
++  and `git diff` for the range, redirected to one uniquely named
+   file). The output never enters your own context, and the reviewer sees
+-  the commit list, stat summary, and full diff with context in one Read
+-  call. Use the BASE you recorded before dispatching the implementer —
+-  never `HEAD~1`, which silently truncates multi-commit tasks. Never
++  the commit list, stat summary, and the changed hunks in one Read
++  call — hunks, not whole files and not the whole branch. Use the BASE you
++  recorded before dispatching the implementer —
++  never `HEAD~1`, which silently truncates multi-commit tasks. When other
++  tasks' commits are interleaved in BASE..HEAD, add
++  `--commits <sha>,<sha>` with the commits the implementer reported, so
++  the package holds this task's commits only. Never
+   dispatch a task reviewer without a diff file.
+ - **Reviewer inputs:** the task reviewer gets three paths — the same brief
+   file, the report file, and the review package — plus the global
+@@ -378,25 +377,28 @@
  dispatch a fresh implementer carrying the brief path, the report-file path,
  and the findings — the report file is the persistent memory either way.
  
@@ -186,8 +263,29 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +cannot see its own problem — fresh eyes in one move.
  
  **Every round, either way:** the implementer fixes, re-runs the tests
- covering the amended code, appends its fix report to the same report file,
-@@ -444,30 +421,16 @@
+-covering the amended code, appends its fix report to the same report file,
+-and returns the short contract. Before re-dispatching the reviewer, confirm
++covering the amended code, appends its fix report to the same report file
++under a `## Fix round <R>` heading, and returns the short contract.
++Before re-dispatching the reviewer, confirm
+ the fix report contains the covering tests, the command run, and the
+ output; dispatch the re-review once all three are present. Name the
+ covering test files in the fix message — a one-line fix does not need the
+ whole suite.
+ 
+ **The re-review is scoped.** Run `bash scripts/review-package PLAN_FILE FIX_BASE HEAD`
+-where FIX_BASE is the head the previous review saw, and dispatch
++where FIX_BASE is the head the previous review saw (with `--commits` and
++the fix commits when other tasks' commits are interleaved), and dispatch
+ [re-review-prompt.md](re-review-prompt.md) with the findings list, the
+-brief, the report file, and the printed diff path. The re-reviewer verdicts
++printed diff path, and the report file, of which it reads only the latest
++`## Fix round` section. It does not re-read the brief or the first review
++package: the findings carry what it verifies. The re-reviewer verdicts
+ each finding ADDRESSED or NOT ADDRESSED and flags new breakage in the fix
+ diff only. New Critical/Important breakage in the fix diff joins the open
+ findings list. Out-of-scope observations go to the ledger as deferred
+@@ -444,30 +446,16 @@
  
  ## Final Review
  
@@ -226,16 +324,26 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -484,7 +447,7 @@
- the record now. Sibling directories belong to other plans; leave them
- alone.
+@@ -480,11 +468,14 @@
+ made in secret.
+ 
+ When the final whole-branch review is clean and its fixes are merged,
+-delete this plan's workspace (`rm -rf <workspace>`) — the git history is
+-the record now. Sibling directories belong to other plans; leave them
+-alone.
++delete this plan's workspace with this skill's
++`bash scripts/sdd-workspace --remove PLAN_FILE` — the git history is
++the record now. Never put `rm` in a command for it: permission settings
++often deny `rm`, and a denial drops the whole compound command. The script
++removes this plan's directory only; sibling directories belong to other
++plans.
  
 -Use superpowers:finishing-a-development-branch.
 +`review` invokes `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself; invoke it here only if `review` stopped without handing off.
  
  ## Common Rationalizations
  
-@@ -505,9 +468,9 @@
+@@ -505,9 +496,9 @@
  ```
  You: I'm using Subagent-Driven Development to execute this plan.
  
@@ -248,7 +356,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  [Create todos for all tasks]
  
  Task 1: Hook installation script
-@@ -559,10 +522,10 @@
+@@ -559,10 +550,10 @@
  ...
  
  [After all tasks]
@@ -262,9 +370,9 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +Done! review handed off to finishing-a-development-branch.
  ```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
---- vendor/subagent-driven-development/implementer-prompt.md	2026-11-07 14:37:25
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-11-07 14:37:25
-@@ -2,11 +2,11 @@
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-11-08 06:30:55
++++ skills/subagent-driven-development/implementer-prompt.md	2026-11-08 06:36:44
+@@ -2,18 +2,20 @@
  
  Use this template when dispatching an implementer subagent.
  
@@ -279,7 +387,17 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
    prompt: |
      You are implementing Task N: [task name]
  
-@@ -39,7 +39,11 @@
+     ## Task Description
+ 
+     Read your task brief first: [BRIEF_FILE]
+-    It contains the full task text from the plan.
++    It contains the task text from the plan — or, for a task over the 10 KB
++    brief cap, a pointer brief: the task's intro and each step's line range
++    in the plan. Read each step's range when you reach it, once.
+ 
+     ## Context
+ 
+@@ -39,7 +41,11 @@
      5. Self-review (see below)
      6. Report back
  
@@ -292,7 +410,24 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
  
      **While you work:** If you encounter something unexpected or unclear, **ask questions**.
      It's always OK to pause and clarify. Don't guess or make assumptions.
-@@ -86,7 +90,7 @@
+@@ -47,6 +53,16 @@
+     While iterating, run the focused test for what you're changing; run the
+     full suite once before committing, not after every edit.
+ 
++    ## Shell
++
++    - Never put `rm` or `find … -delete` in a command: permission settings
++      deny them, and the denial drops the whole compound command. Leave
++      scratch files where they are; the controller cleans up.
++    - No bare `sleep`: run long commands in the background instead.
++    - The shell may be zsh: quote globs (`--include='*.md'`) and variables
++      (`"$f"`), and pass several paths as separate arguments, not as one
++      space-joined variable.
++
+     ## You Do Not Dispatch Subagents
+ 
+     Do all of this task's work yourself. Never spawn a subagent to
+@@ -86,7 +102,7 @@
  
      **How to escalate:** Report back with status BLOCKED or NEEDS_CONTEXT. Describe
      specifically what you're stuck on, what you've tried, and what kind of help you need.
@@ -301,10 +436,21 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
      or break the task into smaller pieces.
  
      ## Before Reporting Back: Self-Review
+@@ -120,8 +136,8 @@
+ 
+     If the task review finds issues, you will be resumed with the findings.
+     Fix them, re-run the tests that cover the amended code, and append a fix
+-    report to your report file: what you changed, the covering tests you
+-    ran, the command, and the output. Reviewers will not re-run tests for
++    report to your report file under a `## Fix round <R>` heading: what you
++    changed, the covering tests you ran, the command, and the output. Reviewers will not re-run tests for
+     you — your report is the test evidence. Then reply with the same short
+     status contract as your first report.
+ 
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
---- vendor/subagent-driven-development/re-review-prompt.md	2026-11-07 14:37:25
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-11-07 14:37:25
-@@ -7,11 +7,11 @@
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-11-08 06:30:55
++++ skills/subagent-driven-development/re-review-prompt.md	2026-11-08 06:36:44
+@@ -7,35 +7,37 @@
  **Purpose:** Verify each finding from the previous review was addressed, and
  that the fix itself broke nothing.
  
@@ -319,18 +465,381 @@ diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent
    prompt: |
      You are re-reviewing one task's fix round. A previous review produced
      findings; an implementer has attempted to fix them. Your job is to
-@@ -101,8 +101,6 @@
+     verdict each finding and inspect the fix diff — nothing else.
+ 
+-    ## The Task
+-
+-    Read the task brief: [BRIEF_FILE]
+-
+     ## The Findings Under Verification
+ 
+     [FINDINGS]
+ 
++    Your inputs are this list and the fix diff. Do not read the task brief
++    or the first review package; open a section of the brief
++    ([BRIEF_FILE]) only when a finding quotes a requirement you cannot
++    verdict without it.
++
+     ## The Fix
+ 
+-    Read the implementer's report (fix reports are appended at the end):
+-    [REPORT_FILE]
++    Read only the latest `## Fix round` section of the implementer's report
++    [REPORT_FILE] — find it with `grep -n '^## Fix round' [REPORT_FILE]`
++    and Read from its last match. Earlier sections were already reviewed.
+ 
+     **Fix base:** [FIX_BASE_SHA] (the head the previous review saw)
+     **Head:** [HEAD_SHA]
+     **Diff file:** [DIFF_FILE]
+ 
+     Read the diff file once — it contains the fix commits, a stat summary,
+-    and the fix diff with surrounding context. Do not re-run git commands.
++    and the fix diff's hunks. Do not re-run git commands.
+     If the diff file is missing, fetch the diff yourself:
+     `git diff --stat [FIX_BASE_SHA]..[HEAD_SHA]` and
+     `git diff [FIX_BASE_SHA]..[HEAD_SHA]`.
+@@ -43,6 +45,16 @@
+     Your review is read-only on this checkout. Do not mutate the working
+     tree, the index, HEAD, or branch state in any way.
+ 
++    ## Shell
++
++    - Never put `rm` or `find … -delete` in a command: permission settings
++      deny them, and the denial drops the whole compound command. Leave
++      scratch files where they are; the controller cleans up.
++    - No bare `sleep`: run long commands in the background instead.
++    - The shell may be zsh: quote globs (`--include='*.md'`) and variables
++      (`"$f"`), and pass several paths as separate arguments, not as one
++      space-joined variable.
++
+     ## You Do Not Dispatch Subagents
+ 
+     Do all of this review yourself. Never spawn a subagent to review part
+@@ -101,12 +113,12 @@
  ```
  
  **Placeholders:**
 -- `[MODEL]` — REQUIRED: reviewer model per SKILL.md Model Selection; scoped
 -  re-reviews of small fix diffs take a cheap-to-mid tier
- - `[BRIEF_FILE]` — the task brief file (same file the implementer worked from)
+-- `[BRIEF_FILE]` — the task brief file (same file the implementer worked from)
++- `[BRIEF_FILE]` — the task brief file (same file the implementer worked
++  from); the re-reviewer opens it only when a finding needs it
  - `[FINDINGS]` — the Critical/Important findings and spec gaps from the
    previous review, copied verbatim, one per bullet
+-- `[REPORT_FILE]` — the implementer's report file (fix reports appended)
++- `[REPORT_FILE]` — the implementer's report file (fix reports appended,
++  each under `## Fix round <R>`)
+ - `[FIX_BASE_SHA]` — the head the previous review saw
+ - `[HEAD_SHA]` — current commit
+ - `[DIFF_FILE]` — the path `bash scripts/review-package PLAN_FILE FIX_BASE HEAD` printed
+diff -ruN vendor/subagent-driven-development/scripts/review-package skills/subagent-driven-development/scripts/review-package
+--- vendor/subagent-driven-development/scripts/review-package	2026-11-08 06:30:55
++++ skills/subagent-driven-development/scripts/review-package	2026-11-08 06:35:01
+@@ -1,17 +1,33 @@
+ #!/usr/bin/env bash
+-# Generate a review package: commit list, stat summary, and the net
+-# diff with extended context, written to a file the reviewer reads in one
+-# call. Using the recorded per-task BASE (not HEAD~1) keeps multi-commit
+-# tasks intact.
++# Generate a review package: commit list, stat summary, and the changed hunks
++# (default 3 lines of context, lockfiles left out of the hunks), written to a
++# file the reviewer reads in one call. Using the recorded per-task BASE (not
++# HEAD~1) keeps multi-commit tasks intact.
+ #
+-# Usage: review-package PLAN_FILE BASE HEAD [OUTFILE]
++# --commits limits the package to the task's own commits when other tasks'
++# commits are interleaved in BASE..HEAD (tasks run in parallel): each listed
++# commit must lie in BASE..HEAD, and the package shows each one's stat and
++# hunks in history order instead of the net diff of the whole range.
++#
++# The summary line ends with "docs-only" when every changed path is
++# documentation (.md, .mdx, .markdown, .rst, .adoc): such a task skips the
++# per-task review, and the branch-level review covers it.
++#
++# Usage: review-package [--commits SHA[,SHA...]] PLAN_FILE BASE HEAD [OUTFILE]
+ # Default OUTFILE: <repo-root>/.superpowers/sdd/<plan-basename>/review-<base7>..<head7>.diff
+ # (named per range, so a re-review after fixes gets a distinct fresh file).
+ set -euo pipefail
+ 
++usage() { echo "usage: review-package [--commits SHA[,SHA...]] PLAN_FILE BASE HEAD [OUTFILE]" >&2; exit 2; }
++
++commits=""
++if [ "${1:-}" = "--commits" ]; then
++  [ $# -ge 2 ] && [ -n "$2" ] || usage
++  commits=$(printf '%s' "$2" | tr ',' ' ')
++  shift 2
++fi
+ if [ $# -lt 3 ] || [ $# -gt 4 ]; then
+-  echo "usage: review-package PLAN_FILE BASE HEAD [OUTFILE]" >&2
+-  exit 2
++  usage
+ fi
+ 
+ plan=$1
+@@ -27,27 +43,76 @@
+ git merge-base --is-ancestor "$base" "$head" || { echo "HEAD is not a descendant of BASE: ${base}..${head}" >&2; exit 3; }
+ [ "$(git rev-list --count "${base}..${head}")" -gt 0 ] || { echo "empty commit range: ${base}..${head}" >&2; exit 3; }
+ 
++# The listed commits, full SHAs, in history order; each must lie in BASE..HEAD.
++picked=""
++if [ -n "$commits" ]; then
++  want=""
++  for c in $commits; do
++    sha=$(git rev-parse --verify --quiet "${c}^{commit}") || { echo "bad commit: $c" >&2; exit 2; }
++    want="$want $sha"
++  done
++  for sha in $want; do
++    git rev-list "${base}..${head}" | grep -qx "$sha" || { echo "commit not in ${base}..${head}: $sha" >&2; exit 3; }
++  done
++  for sha in $(git rev-list --reverse "${base}..${head}"); do
++    case " $want " in *" $sha "*) picked="$picked $sha" ;; esac
++  done
++fi
++
+ if [ $# -eq 4 ]; then
+   out=$4
+ else
+   # Invoke via bash rather than direct exec: some extractors (Python zipfile)
+   # strip Unix exec bits when unpacking marketplace packages (#2040).
+   dir=$("${BASH:-bash}" "$(cd "$(dirname "$0")" && pwd)/sdd-workspace" "$plan")
+-  out="$dir/review-$(git rev-parse --short "$base")..$(git rev-parse --short "$head").diff"
++  suffix=""
++  # One package per commit set: a short hash of the list keeps the name short.
++  [ -n "$picked" ] && suffix="-$(printf '%s' "$picked" | git hash-object --stdin | cut -c 1-7)"
++  out="$dir/review-$(git rev-parse --short "$base")..$(git rev-parse --short "$head")${suffix}.diff"
+ fi
+ 
++# Lockfiles stay in the stat summary but out of the hunks.
++# Pathspecs are anchored at the repo root, so running from a subdirectory
++# still packages the whole change.
++nolock=(':/' ':(top,exclude)*package-lock.json' ':(top,exclude)*yarn.lock' ':(top,exclude)*pnpm-lock.yaml'
++  ':(top,exclude)*Cargo.lock' ':(top,exclude)*poetry.lock' ':(top,exclude)*composer.lock'
++  ':(top,exclude)*Gemfile.lock' ':(top,exclude)*go.sum')
++
+ {
+-  echo "# Review package: ${base}..${head}"
+-  echo
+-  echo "## Commits"
+-  git log --oneline "${base}..${head}"
+-  echo
+-  echo "## Files changed"
+-  git diff --stat "${base}..${head}"
+-  echo
+-  echo "## Diff"
+-  git diff -U10 "${base}..${head}"
++  if [ -n "$picked" ]; then
++    echo "# Review package: ${base}..${head}, task commits only"
++    echo
++    echo "## Commits"
++    git log --no-walk=unsorted --oneline $picked
++    echo
++    echo "## Files changed"
++    git show --stat --format='%h %s' $picked
++    echo
++    echo "## Diff"
++    git show -U3 --format='### %h %s' $picked -- "${nolock[@]}"
++  else
++    echo "# Review package: ${base}..${head}"
++    echo
++    echo "## Commits"
++    git log --oneline "${base}..${head}"
++    echo
++    echo "## Files changed"
++    git diff --stat "${base}..${head}"
++    echo
++    echo "## Diff"
++    git diff -U3 "${base}..${head}" -- "${nolock[@]}"
++  fi
+ } > "$out"
+ 
+-commits=$(git rev-list --count "${base}..${head}")
+-echo "wrote ${out}: ${commits} commit(s), $(wc -c < "$out" | tr -d ' ') bytes"
++if [ -n "$picked" ]; then
++  n=$(echo $picked | wc -w | tr -d ' ')
++  files=$(git show --name-only --format= $picked)
++else
++  n=$(git rev-list --count "${base}..${head}")
++  files=$(git diff --name-only "${base}..${head}")
++fi
++kind=""
++if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -v '^$' | grep -qviE '\.(md|mdx|markdown|rst|adoc)$'; then
++  kind=", docs-only"
++fi
++echo "wrote ${out}: ${n} commit(s), $(wc -c < "$out" | tr -d ' ') bytes${kind}"
+diff -ruN vendor/subagent-driven-development/scripts/sdd-workspace skills/subagent-driven-development/scripts/sdd-workspace
+--- vendor/subagent-driven-development/scripts/sdd-workspace	2026-11-08 06:30:55
++++ skills/subagent-driven-development/scripts/sdd-workspace	2026-11-08 06:35:09
+@@ -27,11 +27,21 @@
+ # Single source of truth for the workspace location, so task-brief and
+ # review-package cannot drift to different directories.
+ #
+-# Usage: sdd-workspace PLAN_FILE
++# --remove deletes the plan's workspace once the branch review is clean, so
++# no agent has to put `rm -rf` in a command (the owner's settings deny it).
++# It finds the workspace the same way, never creates one, and touches
++# nothing outside .superpowers/sdd/.
++#
++# Usage: sdd-workspace [--remove] PLAN_FILE
+ set -euo pipefail
+ 
++remove=0
++if [ "${1:-}" = "--remove" ]; then
++  remove=1
++  shift
++fi
+ if [ $# -ne 1 ]; then
+-  echo "usage: sdd-workspace PLAN_FILE" >&2
++  echo "usage: sdd-workspace [--remove] PLAN_FILE" >&2
+   exit 2
+ fi
+ 
+@@ -54,6 +64,27 @@
+   "$root"/*) plan_id=${plan_abs#"$root"/} ;;
+   *)         plan_id=$plan_abs ;;
+ esac
++
++if [ "$remove" = 1 ]; then
++  # Walk the candidates in resolution order without claiming any: the first
++  # one that is missing ends the search, a marker-less one would be adopted,
++  # a marker naming this plan is ours.
++  parent=$(basename "$plan_dir")
++  cands=("$base/$slug" "$base/$slug-$parent")
++  n=2
++  while [ -e "$base/$slug-$parent-$n" ]; do cands+=("$base/$slug-$parent-$n"); n=$((n + 1)); done
++  for d in "${cands[@]}"; do
++    [ -e "$d" ] || break
++    if [ ! -e "$d/plan-path" ] || [ "$(cat "$d/plan-path")" = "$plan_id" ]; then
++      case "$d" in "$base"/?*) ;; *) echo "refusing to remove $d" >&2; exit 3 ;; esac
++      rm -rf -- "$d"
++      echo "removed $d"
++      exit 0
++    fi
++  done
++  echo "no workspace for $plan_id"
++  exit 0
++fi
+ 
+ # True when the workspace at $1 is (or becomes) this plan's: an existing
+ # marker must name this plan; a missing marker means a new workspace or a
+diff -ruN vendor/subagent-driven-development/scripts/task-brief skills/subagent-driven-development/scripts/task-brief
+--- vendor/subagent-driven-development/scripts/task-brief	2026-11-08 06:30:55
++++ skills/subagent-driven-development/scripts/task-brief	2026-11-08 06:34:26
+@@ -1,14 +1,23 @@
+ #!/usr/bin/env bash
+-# Extract one task's full text from an implementation plan into a file the
++# Extract one task's text from an implementation plan into a file the
+ # implementer reads in one call, so the task text never has to be pasted
+ # through the controller's context.
+ #
++# A brief is capped at BRIEF_CAP bytes (10 KB). A task whose text fits is
++# copied whole. A longer one gets a pointer brief: the task's intro (when it
++# fits) and one line per step or sub-heading with its line range in the plan,
++# so each reader opens only the sections it needs instead of every subagent
++# re-reading a 50 KB copy.
++#
+ # Usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]
+ # Default OUTFILE: <repo-root>/.superpowers/sdd/<plan-basename>/task-<N>-brief.md
+ # (per plan and per worktree; concurrent runs of the SAME plan in the same
+ # working tree share it).
+ set -euo pipefail
+ 
++BRIEF_CAP=10240
++INTRO_CAP=4096
++
+ if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+   echo "usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]" >&2
+   exit 2
+@@ -27,17 +36,81 @@
+   out="$dir/task-${n}-brief.md"
+ fi
+ 
+-awk -v n="$n" '
++# First and last plan line of the task (outside fenced code blocks).
++range=$(awk -v n="$n" '
+   /^```/ { infence = !infence }
+   !infence && /^#+[ \t]+Task[ \t]+[0-9]+/ {
+-    intask = ($0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)"))
++    if (intask) { last = NR - 1; intask = 0 }
++    if ($0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)")) { first = NR; intask = 1 }
+   }
+-  intask { print }
+-' "$plan" > "$out"
++  END {
++    if (intask) last = NR
++    if (first) print first, last
++  }
++' "$plan")
+ 
+-if [ ! -s "$out" ]; then
++if [ -z "$range" ]; then
++  : > "$out"
+   echo "task ${n} not found in ${plan} (no heading matching 'Task ${n}')" >&2
+   exit 3
+ fi
++first=${range% *}
++last=${range#* }
+ 
+-echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"
++sed -n "${first},${last}p" "$plan" > "$out"
++size=$(wc -c < "$out" | tr -d ' ')
++
++if [ "$size" -le "$BRIEF_CAP" ]; then
++  echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"
++  exit 0
++fi
++
++plan_abs="$(CDPATH= cd -- "$(dirname "$plan")" && pwd -P)/$(basename "$plan")"
++
++# Sections start at a heading below the task heading or at a checkbox step,
++# outside fenced code blocks. Each row: start, end, bytes, title.
++sections=$(LC_ALL=C awk -v first="$first" -v last="$last" '
++  NR < first || NR > last { next }
++  NR == first { next }
++  /^[ \t]*(```|~~~)/ { infence = !infence; bytes += length($0) + 1; next }
++  !infence && (/^#+[ \t]/ || /^[ \t]*[-*][ \t]+\[[ xX]\][ \t]/) {
++    if (start) print start "\t" NR - 1 "\t" bytes "\t" title
++    start = NR; bytes = 0; title = $0
++  }
++  { bytes += length($0) + 1 }
++  END { if (start) print start "\t" last "\t" bytes "\t" title }
++' "$plan")
++
++intro_end=$last
++if [ -n "$sections" ]; then
++  intro_end=$(( $(printf '%s\n' "$sections" | head -n 1 | cut -f 1) - 1 ))
++fi
++intro_size=$(sed -n "${first},${intro_end}p" "$plan" | wc -c | tr -d ' ')
++
++{
++  sed -n "${first}p" "$plan"
++  echo
++  echo "> **Pointer brief.** This task's text is ${size} bytes, over the ${BRIEF_CAP}-byte brief cap,"
++  echo "> so it is not copied here. It lives in \`${plan_abs}\`, lines ${first}-${last}."
++  echo "> Read a section with Read (offset = its first line, limit = its line count) when"
++  echo "> you need it, once. Exact values are in those sections: use them verbatim."
++  echo
++  if [ "$intro_end" -gt "$first" ] && [ "$intro_size" -le "$INTRO_CAP" ]; then
++    sed -n "$((first + 1)),${intro_end}p" "$plan"
++    echo
++  elif [ "$intro_end" -gt "$first" ]; then
++    echo "- lines $((first + 1))-${intro_end} ($((intro_end - first)) lines, ${intro_size} bytes): task intro"
++  fi
++  echo "## Sections of Task ${n}"
++  echo
++  if [ -n "$sections" ]; then
++    printf '%s\n' "$sections" | while IFS="$(printf '\t')" read -r s e b t; do
++      t=$(printf '%s' "$t" | sed -e 's/^[ \t]*//' -e 's/^[-*][ \t]*\[[ xX]\][ \t]*//' -e 's/^#*[ \t]*//')
++      echo "- lines ${s}-${e} ($((e - s + 1)) lines, ${b} bytes): ${t}"
++    done
++  else
++    echo "- lines ${first}-${last} ($((last - first + 1)) lines, ${size} bytes): the whole task (no steps or sub-headings to split on)"
++  fi
++} > "$out"
++
++echo "wrote ${out}: pointer brief, $(wc -c < "$out" | tr -d ' ') bytes (task text ${size} bytes in ${plan} lines ${first}-${last})"
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
---- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-07 14:37:25
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-07 14:37:25
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-08 06:30:55
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-08 06:36:44
 @@ -7,11 +7,11 @@
  **Purpose:** Verify one task's implementation matches its requirements (nothing
  more, nothing less) and is well-built (clean, tested, maintainable)
@@ -346,7 +855,49 @@ diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/suba
    prompt: |
      You are reviewing one task's implementation: first whether it matches its
      requirements, then whether it is well-built. This is a task-scoped gate,
-@@ -120,8 +120,20 @@
+@@ -21,6 +21,9 @@
+     ## What Was Requested
+ 
+     Read the task brief: [BRIEF_FILE]
++    If it is a pointer brief (a task over the 10 KB cap), open only the
++    plan sections that state requirements you check — files, interfaces,
++    expected behaviour and tests — not code listings the diff already shows.
+ 
+     Global constraints from the spec/design that bind this task:
+     [GLOBAL_CONSTRAINTS]
+@@ -36,10 +39,10 @@
+     **Diff file:** [DIFF_FILE]
+ 
+     Read the diff file once — it contains the commit list, a stat summary,
+-    and the full diff with surrounding context, and it is your view of the
+-    change. The diff's context lines ARE the changed files: do not Read a
+-    changed file separately unless a hunk you must judge is cut off
+-    mid-function — and say so in your report. Do not re-run git commands.
++    and the changed hunks with three lines of context, and it is your view
++    of the change. Do not Read a whole changed file: when a hunk you must
++    judge needs more context, Read just that range (offset/limit) and say so
++    in your report. Do not re-run git commands.
+     If the diff file is missing, fetch the diff yourself:
+     `git diff --stat [BASE_SHA]..[HEAD_SHA]` and `git diff [BASE_SHA]..[HEAD_SHA]`.
+     Do not crawl the broader codebase. Inspect code outside the diff only
+@@ -52,6 +55,16 @@
+     Your review is read-only on this checkout. Do not mutate the working
+     tree, the index, HEAD, or branch state in any way.
+ 
++    ## Shell
++
++    - Never put `rm` or `find … -delete` in a command: permission settings
++      deny them, and the denial drops the whole compound command. Leave
++      scratch files where they are; the controller cleans up.
++    - No bare `sleep`: run long commands in the background instead.
++    - The shell may be zsh: quote globs (`--include='*.md'`) and variables
++      (`"$f"`), and pass several paths as separate arguments, not as one
++      space-joined variable.
++
+     ## You Do Not Dispatch Subagents
+ 
+     Do all of this review yourself. Never spawn a subagent to review part
+@@ -120,8 +133,20 @@
      - DRY without premature abstraction?
      - Edge cases handled?
  
@@ -367,7 +918,7 @@ diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/suba
      - Are the task's edge cases covered?
  
      **Structure:**
-@@ -188,7 +200,6 @@
+@@ -188,7 +213,6 @@
  ```
  
  **Placeholders:**

@@ -21,6 +21,9 @@ Subagent (verus-reviewer):
     ## What Was Requested
 
     Read the task brief: [BRIEF_FILE]
+    If it is a pointer brief (a task over the 10 KB cap), open only the
+    plan sections that state requirements you check — files, interfaces,
+    expected behaviour and tests — not code listings the diff already shows.
 
     Global constraints from the spec/design that bind this task:
     [GLOBAL_CONSTRAINTS]
@@ -36,10 +39,10 @@ Subagent (verus-reviewer):
     **Diff file:** [DIFF_FILE]
 
     Read the diff file once — it contains the commit list, a stat summary,
-    and the full diff with surrounding context, and it is your view of the
-    change. The diff's context lines ARE the changed files: do not Read a
-    changed file separately unless a hunk you must judge is cut off
-    mid-function — and say so in your report. Do not re-run git commands.
+    and the changed hunks with three lines of context, and it is your view
+    of the change. Do not Read a whole changed file: when a hunk you must
+    judge needs more context, Read just that range (offset/limit) and say so
+    in your report. Do not re-run git commands.
     If the diff file is missing, fetch the diff yourself:
     `git diff --stat [BASE_SHA]..[HEAD_SHA]` and `git diff [BASE_SHA]..[HEAD_SHA]`.
     Do not crawl the broader codebase. Inspect code outside the diff only
@@ -51,6 +54,16 @@ Subagent (verus-reviewer):
 
     Your review is read-only on this checkout. Do not mutate the working
     tree, the index, HEAD, or branch state in any way.
+
+    ## Shell
+
+    - Never put `rm` or `find … -delete` in a command: permission settings
+      deny them, and the denial drops the whole compound command. Leave
+      scratch files where they are; the controller cleans up.
+    - No bare `sleep`: run long commands in the background instead.
+    - The shell may be zsh: quote globs (`--include='*.md'`) and variables
+      (`"$f"`), and pass several paths as separate arguments, not as one
+      space-joined variable.
 
     ## You Do Not Dispatch Subagents
 

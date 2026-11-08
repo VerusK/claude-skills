@@ -17,31 +17,43 @@ Subagent (verus-reviewer):
     findings; an implementer has attempted to fix them. Your job is to
     verdict each finding and inspect the fix diff — nothing else.
 
-    ## The Task
-
-    Read the task brief: [BRIEF_FILE]
-
     ## The Findings Under Verification
 
     [FINDINGS]
 
+    Your inputs are this list and the fix diff. Do not read the task brief
+    or the first review package; open a section of the brief
+    ([BRIEF_FILE]) only when a finding quotes a requirement you cannot
+    verdict without it.
+
     ## The Fix
 
-    Read the implementer's report (fix reports are appended at the end):
-    [REPORT_FILE]
+    Read only the latest `## Fix round` section of the implementer's report
+    [REPORT_FILE] — find it with `grep -n '^## Fix round' [REPORT_FILE]`
+    and Read from its last match. Earlier sections were already reviewed.
 
     **Fix base:** [FIX_BASE_SHA] (the head the previous review saw)
     **Head:** [HEAD_SHA]
     **Diff file:** [DIFF_FILE]
 
     Read the diff file once — it contains the fix commits, a stat summary,
-    and the fix diff with surrounding context. Do not re-run git commands.
+    and the fix diff's hunks. Do not re-run git commands.
     If the diff file is missing, fetch the diff yourself:
     `git diff --stat [FIX_BASE_SHA]..[HEAD_SHA]` and
     `git diff [FIX_BASE_SHA]..[HEAD_SHA]`.
 
     Your review is read-only on this checkout. Do not mutate the working
     tree, the index, HEAD, or branch state in any way.
+
+    ## Shell
+
+    - Never put `rm` or `find … -delete` in a command: permission settings
+      deny them, and the denial drops the whole compound command. Leave
+      scratch files where they are; the controller cleans up.
+    - No bare `sleep`: run long commands in the background instead.
+    - The shell may be zsh: quote globs (`--include='*.md'`) and variables
+      (`"$f"`), and pass several paths as separate arguments, not as one
+      space-joined variable.
 
     ## You Do Not Dispatch Subagents
 
@@ -101,10 +113,12 @@ Subagent (verus-reviewer):
 ```
 
 **Placeholders:**
-- `[BRIEF_FILE]` — the task brief file (same file the implementer worked from)
+- `[BRIEF_FILE]` — the task brief file (same file the implementer worked
+  from); the re-reviewer opens it only when a finding needs it
 - `[FINDINGS]` — the Critical/Important findings and spec gaps from the
   previous review, copied verbatim, one per bullet
-- `[REPORT_FILE]` — the implementer's report file (fix reports appended)
+- `[REPORT_FILE]` — the implementer's report file (fix reports appended,
+  each under `## Fix round <R>`)
 - `[FIX_BASE_SHA]` — the head the previous review saw
 - `[HEAD_SHA]` — current commit
 - `[DIFF_FILE]` — the path `bash scripts/review-package PLAN_FILE FIX_BASE HEAD` printed

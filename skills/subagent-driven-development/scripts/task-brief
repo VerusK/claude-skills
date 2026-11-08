@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
-# Extract one task's full text from an implementation plan into a file the
+# Extract one task's text from an implementation plan into a file the
 # implementer reads in one call, so the task text never has to be pasted
 # through the controller's context.
+#
+# A brief is capped at BRIEF_CAP bytes (10 KB). A task whose text fits is
+# copied whole. A longer one gets a pointer brief: the task's intro (when it
+# fits) and one line per step or sub-heading with its line range in the plan,
+# so each reader opens only the sections it needs instead of every subagent
+# re-reading a 50 KB copy.
 #
 # Usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]
 # Default OUTFILE: <repo-root>/.superpowers/sdd/<plan-basename>/task-<N>-brief.md
 # (per plan and per worktree; concurrent runs of the SAME plan in the same
 # working tree share it).
 set -euo pipefail
+
+BRIEF_CAP=10240
+INTRO_CAP=4096
 
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
   echo "usage: task-brief PLAN_FILE TASK_NUMBER [OUTFILE]" >&2
@@ -27,17 +36,81 @@ else
   out="$dir/task-${n}-brief.md"
 fi
 
-awk -v n="$n" '
+# First and last plan line of the task (outside fenced code blocks).
+range=$(awk -v n="$n" '
   /^```/ { infence = !infence }
   !infence && /^#+[ \t]+Task[ \t]+[0-9]+/ {
-    intask = ($0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)"))
+    if (intask) { last = NR - 1; intask = 0 }
+    if ($0 ~ ("^#+[ \t]+Task[ \t]+" n "([^0-9]|$)")) { first = NR; intask = 1 }
   }
-  intask { print }
-' "$plan" > "$out"
+  END {
+    if (intask) last = NR
+    if (first) print first, last
+  }
+' "$plan")
 
-if [ ! -s "$out" ]; then
+if [ -z "$range" ]; then
+  : > "$out"
   echo "task ${n} not found in ${plan} (no heading matching 'Task ${n}')" >&2
   exit 3
 fi
+first=${range% *}
+last=${range#* }
 
-echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"
+sed -n "${first},${last}p" "$plan" > "$out"
+size=$(wc -c < "$out" | tr -d ' ')
+
+if [ "$size" -le "$BRIEF_CAP" ]; then
+  echo "wrote ${out}: $(wc -l < "$out" | tr -d ' ') lines"
+  exit 0
+fi
+
+plan_abs="$(CDPATH= cd -- "$(dirname "$plan")" && pwd -P)/$(basename "$plan")"
+
+# Sections start at a heading below the task heading or at a checkbox step,
+# outside fenced code blocks. Each row: start, end, bytes, title.
+sections=$(LC_ALL=C awk -v first="$first" -v last="$last" '
+  NR < first || NR > last { next }
+  NR == first { next }
+  /^[ \t]*(```|~~~)/ { infence = !infence; bytes += length($0) + 1; next }
+  !infence && (/^#+[ \t]/ || /^[ \t]*[-*][ \t]+\[[ xX]\][ \t]/) {
+    if (start) print start "\t" NR - 1 "\t" bytes "\t" title
+    start = NR; bytes = 0; title = $0
+  }
+  { bytes += length($0) + 1 }
+  END { if (start) print start "\t" last "\t" bytes "\t" title }
+' "$plan")
+
+intro_end=$last
+if [ -n "$sections" ]; then
+  intro_end=$(( $(printf '%s\n' "$sections" | head -n 1 | cut -f 1) - 1 ))
+fi
+intro_size=$(sed -n "${first},${intro_end}p" "$plan" | wc -c | tr -d ' ')
+
+{
+  sed -n "${first}p" "$plan"
+  echo
+  echo "> **Pointer brief.** This task's text is ${size} bytes, over the ${BRIEF_CAP}-byte brief cap,"
+  echo "> so it is not copied here. It lives in \`${plan_abs}\`, lines ${first}-${last}."
+  echo "> Read a section with Read (offset = its first line, limit = its line count) when"
+  echo "> you need it, once. Exact values are in those sections: use them verbatim."
+  echo
+  if [ "$intro_end" -gt "$first" ] && [ "$intro_size" -le "$INTRO_CAP" ]; then
+    sed -n "$((first + 1)),${intro_end}p" "$plan"
+    echo
+  elif [ "$intro_end" -gt "$first" ]; then
+    echo "- lines $((first + 1))-${intro_end} ($((intro_end - first)) lines, ${intro_size} bytes): task intro"
+  fi
+  echo "## Sections of Task ${n}"
+  echo
+  if [ -n "$sections" ]; then
+    printf '%s\n' "$sections" | while IFS="$(printf '\t')" read -r s e b t; do
+      t=$(printf '%s' "$t" | sed -e 's/^[ \t]*//' -e 's/^[-*][ \t]*\[[ xX]\][ \t]*//' -e 's/^#*[ \t]*//')
+      echo "- lines ${s}-${e} ($((e - s + 1)) lines, ${b} bytes): ${t}"
+    done
+  else
+    echo "- lines ${first}-${last} ($((last - first + 1)) lines, ${size} bytes): the whole task (no steps or sub-headings to split on)"
+  fi
+} > "$out"
+
+echo "wrote ${out}: pointer brief, $(wc -c < "$out" | tr -d ' ') bytes (task text ${size} bytes in ${plan} lines ${first}-${last})"

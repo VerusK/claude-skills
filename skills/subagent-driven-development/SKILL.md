@@ -60,7 +60,9 @@ digraph process {
         "Implementer asks questions?" [shape=diamond];
         "Answer questions, provide context" [shape=box];
         "Implementer implements, tests, commits, self-reviews" [shape=box];
-        "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)" [shape=box];
+        "Generate review package" [shape=box];
+        "Package says docs-only?" [shape=diamond];
+        "Dispatch task reviewer (./task-reviewer-prompt.md)" [shape=box];
         "Spec ✅ and quality approved?" [shape=diamond];
         "Finding conflicts with plan text?" [shape=diamond];
         "Rule on the conflict, ledger the ruling" [shape=box];
@@ -87,8 +89,11 @@ digraph process {
     "Implementer asks questions?" -> "Answer questions, provide context" [label="yes"];
     "Answer questions, provide context" -> "Implementer implements, tests, commits, self-reviews";
     "Implementer asks questions?" -> "Implementer implements, tests, commits, self-reviews" [label="no"];
-    "Implementer implements, tests, commits, self-reviews" -> "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)";
-    "Generate review package, dispatch task reviewer (./task-reviewer-prompt.md)" -> "Spec ✅ and quality approved?";
+    "Implementer implements, tests, commits, self-reviews" -> "Generate review package";
+    "Generate review package" -> "Package says docs-only?";
+    "Package says docs-only?" -> "Append completion to ledger, mark todo complete" [label="yes - branch review covers it"];
+    "Package says docs-only?" -> "Dispatch task reviewer (./task-reviewer-prompt.md)" [label="no"];
+    "Dispatch task reviewer (./task-reviewer-prompt.md)" -> "Spec ✅ and quality approved?";
     "Spec ✅ and quality approved?" -> "Append completion to ledger, mark todo complete" [label="yes"];
     "Spec ✅ and quality approved?" -> "Finding conflicts with plan text?" [label="no"];
     "Finding conflicts with plan text?" -> "Rule on the conflict, ledger the ruling" [label="yes"];
@@ -227,10 +232,16 @@ Record BASE (`git rev-parse HEAD`) before dispatching — the review package
 and fix-round diffs need it.
 
 - **Task brief:** before dispatching an implementer, run this skill's
-  `bash scripts/task-brief PLAN_FILE N` — it extracts the task's full text to a
+  `bash scripts/task-brief PLAN_FILE N` — it extracts the task's text to a
   uniquely named file and prints the path. Compose the dispatch so the
   brief stays the single source of
-  requirements. Your dispatch should contain: (1) one line on where this
+  requirements. **A brief is capped at ~10 KB:** every subagent of the task
+  reads it, and a 52 KB brief read by seven of them is 360 KB of tokens.
+  Over the cap the script writes a pointer brief — the task's intro and one
+  line per step with its line range in the plan — and readers open only the
+  sections they need. Never write a brief by hand, and never paste plan
+  text into a brief or a dispatch: point at the plan file and line range.
+  Your dispatch should contain: (1) one line on where this
   task fits in the project; (2) the brief path, introduced as "read this
   first — it is your requirements, with the exact values to use verbatim";
   (3) interfaces and decisions from earlier tasks that the brief cannot
@@ -265,7 +276,7 @@ Template: [implementer-prompt.md](implementer-prompt.md)
 
 Implementer subagents report one of four statuses. Handle each appropriately:
 
-**DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path.
+**DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path — unless the printed line ends in `docs-only` (see step 3).
 
 **DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
 
@@ -286,19 +297,29 @@ rush it into implementation.
 ### 3. Review the task
 
 Per-task reviews are task-scoped gates. The broad review happens once, at the
-final whole-branch review. Never skip the task review, and never accept a
+final whole-branch review. Never skip the task review of a task that changes
+code, scripts or config, and never accept a
 report missing either verdict — spec compliance AND task quality are both
 required. Implementer self-review never replaces the task review; both are
 needed.
 
+- **Docs-only tasks skip the task review.** When the review package's
+  printed line ends in `docs-only` (every changed path is `.md`, `.mdx`,
+  `.markdown`, `.rst` or `.adoc` — no code, no scripts, no config), do not
+  dispatch a reviewer: the branch-level `review` covers it. Ledger it as
+  `Task <N>: complete (commits <base7>..<head7>, docs-only, no task review)`.
 - Hand the reviewer its diff as a file: run this skill's
   `bash scripts/review-package PLAN_FILE BASE HEAD` and pass the reviewer the file path
   it prints (or, without bash: `git log --oneline`, `git diff --stat`,
-  and `git diff -U10` for the range, redirected to one uniquely named
+  and `git diff` for the range, redirected to one uniquely named
   file). The output never enters your own context, and the reviewer sees
-  the commit list, stat summary, and full diff with context in one Read
-  call. Use the BASE you recorded before dispatching the implementer —
-  never `HEAD~1`, which silently truncates multi-commit tasks. Never
+  the commit list, stat summary, and the changed hunks in one Read
+  call — hunks, not whole files and not the whole branch. Use the BASE you
+  recorded before dispatching the implementer —
+  never `HEAD~1`, which silently truncates multi-commit tasks. When other
+  tasks' commits are interleaved in BASE..HEAD, add
+  `--commits <sha>,<sha>` with the commits the implementer reported, so
+  the package holds this task's commits only. Never
   dispatch a task reviewer without a diff file.
 - **Reviewer inputs:** the task reviewer gets three paths — the same brief
   file, the report file, and the review package — plus the global
@@ -363,17 +384,21 @@ was tried." A loop that survives three resumes usually means the implementer
 cannot see its own problem — fresh eyes in one move.
 
 **Every round, either way:** the implementer fixes, re-runs the tests
-covering the amended code, appends its fix report to the same report file,
-and returns the short contract. Before re-dispatching the reviewer, confirm
+covering the amended code, appends its fix report to the same report file
+under a `## Fix round <R>` heading, and returns the short contract.
+Before re-dispatching the reviewer, confirm
 the fix report contains the covering tests, the command run, and the
 output; dispatch the re-review once all three are present. Name the
 covering test files in the fix message — a one-line fix does not need the
 whole suite.
 
 **The re-review is scoped.** Run `bash scripts/review-package PLAN_FILE FIX_BASE HEAD`
-where FIX_BASE is the head the previous review saw, and dispatch
+where FIX_BASE is the head the previous review saw (with `--commits` and
+the fix commits when other tasks' commits are interleaved), and dispatch
 [re-review-prompt.md](re-review-prompt.md) with the findings list, the
-brief, the report file, and the printed diff path. The re-reviewer verdicts
+printed diff path, and the report file, of which it reads only the latest
+`## Fix round` section. It does not re-read the brief or the first review
+package: the findings carry what it verifies. The re-reviewer verdicts
 each finding ADDRESSED or NOT ADDRESSED and flags new breakage in the fix
 diff only. New Critical/Important breakage in the fix diff joins the open
 findings list. Out-of-scope observations go to the ledger as deferred
@@ -443,9 +468,12 @@ whatever you got wrong. A ruling that dies with the workspace was a decision
 made in secret.
 
 When the final whole-branch review is clean and its fixes are merged,
-delete this plan's workspace (`rm -rf <workspace>`) — the git history is
-the record now. Sibling directories belong to other plans; leave them
-alone.
+delete this plan's workspace with this skill's
+`bash scripts/sdd-workspace --remove PLAN_FILE` — the git history is
+the record now. Never put `rm` in a command for it: permission settings
+often deny `rm`, and a denial drops the whole compound command. The script
+removes this plan's directory only; sibling directories belong to other
+plans.
 
 `review` invokes `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin) itself; invoke it here only if `review` stopped without handing off.
 
