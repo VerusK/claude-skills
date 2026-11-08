@@ -5,11 +5,12 @@ description: Entry point for any new task. Classifies the task (spike / bounded 
 
 # Kickoff
 
-Turn an idea into a spec through a decision-tree interview. Questions with
-concrete options are judged by TypeSafe first; where the judge is not
-confident, or confidently picks a different option than your recommendation,
-your recommendation is taken without asking. Only open-ended, taste and
-credential questions, and questions asked while the judge is down, reach the user.
+Turn an idea into a spec through a decision-tree interview. Routine questions
+with concrete options are judged by TypeSafe first; where the judge is not
+confident, confidently picks a different option than your recommendation, or
+is unavailable, your recommendation is taken without asking. Only owner
+questions (irreversible, money, security or access, low-confidence) and
+open-ended ones reach the user.
 
 **Announce at start:** "Using kickoff to scope this task."
 
@@ -45,10 +46,11 @@ Work in **rounds**. Each round:
 
 1. List the frontier. A question that depends on another open question waits for the next round.
 2. For each frontier question write 2–6 options with one-line trade-offs and your recommendation.
-3. Run every question that has concrete options through the judge (open-ended, taste and credential questions are asked directly, see `judge.md`) — read `judge.md` in this skill's directory and follow it exactly. Build `context` as a structured object, not prose: `goal` (one sentence), `decisions` (everything settled in earlier rounds), `facts` (repo evidence with file paths and short excerpts), `constraints` (the user's rules), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language; a map detailed only for some options is a defect, rewrite the question before judging). Your recommendation goes in `recommended` and is never part of `context` — the judge must not see your pick.
-4. Accepted questions: print their decision blocks, add them to the running **Decisions** list (question, options with percentages, choice, confidence, sufficiency).
-5. Unaccepted questions: take your recommendation without asking. Print each decision block followed by `➡️ Recommended: <id>, because <reason>`, and add it to the **Decisions** list marked `recommended`. Never re-run a question to get it accepted. Questions that reach the user (open-ended, taste, credentials, judge unavailable) are asked all in one message, numbered, each with its options and your recommendation; wait for the answers.
-6. Recompute the frontier and repeat. The interview ends when the frontier is empty.
+3. Sort each question. An **owner question** is asked, never judged: its answer is irreversible or expensive to undo once shipped (deleting or migrating data, a public API, schema, file format or published name others will depend on), it costs money (a paid service, new infrastructure, licences), it touches security or access (credentials, permissions, secrets, who can reach what), or your recommendation is low-confidence — you cannot name the repo fact or user rule that decides it. Everything else is a **routine question** and is never asked: naming, defaults, minor options, taste in internal details, and design choices that a later commit can reverse. The user's rule: they pick the recommended option anyway.
+4. Run every routine question through the judge (open-ended questions with no sensible options are asked directly) — read `judge.md` in this skill's directory and follow it exactly. Build `context` as a structured object, not prose: `goal` (one sentence), `decisions` (everything settled in earlier rounds), `facts` (repo evidence with file paths and short excerpts), `constraints` (the user's rules), `consequences` (one entry per option id, each naming what concretely happens or breaks — file, behaviour, test — if that option is chosen; equal specificity and length for every id, no comparative or preference language; a map detailed only for some options is a defect, rewrite the question before judging). Your recommendation goes in `recommended` and is never part of `context` — the judge must not see your pick.
+5. Accepted questions: print their decision blocks, add them to the running **Decisions** list (question, options with percentages, choice, confidence, sufficiency).
+6. Unaccepted routine questions, and routine questions the judge could not answer: take your recommendation without asking. Print each decision block — when the judge was unavailable, the question in the format below with the line `TypeSafe judge unavailable: <stderr line>` in place of the judge's block — followed by `➡️ Recommended: <id>, because <reason>`, and add it to the **Decisions** list marked `recommended`. Never re-run a question to get it accepted. Owner questions and open-ended ones are asked all in one message, numbered, each with its options, your recommendation and the reason it is the user's call (`irreversible`, `money`, `security/access`, `low confidence`); wait for the answers.
+7. Recompute the frontier and repeat. The interview ends when the frontier is empty.
 
 Format for questions shown to the user:
 
@@ -89,7 +91,10 @@ one line. The Decisions section of the spec is the durable copy.
 |---|---|
 | "This question is obvious, skip the judge" | Obvious questions are exactly what the judge is for. Run it. |
 | "The judge said just below the threshold, close enough" | Below threshold is not `auto`: record it as `recommended`, print the block. No rounding. |
-| "The judge is down, I'll pick my recommendation" | Judge down means ask the user. Always. |
+| "The judge is down, I'd better ask the user" | Routine question: take the recommendation, print it with `TypeSafe judge unavailable`, record it `recommended`. Only owner questions are asked. |
+| "Naming and defaults are the user's taste, I'll ask" | They are routine. The user picks the recommendation anyway: take it, print the block. |
+| "The judge would accept this security choice" | Owner questions are never judged. Ask. |
+| "Routine, so no need to print it" | Every decision is printed and recorded, routine ones included. |
 | "Jev is 0.99 sure of another option, I'll switch my recommendation" | Then nothing independent agreed. Keep your pick, record it as `recommended`; both picks are in the block. |
 | "Jev disagreed, I'd better ask the user" | The user's rule: take the recommendation, print the block, keep going. |
 | "Too simple to need approval" | Simple means a short design, not no design. |

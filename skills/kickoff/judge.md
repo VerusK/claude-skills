@@ -1,6 +1,6 @@
 # Judging a multiple-choice question with TypeSafe
 
-Use this whenever you are about to ask the user a question that has 2–6 concrete options. A judged question reaches the user only when the judge is unavailable: an accepted answer is taken as is, an unaccepted one falls back to your recommendation.
+Use this whenever you are about to ask the user a question that has 2–6 concrete options. An accepted answer is taken as is, an unaccepted one falls back to your recommendation. A judged question reaches the user only when the judge is unavailable — and in kickoff not even then, because kickoff judges only routine questions (kickoff § 3).
 
 Every fenced block below is one shell call; the locator must be at the top of any
 block that uses `$SKILLS_REPO`. It tries the pointer file the SessionStart hook
@@ -66,7 +66,7 @@ An answer is accepted only when Jev, without seeing `recommended`, picks the sam
 
 - `judge_exit=0` and `"accepted": true` → the decision is made. Print the `block` field to the user verbatim, record the decision (see the calling skill), continue without waiting.
 - `judge_exit=0` and `"accepted": false` → take your `recommended` option without asking (the user's rule: they pick the recommendation anyway). Print the `block` verbatim — its verdict reads `принята рекомендация <id> (Jev ≠ рекомендация)` or `(ниже порога)` — then one line `➡️ Recommended: <id>, because <reason>`, record the decision marked `recommended` (see the calling skill), continue without waiting. Do not re-judge, and do not switch to Jev's pick: the user sees both picks in the block and can overrule later.
-- `judge_exit` is anything other than 0 (no key, network error, bad input, or the script could not be run at all — e.g. exit 1/127 when the repo was not located or node is missing) → ask the user as you normally would and add one line: `TypeSafe judge unavailable: <stderr line>`. Without a judge answer there is no block to show, so never take the recommendation silently.
+- `judge_exit` is anything other than 0 (no key, network error, bad input, or the script could not be run at all — e.g. exit 1/127 when the repo was not located or node is missing) → ask the user as you normally would and add one line: `TypeSafe judge unavailable: <stderr line>`. Without a judge answer there is no block to show, so never take the recommendation silently. Exception — a kickoff routine question: take your `recommended` option without asking, print the question with its options, the line `TypeSafe judge unavailable: <stderr line>` and `➡️ Recommended: <id>, because <reason>`, and record it marked `recommended`.
 
 ## Rules
 
@@ -79,5 +79,5 @@ An answer is accepted only when Jev, without seeing `recommended`, picks the sam
 - `recommended` is required and must be one of the option ids; without it the script exits 2. Commit to it before the call and never change it after seeing the judge's answer — acceptance means two independent reads agreed.
 - Total `context` must stay under 8 KB serialised; the script rejects more. Trim excerpts, not facts.
 - Escape `"` and `\` inside the JSON strings; write multi-line strings as `\n` — a parse error makes the judge look unavailable when the input was yours.
-- Questions about the user's personal taste, credentials, or anything outside the repo are never auto-accepted: skip the judge and ask.
+- Questions about the user's personal taste, credentials, or anything outside the repo are never auto-accepted: skip the judge and ask. In kickoff the rule is narrower: owner questions (kickoff § 3: irreversible, costs money, security or access, credentials, or a recommendation you cannot ground in a repo fact or user rule) are never judged: skip the judge and ask; taste in details — naming, defaults, minor options — is a routine question there: judge it.
 - Every option must be one a reasonable engineer could pick. Never pad a question with an unargued "reject" or "do nothing": a "leave it as is" option carries its strongest argument in `description`, or it is left out. A question left with only one real option is not judge-able — decide it yourself and state the evidence.

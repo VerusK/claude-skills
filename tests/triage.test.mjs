@@ -80,3 +80,18 @@ test("an unaccepted judge answer falls back to the recommendation instead of ask
   }
   assert.doesNotMatch(read("kickoff/SKILL.md"), /Unaccepted questions: ask them/);
 });
+
+test("kickoff never asks routine questions, even with the judge down, and asks owner questions unjudged", () => {
+  const kickoff = read("kickoff/SKILL.md");
+  assert.match(kickoff, /An \*\*owner question\*\* is asked, never judged/);
+  for (const reason of ["irreversible", "costs money", "security or access", "low-confidence"]) {
+    assert.ok(kickoff.includes(reason), `kickoff owner questions miss: ${reason}`);
+  }
+  assert.match(kickoff, /\*\*routine question\*\* and is never asked: naming, defaults, minor options/);
+  assert.match(kickoff, /routine questions the judge could not answer: take your recommendation without asking/);
+  assert.doesNotMatch(kickoff, /Judge down means ask the user/);
+  const act = read("kickoff/judge.md").split("## Act on the result")[1].split("## Rules")[0];
+  assert.match(act, /Exception — a kickoff routine question: take your `recommended` option without asking/);
+  const rules = read("kickoff/judge.md").split("## Rules")[1];
+  assert.match(rules, /owner questions \(kickoff § 3[^\n]*are never judged: skip the judge and ask/);
+});
