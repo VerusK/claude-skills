@@ -4,6 +4,7 @@
 # file the reviewer reads in one call. Using the recorded per-task BASE (not
 # HEAD~1) keeps multi-commit tasks intact.
 #
+<<<<<<< ours
 # --commits limits the package to the task's own commits when other tasks'
 # commits are interleaved in BASE..HEAD (tasks run in parallel): each listed
 # commit must lie in BASE..HEAD, and the package shows each one's stat and
@@ -14,10 +15,16 @@
 # per-task review, and the branch-level review covers it.
 #
 # Usage: review-package [--commits SHA[,SHA...]] PLAN_FILE BASE HEAD [OUTFILE]
+=======
+# Usage: review-package [-C DIR] PLAN_FILE BASE HEAD [OUTFILE]
+>>>>>>> upstream
 # Default OUTFILE: <repo-root>/.superpowers/sdd/<plan-basename>/review-<base7>..<head7>.diff
 # (named per range, so a re-review after fixes gets a distinct fresh file).
+# The repository is the one sdd-repo names; -C DIR runs as if started in DIR,
+# as in sdd-workspace.
 set -euo pipefail
 
+<<<<<<< ours
 usage() { echo "usage: review-package [--commits SHA[,SHA...]] PLAN_FILE BASE HEAD [OUTFILE]" >&2; exit 2; }
 
 commits=""
@@ -28,6 +35,18 @@ if [ "${1:-}" = "--commits" ]; then
 fi
 if [ $# -lt 3 ] || [ $# -gt 4 ]; then
   usage
+=======
+here=$(cd "$(dirname "$0")" && pwd)
+if [ "${1:-}" = "-C" ]; then
+  [ -d "${2:-}" ] || { echo "bad -C directory: ${2:-}" >&2; exit 2; }
+  cd "$2"
+  shift 2
+fi
+
+if [ $# -lt 3 ] || [ $# -gt 4 ]; then
+  echo "usage: review-package [-C DIR] PLAN_FILE BASE HEAD [OUTFILE]" >&2
+  exit 2
+>>>>>>> upstream
 fi
 
 plan=$1
@@ -35,13 +54,17 @@ base=$2
 head=$3
 [ -f "$plan" ] || { echo "no such plan file: $plan" >&2; exit 2; }
 
-git rev-parse --verify --quiet "$base" >/dev/null || { echo "bad BASE: $base" >&2; exit 2; }
-git rev-parse --verify --quiet "$head" >/dev/null || { echo "bad HEAD: $head" >&2; exit 2; }
+# Invoke via bash rather than direct exec: some extractors (Python zipfile)
+# strip Unix exec bits when unpacking marketplace packages (#2040).
+repo=$("${BASH:-bash}" "$here/sdd-repo" --with-commit)
+
+git -C "$repo" rev-parse --verify --quiet "$base" >/dev/null || { echo "bad BASE: $base" >&2; exit 2; }
+git -C "$repo" rev-parse --verify --quiet "$head" >/dev/null || { echo "bad HEAD: $head" >&2; exit 2; }
 
 # Range guards (exit 3): a wrong-branch HEAD yields a range that is empty or
 # not rooted at BASE; either would silently produce a bogus review package.
-git merge-base --is-ancestor "$base" "$head" || { echo "HEAD is not a descendant of BASE: ${base}..${head}" >&2; exit 3; }
-[ "$(git rev-list --count "${base}..${head}")" -gt 0 ] || { echo "empty commit range: ${base}..${head}" >&2; exit 3; }
+git -C "$repo" merge-base --is-ancestor "$base" "$head" || { echo "HEAD is not a descendant of BASE: ${base}..${head}" >&2; exit 3; }
+[ "$(git -C "$repo" rev-list --count "${base}..${head}")" -gt 0 ] || { echo "empty commit range: ${base}..${head}" >&2; exit 3; }
 
 # The listed commits, full SHAs, in history order; each must lie in BASE..HEAD.
 picked=""
@@ -62,6 +85,7 @@ fi
 if [ $# -eq 4 ]; then
   out=$4
 else
+<<<<<<< ours
   # Invoke via bash rather than direct exec: some extractors (Python zipfile)
   # strip Unix exec bits when unpacking marketplace packages (#2040).
   dir=$("${BASH:-bash}" "$(cd "$(dirname "$0")" && pwd)/sdd-workspace" "$plan")
@@ -69,6 +93,10 @@ else
   # One package per commit set: a short hash of the list keeps the name short.
   [ -n "$picked" ] && suffix="-$(printf '%s' "$picked" | git hash-object --stdin | cut -c 1-7)"
   out="$dir/review-$(git rev-parse --short "$base")..$(git rev-parse --short "$head")${suffix}.diff"
+=======
+  dir=$("${BASH:-bash}" "$here/sdd-workspace" "$plan")
+  out="$dir/review-$(git -C "$repo" rev-parse --short "$base")..$(git -C "$repo" rev-parse --short "$head").diff"
+>>>>>>> upstream
 fi
 
 # Lockfiles stay in the stat summary but out of the hunks.
@@ -79,6 +107,7 @@ nolock=(':/' ':(top,exclude)*package-lock.json' ':(top,exclude)*yarn.lock' ':(to
   ':(top,exclude)*Gemfile.lock' ':(top,exclude)*go.sum')
 
 {
+<<<<<<< ours
   if [ -n "$picked" ]; then
     echo "# Review package: ${base}..${head}, task commits only"
     echo
@@ -116,3 +145,19 @@ if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -v '^$' | grep -qviE '\.(m
   kind=", docs-only"
 fi
 echo "wrote ${out}: ${n} commit(s), $(wc -c < "$out" | tr -d ' ') bytes${kind}"
+=======
+  echo "# Review package: ${base}..${head}"
+  echo
+  echo "## Commits"
+  git -C "$repo" log --oneline "${base}..${head}"
+  echo
+  echo "## Files changed"
+  git -C "$repo" diff --stat "${base}..${head}"
+  echo
+  echo "## Diff"
+  git -C "$repo" diff -U10 "${base}..${head}"
+} > "$out"
+
+commits=$(git -C "$repo" rev-list --count "${base}..${head}")
+echo "wrote ${out}: ${commits} commit(s), $(wc -c < "$out" | tr -d ' ') bytes"
+>>>>>>> upstream
