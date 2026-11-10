@@ -19,8 +19,8 @@ same eleven skills, the same three agents and the same SessionStart hook.
   three-way merged into `skills/`, and our edits are recorded in `patches/`. A
   weekly GitHub Action opens a PR when upstream changes.
 - **Decisions by probability.** Multiple-choice questions are sent to the TypeSafe
-  judge (Jev). A confident answer that matches Claude's own pick is accepted
-  automatically and printed with its probabilities; otherwise Claude's recommendation
+  judge (Jev). A confident answer that matches the coordinating agent's own pick is accepted
+  automatically and printed with its probabilities; otherwise the coordinating agent's recommendation
   is taken without asking and printed the same way. In kickoff only owner questions
   (irreversible, money, security or access, low-confidence) and open-ended ones are
   asked; naming, defaults and minor options never are, even with the judge down.
@@ -89,7 +89,7 @@ A **clean** working tree gives full mode: review → findings judged → at most
 
 ### Decisions and reviewers
 
-- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`, overridable with `--threshold`). The key comes from `TYPESAFE_API_KEY`, else from `typesafe.apiKey` in `~/.verus-skills/config.json`; the model is `judge.model` (see [Models and effort](#models-and-effort)). An answer is auto-accepted only when Jev also picks Claude's `recommended` option, which is never sent to it; otherwise (Jev picks another option, or is below threshold) the skill takes Claude's recommendation without asking, prints the block marked `принята рекомендация <id> (Jev ≠ рекомендация)` or `(ниже порога)`, and records the decision as `recommended`. The judge also rates how well the supplied facts support any choice (`sufficiency`); the number is printed, not gated. Every judged answer is printed in chat as a decision block with the options, their probabilities, confidence and sufficiency. When the judge is unavailable the script exits `2`: kickoff takes the recommendation for a routine question and prints it marked `TypeSafe judge unavailable`; the review skills ask the user.
+- The judge is `scripts/typesafe-judge.mjs` (TypeSafe SDK, model Jev). The acceptance threshold lives in `config/judge.json` (default `0.7`, overridable with `--threshold`). The key comes from `TYPESAFE_API_KEY`, else from `typesafe.apiKey` in `~/.verus-skills/config.json`; the model is `judge.model` (see [Models and effort](#models-and-effort)). An answer is auto-accepted only when Jev also picks Claude's `recommended` option, which is never sent to it; otherwise (Jev picks another option, or is below threshold) the skill takes the coordinating agent's recommendation without asking, prints the block marked `принята рекомендация <id> (Jev ≠ рекомендация)` or `(ниже порога)`, and records the decision as `recommended`. The judge also rates how well the supplied facts support any choice (`sufficiency`); the number is printed, not gated. Every judged answer is printed in chat as a decision block with the options, their probabilities, confidence and sufficiency. When the judge is unavailable the script exits `2`: kickoff takes the recommendation for a routine question and prints it marked `TypeSafe judge unavailable`; the review skills ask the user.
 - The external reviewer is `scripts/reviewer.sh`: Orca-managed Codex when `orca status` answers, otherwise `codex exec`, with the Codex model and effort from [Models and effort](#models-and-effort). On either path a report counts as finished only once its last non-empty line is `<!-- end of review -->`, which every reviewer prompt requires; a `codex exec` report without it is moved to `.context/<title>-partial.md` and the launcher exits `3`. The Orca terminal opens in the reviewed repository (`--worktree path:<repo>`) — or, when the session runs in another Orca workspace (`ORCA_WORKTREE_ID`, e.g. the main checkout while the branch lives in its own worktree), in the session's workspace with `cd <repo> &&` before `codex`, so the review stays in the session's tab — and starts Codex with `-c check_for_update_on_startup=false`: the startup update screen blocks the TUI and Orca refuses input to it, which used to push every review to `codex exec`. A repository Orca does not manage goes to `codex exec`. A linked worktree of a repository Orca does manage is adopted by Orca as a workspace of its own, so a review run from a hand-made `git worktree add` opens Codex in a new Orca workspace; the skills create worktrees only with `orca worktree create`; whenever the Orca path is abandoned, the launcher prints the reason (`orca: could not start a codex terminal (<reason>), falling back`). If neither is available it exits `3` and the calling skill falls back to the `verus-reviewer` agent, dispatched unnamed and in the background.
 
 ## Skills
@@ -159,7 +159,7 @@ Codex runs a plugin's hooks only after you trust them: the first interactive
 `codex` start after installing shows **Hooks need review** — trust the
 `verus-skills` SessionStart hook there. Until then the hook does not run (and
 `codex exec` skips untrusted hooks silently), so the session gets no routing
-block and no `~/.verus-skills/root` pointer.
+block. Explicitly loaded skills still resolve their own resources from their catalog path.
 
 Where the judge's SDK comes from: Claude Code runs `npm install` for a plugin
 with dependencies, so its plugin cache has `node_modules`. Codex does not, so
@@ -172,10 +172,16 @@ installed — its skills are vendored here — remove it yourself:
 claude plugin uninstall superpowers@claude-plugins-official
 ```
 
-The SessionStart hook writes the distro root to `~/.verus-skills/root`; the
-skills read that file to find `scripts/typesafe-judge.mjs` and
-`scripts/reviewer.sh`, because neither `CLAUDE_PLUGIN_ROOT` nor
-`CLAUDE_SKILL_DIR` reaches a skill's shell calls.
+Skills resolve `scripts/typesafe-judge.mjs` and `scripts/reviewer.sh` from
+the physical base directory of the loaded skill. Two sessions can therefore
+use different plugin versions without switching each other's scripts.
+The hook still writes `~/.verus-skills/root` for older releases only.
+
+[The runtime adapter](references/runtime.md) describes both hosts' tools.
+Claude loads `agents/verus-*.md` through its agent types; Codex receives the
+same role body in each task prompt, with fresh context where supported.
+Claude's subagent model/effort settings do not select Codex subagent models;
+Codex uses its host defaults unless the user requests an override.
 
 ### From a checkout (development)
 
@@ -186,7 +192,7 @@ git clone https://github.com/VerusK/claude-skills.git && cd claude-skills
 make install
 ```
 
-`make install` symlinks every skill into `~/.claude/skills/` and `~/.codex/skills/`, links the three agent types (`verus-worker.md`, `verus-reviewer.md`, `verus-explorer.md` from `agents/`) into `~/.claude/agents/`, adds a SessionStart hook to `~/.claude/settings.json` that runs `scripts/session-start.mjs` to inject `USING.md`, adds a pointer line to `~/.codex/AGENTS.md`, and uninstalls the `superpowers` plugin (its skills are vendored here). It then reports whether a TypeSafe API key (`TYPESAFE_API_KEY` or `~/.verus-skills/config.json`), `codex` and `orca` are present.
+`make install` symlinks every skill into `~/.claude/skills/` and `~/.agents/skills/`, links the three agent types (`verus-worker.md`, `verus-reviewer.md`, `verus-explorer.md` from `agents/`) into `~/.claude/agents/`, adds a SessionStart hook to `~/.claude/settings.json` that runs `scripts/session-start.mjs` to inject `USING.md`, adds a pointer line to `$CODEX_HOME/AGENTS.md` (default `~/.codex/AGENTS.md`), and uninstalls the `superpowers` plugin (its skills are vendored here). It then reports whether a TypeSafe API key (`TYPESAFE_API_KEY` or `~/.verus-skills/config.json`), `codex` and `orca` are present.
 
 Skill names and agent names are treated differently when something else already holds them:
 
@@ -205,7 +211,15 @@ node scripts/install.mjs --force                # install even though the plugin
 
 Re-installing from a second checkout of this repo (a fresh clone, or the old one moved away) re-points the existing skill and agent symlinks, SessionStart hook and `AGENTS.md` line at the new checkout and reports them as `re-pointed from <old checkout>`, instead of leaving duplicates behind.
 
-Models and effort for every layer — Claude subagents, the Codex reviewer, the judge — are set as described in [Models and effort](#models-and-effort).
+The installer honors `CODEX_HOME` for Codex configuration and `AGENTS.md`.
+An explicit `--home DIR` isolates both agents under that home and takes
+precedence over `CODEX_HOME`; Codex skills use `DIR/.agents/skills/`.
+After a skill is linked successfully, the installer removes its owned legacy
+link under the Codex `skills/` directory. Foreign entries are preserved.
+
+Models and effort for Claude subagents, the external Codex reviewer and the
+judge are set as described in [Models and effort](#models-and-effort).
+Native Codex subagents follow the Codex host configuration.
 
 Put the TypeSafe key in `~/.verus-skills/config.json` — one place for Claude Code and Codex, outside every repo, kept across plugin updates. If the file does not exist yet, create it readable only by you from the first byte (`umask 077`), and refuse to overwrite one that exists (`set -C`):
 

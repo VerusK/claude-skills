@@ -33,6 +33,7 @@ function runInstaller(args, extraEnv = {}) {
       PATH: `${path.join(REPO_ROOT, "tests", "fixtures", "fake-bin")}:${process.env.PATH}`,
       FAKE_CLAUDE_PLUGINS: "",
       HOME: sandboxHome,
+      CODEX_HOME: "",
       ...extraEnv,
     },
   });
@@ -167,9 +168,80 @@ test("CLI accepts --home DIR and installs there", () => {
   const r = runInstaller(["--home", home, "--skip-plugin"]);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(
-    readlinkSync(path.join(home, ".codex", "skills", "kickoff")),
+    readlinkSync(path.join(home, ".agents", "skills", "kickoff")),
     path.join(REPO_ROOT, "skills", "kickoff"),
   );
+});
+
+test("CODEX_HOME controls config and guidance, while skills use .agents discovery", () => {
+  const home = tmp("home-");
+  const codexHome = tmp("custom-codex-");
+  const env = { HOME: home, CODEX_HOME: codexHome };
+  const installed = runInstaller(["--skip-plugin"], env);
+  assert.equal(installed.status, 0, installed.stderr);
+  assert.ok(readFileSync(path.join(codexHome, "AGENTS.md"), "utf8").includes(REPO_ROOT));
+  assert.equal(readlinkSync(path.join(home, ".agents", "skills", "kickoff")), path.join(REPO_ROOT, "skills", "kickoff"));
+  assert.ok(!existsSync(path.join(home, ".codex")));
+  const removed = runInstaller(["--uninstall"], env);
+  assert.equal(removed.status, 0, removed.stderr);
+  assert.ok(!existsSync(path.join(home, ".agents", "skills", "kickoff")));
+  assert.ok(!readFileSync(path.join(codexHome, "AGENTS.md"), "utf8").includes(REPO_ROOT));
+});
+
+test("plugin collision detection uses CODEX_HOME before writing any installation", () => {
+  const home = tmp("home-");
+  const codexHome = tmp("custom-codex-");
+  writeFileSync(path.join(codexHome, "config.toml"), '[plugins."verus-skills@verus-skills"]\nenabled = true\n');
+  const r = runInstaller(["--skip-plugin"], { HOME: home, CODEX_HOME: codexHome });
+  assert.equal(r.status, 1, r.stderr);
+  assert.ok(r.stderr.includes(path.join(codexHome, "config.toml")));
+  assert.ok(!existsSync(path.join(home, ".agents")));
+  assert.ok(!existsSync(path.join(home, ".claude")));
+});
+
+test("explicit --home isolates config writes from ambient CODEX_HOME", () => {
+  const home = tmp("home-");
+  const unrelated = tmp("unrelated-codex-");
+  const r = runInstaller(["--home", home, "--skip-plugin"], { CODEX_HOME: unrelated });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(path.join(home, ".codex", "AGENTS.md")));
+  assert.ok(!existsSync(path.join(unrelated, "AGENTS.md")));
+});
+
+test("install migrates owned legacy Codex links and preserves foreign entries", () => {
+  const home = tmp("home-");
+  const legacy = path.join(home, ".codex", "skills");
+  mkdirSync(legacy, { recursive: true });
+  symlinkSync(path.join(REPO_ROOT, "skills", "kickoff"), path.join(legacy, "kickoff"));
+  mkdirSync(path.join(legacy, "foreign"));
+  const r = runInstaller(["--home", home, "--skip-plugin"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!existsSync(path.join(legacy, "kickoff")));
+  assert.ok(existsSync(path.join(legacy, "foreign")));
+  assert.equal(readlinkSync(path.join(home, ".agents", "skills", "kickoff")), path.join(REPO_ROOT, "skills", "kickoff"));
+});
+
+test("migration retains skills when CODEX_HOME is .agents", () => {
+  const home = tmp("home-");
+  const env = { HOME: home, CODEX_HOME: path.join(home, ".agents") };
+  for (let i = 0; i < 2; i++) {
+    const r = runInstaller(["--skip-plugin"], env);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readlinkSync(path.join(home, ".agents", "skills", "kickoff")), path.join(REPO_ROOT, "skills", "kickoff"));
+  }
+});
+
+test("migration retains skills when the legacy directory symlinks to discovery", () => {
+  const home = tmp("home-");
+  const discovery = path.join(home, ".agents", "skills");
+  mkdirSync(discovery, { recursive: true });
+  mkdirSync(path.join(home, ".codex"));
+  const legacy = path.join(home, ".codex", "skills");
+  symlinkSync(discovery, legacy);
+  const r = runInstaller(["--home", home, "--skip-plugin"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(readlinkSync(path.join(discovery, "kickoff")), path.join(REPO_ROOT, "skills", "kickoff"));
+  assert.equal(readlinkSync(legacy), discovery);
 });
 
 test("CLI rejects --home without a value, --home-ish and unknown options", () => {
@@ -371,7 +443,7 @@ function runInstallerFrom(root, args) {
 }
 
 function assertSingleInstallOf(home, root) {
-  for (const dir of [".claude", ".codex"]) {
+  for (const dir of [".claude", ".agents"]) {
     for (const s of ["kickoff", "plan-review"]) {
       assert.equal(readlinkSync(path.join(home, dir, "skills", s)), path.join(root, "skills", s));
     }

@@ -32,93 +32,16 @@ stop and ask.
 
 ## When to Use
 
-```dot
-digraph when_to_use {
-    "Have implementation plan?" [shape=diamond];
-    "Tasks mostly independent?" [shape=diamond];
-    "subagent-driven-development" [shape=box];
-    "Manual execution or brainstorm first" [shape=box];
-
-    "Have implementation plan?" -> "Tasks mostly independent?" [label="yes"];
-    "Have implementation plan?" -> "Manual execution or brainstorm first" [label="no"];
-    "Tasks mostly independent?" -> "subagent-driven-development" [label="yes"];
-    "Tasks mostly independent?" -> "Manual execution or brainstorm first" [label="no - tightly coupled"];
-}
-```
-
-This is the only execution path in this distro; there is no inline variant.
-
-## The Process
-
-```dot
-digraph process {
-    rankdir=TB;
-
-    subgraph cluster_per_task {
-        label="Per Task";
-        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
-        "Implementer asks questions?" [shape=diamond];
-        "Answer questions, provide context" [shape=box];
-        "Implementer implements, tests, commits, self-reviews" [shape=box];
-        "Generate review package" [shape=box];
-        "Package says docs-only?" [shape=diamond];
-        "Dispatch task reviewer (./task-reviewer-prompt.md)" [shape=box];
-        "Spec ✅ and quality approved?" [shape=diamond];
-        "Finding conflicts with plan text?" [shape=diamond];
-        "Rule on the conflict, ledger the ruling" [shape=box];
-        "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer" [shape=box];
-        "Dispatch scoped re-review (./re-review-prompt.md)" [shape=box];
-        "All findings addressed?" [shape=diamond];
-        "R = 5?" [shape=diamond];
-        "Adjudicate each open finding" [shape=box];
-        "Any load-bearing finding?" [shape=diamond];
-        "Rule and continue; stop only if every path forward is a guess" [shape=box];
-        "Park findings in ledger with rulings" [shape=box];
-        "Append completion to ledger, mark todo complete" [shape=box];
-    }
-
-    "Setup: ledger check, read plan, pre-flight review" [shape=box];
-    "More tasks remain?" [shape=diamond];
-    "Invoke review <MERGE_BASE>" [shape=box];
-    "review: judged findings, ONE fix dispatch, one re-review" [shape=box];
-    "Final review clean: delete this plan's workspace" [shape=box];
-    "review hands off to finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
-
-    "Setup: ledger check, read plan, pre-flight review" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer asks questions?";
-    "Implementer asks questions?" -> "Answer questions, provide context" [label="yes"];
-    "Answer questions, provide context" -> "Implementer implements, tests, commits, self-reviews";
-    "Implementer asks questions?" -> "Implementer implements, tests, commits, self-reviews" [label="no"];
-    "Implementer implements, tests, commits, self-reviews" -> "Generate review package";
-    "Generate review package" -> "Package says docs-only?";
-    "Package says docs-only?" -> "Append completion to ledger, mark todo complete" [label="yes - branch review covers it"];
-    "Package says docs-only?" -> "Dispatch task reviewer (./task-reviewer-prompt.md)" [label="no"];
-    "Dispatch task reviewer (./task-reviewer-prompt.md)" -> "Spec ✅ and quality approved?";
-    "Spec ✅ and quality approved?" -> "Append completion to ledger, mark todo complete" [label="yes"];
-    "Spec ✅ and quality approved?" -> "Finding conflicts with plan text?" [label="no"];
-    "Finding conflicts with plan text?" -> "Rule on the conflict, ledger the ruling" [label="yes"];
-    "Rule on the conflict, ledger the ruling" -> "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer";
-    "Finding conflicts with plan text?" -> "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer" [label="no"];
-    "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer" -> "Dispatch scoped re-review (./re-review-prompt.md)";
-    "Dispatch scoped re-review (./re-review-prompt.md)" -> "All findings addressed?";
-    "All findings addressed?" -> "Append completion to ledger, mark todo complete" [label="yes"];
-    "All findings addressed?" -> "R = 5?" [label="no"];
-    "R = 5?" -> "Fix round R of 5: R≤3 resume implementer; R≥4 fresh implementer" [label="no - next round"];
-    "R = 5?" -> "Adjudicate each open finding" [label="yes - breaker trips"];
-    "Adjudicate each open finding" -> "Any load-bearing finding?";
-    "Any load-bearing finding?" -> "Rule and continue; stop only if every path forward is a guess" [label="yes"];
-    "Any load-bearing finding?" -> "Park findings in ledger with rulings" [label="no"];
-    "Park findings in ledger with rulings" -> "Append completion to ledger, mark todo complete";
-    "Append completion to ledger, mark todo complete" -> "More tasks remain?";
-    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
-    "More tasks remain?" -> "Invoke review <MERGE_BASE>" [label="no"];
-    "Invoke review <MERGE_BASE>" -> "review: judged findings, ONE fix dispatch, one re-review";
-    "review: judged findings, ONE fix dispatch, one re-review" -> "Final review clean: delete this plan's workspace";
-    "Final review clean: delete this plan's workspace" -> "review hands off to finishing-a-development-branch";
-}
-```
+Use for a reviewed plan with independent tasks. This is the distro's delegated execution path. For illustrative flow diagrams and a worked
+example, see [workflow-examples.md](workflow-examples.md); the rules below
+are the execution contract.
 
 ## Setup
+
+Resolve this loaded skill's physical directory as `SDD_DIR`. Run its
+helpers as `bash "$SDD_DIR/scripts/<helper>" …` from the target worktree;
+`bash scripts/…` below is shorthand for that absolute resource path.
+Read [the runtime adapter](../../references/runtime.md) before delegation.
 
 Work in an Orca worktree: the current checkout, or one made with
 `orca worktree create --no-parent` when the session runs in the main
@@ -187,19 +110,20 @@ implementation.
 
 ## Model Selection
 
-Subagents run on the distro's agent types, whose model and effort come from
-`config/models.json` (regenerated into the agent files by `make models`), never
-from the dispatch:
+Before dispatching, read [the runtime adapter](../../references/runtime.md).
+Role bodies in `agents/verus-*.md` are shared by both hosts:
 
 - Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Never pass a `model` parameter: it would override the agent's configured model.
-- In a Codex session: dispatch with spawn_agent and pass no model.
+- Codex: prepend the role file body to the prompt and use `spawn_agent`
+  with fresh context where supported (`fork_turns="none"`). Do not pass
+  model/effort overrides unless requested; Codex host defaults apply.
+  `config/models.json` subagent tiers configure Claude, not Codex.
 
-Dispatch subagents unnamed and in the background: never give them a `name`
-or turn them into named teammates, because every named agent opens its own
-window on this machine. The user does not watch subagents work; you collect
-their reports. For fix rounds, resume the agent by the id the dispatch
-returned, or dispatch a fresh unnamed implementer with the brief and report
-file paths.
+In Claude Code use background subagents without the teammate `name`.
+In Codex supply a required task label when the tool needs one. Collect
+reports by agent ID; for fixes resume the implementer by that ID using
+the host's follow-up/resume tool. Release finished agents when supported
+after their review/fix cycle is settled.
 
 ## The Task Loop
 
@@ -219,8 +143,7 @@ and is re-read on every later turn. Hand artifacts over as files.
 short timeouts, and never sit in one silent, open-ended wait either.
 While you have local work — ledger updates, packaging the next review,
 reading reports — keep working; child results arrive on their own.
-When you are genuinely idle, wait in bounded stretches (five to ten
-minutes, where your platform allows), and between stretches post one
+When you are genuinely idle, wait in bounded stretches (up to 60 seconds, or less when your host requires), and between stretches post one
 line of status and reconcile your live children: list them, and chase
 any that finished without reporting. A bounded stretch keeps nearly
 all of a long wait's efficiency while guaranteeing a stuck or lost
@@ -490,70 +413,3 @@ plans.
 | "Reviews slow the loop down" | The loop without reviews is just unverified churn. Reviews are the loop's brakes and steering. |
 | "Ledger bookkeeping is overhead" | The ledger is what survives compaction. Controllers without one have re-dispatched entire completed task sequences. |
 | "The implementer spawned its own reviewer — free extra assurance" | It's a duplicate seat reviewing the same diff; the task review is the gate. A worker-spawned reviewer is a defect to flag, not rigor. |
-
-## Example Workflow
-
-```
-You: I'm using Subagent-Driven Development to execute this plan.
-
-[Setup: working in the current checkout]
-[Read plan file once: docs/plans/feature-plan.md]
-[Resolve workspace: bash scripts/sdd-workspace docs/plans/feature-plan.md — no ledger inside, fresh start]
-[Create todos for all tasks]
-
-Task 1: Hook installation script
-
-[Run task-brief for Task 1; dispatch implementer with brief + report paths + context]
-
-Implementer: "Before I begin - should the hook be installed at user or system level?"
-
-You: "User level (~/.config/superpowers/hooks/)"
-
-Implementer: [Later]
-  - Implemented install-hook command
-  - Added tests, 5/5 passing
-  - Self-review: Found I missed --force flag, added it
-  - Committed
-
-[Run review-package PLAN_FILE BASE HEAD; dispatch task reviewer with the printed path]
-Task reviewer: Spec ✅ - all requirements met, nothing extra.
-  Strengths: Good test coverage, clean. Issues: None. Task quality: Approved.
-
-[Ledger: Task 1: complete (commits a1b2c3d..d4e5f6a, review clean)]
-
-Task 2: Recovery modes
-
-[Run task-brief for Task 2; dispatch implementer with brief + report paths + context]
-
-Implementer: [No questions]
-  - Added verify/repair modes
-  - 8/8 tests passing
-  - Committed
-
-[Run review-package PLAN_FILE BASE HEAD; dispatch task reviewer with the printed path]
-Task reviewer: Spec ❌:
-  - Missing: Progress reporting (spec says "report every 100 items")
-  Issues (Important): Magic number (100)
-
-[Fix round 1: resume the implementer with both findings]
-Implementer: Added progress reporting, extracted PROGRESS_INTERVAL constant.
-  Re-ran test/recovery.test.js — 10/10 passing. Fix report appended.
-
-[Run review-package PLAN_FILE FIX_BASE HEAD; dispatch scoped re-review]
-Re-reviewer: Missing progress reporting — ADDRESSED (src/recovery.js:41).
-  Magic number — ADDRESSED (src/recovery.js:7). New breakage: none.
-  Verdict: all findings addressed.
-
-[Ledger: Task 2: fix round 1/5 (2 addressed, 0 open; commits d4e5f6a..b7c8d9e)]
-[Ledger: Task 2: complete (commits d4e5f6a..b7c8d9e, review clean)]
-
-...
-
-[After all tasks]
-[Run review-package; invoke review <MERGE_BASE>]
-Final reviewer: All requirements met. Deferred minors triaged: none block merge.
-
-[Delete this plan's workspace — the record now lives in git]
-
-Done! review handed off to finishing-a-development-branch.
-```

@@ -26,12 +26,12 @@ test("no docs/superpowers paths remain in skills/", () => {
 
 test("SDD final review routes to review and keeps the SDD rules", () => {
   const sdd = readFileSync(path.join(root, "subagent-driven-development/SKILL.md"), "utf8");
-  assert.match(sdd, /Invoke review <MERGE_BASE>/);
+  assert.match(sdd, /review <MERGE_BASE>/);
   assert.doesNotMatch(sdd, /using-git-worktrees/);
   assert.doesNotMatch(sdd, /executing-plans/);
   assert.doesNotMatch(sdd, /requesting-code-review/);
   assert.doesNotMatch(sdd, /more capable model/);
-  assert.match(sdd, /unnamed/);
+  assert.match(sdd, /without the teammate `name`/);
 });
 
 test("no model-tier escalation advice remains in SDD prompts", () => {
@@ -85,7 +85,7 @@ test("SDD names the plugin form in both finishing-a-development-branch hand-offs
   assert.ok(hits.length >= 2, `expected the plugin form at both hand-offs, found ${hits.length}`);
 });
 
-const CODEX_LINE = "In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model.";
+const RUNTIME_LINK = "../../references/runtime.md";
 const claudeLine = (tier) =>
   `Claude Code: \`subagent_type\` = \`verus-${tier}\` (\`verus-skills:verus-${tier}\` when installed as a plugin), unnamed, in the background, no \`model\` parameter.`;
 // file (relative to skills/) → the tiers of its dispatch sites, one entry per site
@@ -100,7 +100,7 @@ const DISPATCH_SITES = {
   "kickoff/SKILL.md": ["explorer"],
 };
 
-test("every dispatch site names the agent type for Claude Code and spawn_agent for Codex", () => {
+test("every dispatch site retains Claude roles and resolves the shared Codex runtime adapter", () => {
   let sites = 0;
   for (const [file, tiers] of Object.entries(DISPATCH_SITES)) {
     const body = readFileSync(path.join(root, file), "utf8");
@@ -108,7 +108,13 @@ test("every dispatch site names the agent type for Claude Code and spawn_agent f
       const n = body.split(claudeLine(tier)).length - 1;
       assert.equal(n, tiers.filter((t) => t === tier).length, `${file}: Claude Code line for verus-${tier}`);
     }
-    assert.equal(body.split(CODEX_LINE).length - 1, tiers.length, `${file}: Codex line count`);
+    assert.ok(body.includes(RUNTIME_LINK), `${file}: no runtime adapter`);
+    const adapter = path.resolve(root, path.dirname(file), RUNTIME_LINK);
+    assert.ok(statSync(adapter).isFile(), `${file}: broken runtime reference`);
+    for (const tier of new Set(tiers)) {
+      const role = readFileSync(path.resolve(root, "..", "agents", `verus-${tier}.md`), "utf8");
+      assert.ok(role.replace(/^---\n[\s\S]*?\n---\n/, "").trim(), `${file}: empty role contract`);
+    }
     assert.doesNotMatch(body, /general-purpose/, file);
     assert.doesNotMatch(body, /model: opus/, file);
     // a `name:` parameter in a dispatch opens a window; the file's own frontmatter `name:` is not a dispatch

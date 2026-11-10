@@ -17,10 +17,10 @@ after(() => {
   for (const d of TEMP_DIRS) rmSync(d, { recursive: true, force: true });
 });
 
-// The locator is the run of lines from `SKILLS_REPO=""` to the `done` that closes the loop.
+// Execute the shell instructions agents actually receive, not a reimplementation.
 function extractLocator(relPath) {
   const body = readFileSync(path.join(REPO_ROOT, relPath), "utf8");
-  const m = body.match(/SKILLS_REPO=""\n(?:.*\n)*?done\n/);
+  const m = body.match(/SKILL_DIR="<[^\n]+>"\nSKILLS_REPO=.*\n.*distro root not found.*\n/);
   assert.ok(m, `no locator block found in ${relPath}`);
   return m[0];
 }
@@ -35,10 +35,12 @@ function fakeDistro() {
   return root;
 }
 
-function runLocator(snippet, home) {
+function runLocator(snippet, home, skillDir) {
+  // Supply the loaded skill path as data, even when it contains shell metacharacters.
+  snippet = snippet.replace(/^SKILL_DIR=.*\n/, 'SKILL_DIR="$LOADED_SKILL_DIR"\n');
   const res = spawnSync("bash", ["-c", snippet + '\necho "RESULT=$SKILLS_REPO"'], {
     encoding: "utf8",
-    env: { ...process.env, HOME: home },
+    env: { ...process.env, HOME: home, LOADED_SKILL_DIR: skillDir },
   });
   assert.equal(res.status, 0, res.stderr);
   return (res.stdout.match(/RESULT=(.*)/) ?? [])[1];
@@ -48,7 +50,7 @@ test("the locator is identical in all four skills apart from the skill name", ()
   const kickoff = extractLocator("skills/kickoff/judge.md");
   const planReview = extractLocator("skills/plan-review/SKILL.md").replaceAll("plan-review", "kickoff");
   const specReview = extractLocator("skills/spec-review/SKILL.md").replaceAll("spec-review", "kickoff");
-  const review = extractLocator("skills/review/SKILL.md").replaceAll("/skills/review/", "/skills/kickoff/");
+  const review = extractLocator("skills/review/SKILL.md").replaceAll("loaded review skill", "loaded kickoff skill");
   assert.equal(planReview, kickoff);
   assert.equal(specReview, kickoff);
   assert.equal(review, kickoff);
@@ -56,35 +58,47 @@ test("the locator is identical in all four skills apart from the skill name", ()
 
 test("judge.md carries the locator twice: the informational block and the real one", () => {
   const body = readFileSync(path.join(REPO_ROOT, "skills/kickoff/judge.md"), "utf8");
-  assert.equal(body.split('SKILLS_REPO=""').length - 1, 2);
+  assert.equal(body.split('SKILL_DIR="<').length - 1, 2);
 });
 
-test("the locator resolves the root from the pointer file", () => {
+test("the loaded skill determines the version even when another session owns the global pointer", () => {
   const home = tmp("home-");
   const root = fakeDistro();
   mkdirSync(path.join(home, ".verus-skills"), { recursive: true });
-  writeFileSync(path.join(home, ".verus-skills", "root"), root + "\n");
-  assert.equal(runLocator(extractLocator("skills/kickoff/judge.md"), home), root);
+  const other = fakeDistro();
+  writeFileSync(path.join(home, ".verus-skills", "root"), other + "\n");
+  assert.equal(runLocator(extractLocator("skills/kickoff/judge.md"), home, path.join(root, "skills", "kickoff")), root);
 });
 
-test("a pointer file naming a deleted checkout is skipped, not used", () => {
+test("both sessions keep their own version across pointer rewrites", () => {
   const home = tmp("home-");
-  const gone = path.join(tmp("gone-"), "removed-checkout");
+  const roots = [fakeDistro(), fakeDistro()];
   mkdirSync(path.join(home, ".verus-skills"), { recursive: true });
-  writeFileSync(path.join(home, ".verus-skills", "root"), gone + "\n");
-  assert.equal(runLocator(extractLocator("skills/kickoff/judge.md"), home), "");
+  for (const writer of roots) {
+    writeFileSync(path.join(home, ".verus-skills", "root"), writer + "\n");
+    for (const loaded of roots) {
+      assert.equal(runLocator(extractLocator("skills/kickoff/judge.md"), home, path.join(loaded, "skills", "kickoff")), loaded);
+    }
+  }
 });
 
-test("a stale pointer file falls through to the symlinked skill directory", () => {
+test("a loaded skill symlink resolves to its checkout, independently of cwd", () => {
   const home = tmp("home-");
   const root = fakeDistro();
   mkdirSync(path.join(home, ".verus-skills"), { recursive: true });
   writeFileSync(path.join(home, ".verus-skills", "root"), "/nope/nowhere\n");
   mkdirSync(path.join(home, ".claude", "skills"), { recursive: true });
   symlinkSync(path.join(root, "skills", "kickoff"), path.join(home, ".claude", "skills", "kickoff"));
-  assert.equal(runLocator(extractLocator("skills/kickoff/judge.md"), home), root);
+  assert.equal(runLocator(extractLocator("skills/kickoff/judge.md"), home, path.join(home, ".claude", "skills", "kickoff")), root);
 });
 
-test("with no pointer file and no symlinks the locator yields an empty root", () => {
-  assert.equal(runLocator(extractLocator("skills/kickoff/judge.md"), tmp("home-")), "");
+test("a missing loaded version fails instead of silently switching to another install", () => {
+  const home = tmp("home-");
+  const other = fakeDistro();
+  mkdirSync(path.join(home, ".verus-skills"), { recursive: true });
+  writeFileSync(path.join(home, ".verus-skills", "root"), other + "\n");
+  const snippet = extractLocator("skills/kickoff/judge.md").replace(/^SKILL_DIR=.*\n/, 'SKILL_DIR="$LOADED_SKILL_DIR"\n');
+  const r = spawnSync("bash", ["-c", snippet], { encoding: "utf8", env: { ...process.env, HOME: home, LOADED_SKILL_DIR: "/no/such/skill" } });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /distro root not found/);
 });

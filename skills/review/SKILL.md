@@ -32,7 +32,7 @@ argument-hint: "[all | <path|glob>... | <base>] — default: branch diff vs main
   fi
   ```
 - `ROUND`: 1.
-- Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `review`). Every fenced block below is one shell call, so a block that uses `$SKILLS_REPO` must run the locator itself.
+- Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `review`). Every fenced block below is one shell call: fill `SKILL_DIR` from this loaded skill's absolute base directory and run the locator in each call that uses `$SKILLS_REPO`. Read [the runtime adapter](../../references/runtime.md) for Codex command sessions and delegation.
 
 Collect the inputs and the mode in one call. Substitute the real argument for the placeholder on the first line before running — a Bash tool call gets no positional arguments, so `$1` would always be empty:
 
@@ -142,16 +142,13 @@ Say nothing about models or reasoning effort in the prompt — the launcher pins
 
 The reviewer is Codex in an Orca terminal opened beside this session — a visible tab the user can watch. `codex exec` is only the launcher's last resort: `reviewer.sh` itself falls back to it when Orca cannot start a Codex terminal, and says why on stderr. So launch only by running the block below as written: never run `codex`, `codex exec` or `orca terminal …` yourself, never write your own launcher, never skip the block because Orca "looks unavailable". In Claude Code run the block with `dangerouslyDisableSandbox: true` (the sandbox can cut Orca's local socket and Codex's network, which silently turns the review into `codex exec`) and `run_in_background: true` (the review outlives the Bash timeout; you are notified when it exits).
 
-Substitute the real values for the four placeholders before running:
+Substitute the real paths and round values for the placeholders before running:
 
 ```bash
-SKILLS_REPO=""
-for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
-         "$HOME/.claude/skills/review/../.." \
-         "$HOME/.codex/skills/review/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
-done
-[ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO"
+SKILL_DIR="<absolute directory of the loaded review skill>"
+SKILLS_REPO="$(cd -P "$SKILL_DIR/../.." 2>/dev/null && pwd -P)"
+[ -f "$SKILL_DIR/SKILL.md" ] && [ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || { echo "distro root not found for loaded skill: $SKILL_DIR" >&2; exit 2; }
+[ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || { echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO" >&2; exit 2; }
 
 PROMPT="<the temp prompt file from section 1>"
 REPORT="<REPORT, repo-relative>"
@@ -169,7 +166,7 @@ echo "reviewer_exit=$?"
 ```
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`). On `reviewer: codex-exec`, copy the `orca: …` stderr line into the section-6 summary as the reason the Orca terminal was not used; do not relaunch by hand.
-- `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
+- `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. For Codex, follow [the runtime adapter](../../references/runtime.md): prepend the matching role body to the task prompt and dispatch in fresh context with the native subagent tool. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
 - `1`: fix the invocation; do not proceed. An Orca terminal that could not be closed is left recorded in the session file, and the section-6 close retries it.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 
@@ -214,7 +211,7 @@ In report-only mode skip this section and section 5: print the fix list below as
 
 The report is already committed by the step at the end of section 2, so the tree is clean here. Find the repo's test command, in this order: the plan's header, `CLAUDE.md` or `AGENTS.md`, then `package.json` scripts / `Makefile` targets / `pyproject.toml`. If none of them names one, say so in the hand-off and skip the suite rather than guessing.
 
-Collect into one fix list the chosen action of every judged finding, whatever its option letter and whether the judge accepted it, it fell back to your recommendation, or the user chose it, plus every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the code and stays off the list. If the list is empty, skip the fix wave and go on to recording the decisions. Otherwise dispatch ONE fix subagent — Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. Give it the list, the spec path, the test command you found, the absolute path of the worktree under review and its branch, and the rules "work only in that worktree (`cd <worktree> && …`; before committing check `git -C <worktree> branch --show-current` prints the branch, otherwise commit nothing and report BLOCKED); fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
+Collect into one fix list the chosen action of every judged finding, whatever its option letter and whether the judge accepted it, it fell back to your recommendation, or the user chose it, plus every finding accepted without the judge. A "leave it as is" choice is recorded with the decisions but changes nothing in the code and stays off the list. If the list is empty, skip the fix wave and go on to recording the decisions. Otherwise dispatch ONE fix subagent — Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. For Codex, follow [the runtime adapter](../../references/runtime.md): prepend the matching role body to the task prompt and dispatch in fresh context with the native subagent tool. Give it the list, the spec path, the test command you found, the absolute path of the worktree under review and its branch, and the rules "work only in that worktree (`cd <worktree> && …`; before committing check `git -C <worktree> branch --show-current` prints the branch, otherwise commit nothing and report BLOCKED); fix all of them, run the full suite, commit as `fix(review): <summary>`; do not touch anything outside the findings; do not amend or rebase existing commits". Wait for it. Verify the suite yourself with `verification-before-completion` before continuing.
 
 If the suite is red after the fix wave, report the failing tests to the user, close the reviewer session (the block at the start of section 6) and stop — do not start round 2 and do not hand off to `finishing-a-development-branch`.
 
@@ -240,12 +237,9 @@ Stop after round 2.
 First close this review's reviewer session:
 
 ```bash
-SKILLS_REPO=""
-for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
-         "$HOME/.claude/skills/review/../.." \
-         "$HOME/.codex/skills/review/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
-done
+SKILL_DIR="<absolute directory of the loaded review skill>"
+SKILLS_REPO="$(cd -P "$SKILL_DIR/../.." 2>/dev/null && pwd -P)"
+[ -f "$SKILL_DIR/SKILL.md" ] && [ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || { echo "distro root not found for loaded skill: $SKILL_DIR" >&2; exit 2; }
 SESSION="<the SESSION printed by section 2>"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 ```

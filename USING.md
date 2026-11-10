@@ -1,12 +1,12 @@
 # Skills routing (claude-skills distro)
 
-You have a personal skills distro installed. Before responding to any task, check whether one of these applies and invoke it with the Skill tool; if there is even a small chance a skill applies, invoke it.
+You have a personal skills distro installed. Load and follow the skill that matches the requested work. In Claude Code use the Skill tool; in Codex read its SKILL.md from the catalog path. Ordinary questions and read-only inspections do not start an implementation workflow.
 
 Skills are named below without a prefix. Under the plugin install each one is addressed as `verus-skills:<name>` — `verus-skills:kickoff`, `verus-skills:review` and so on; under the symlink development install, by the bare name.
 
 ## The flow for any non-trivial change
 
-1. `kickoff` — always first for a new task: classifies (spike / bounded / architectural), interviews via a decision tree, auto-answers multiple-choice questions through the TypeSafe judge, writes the spec to `docs/specs/`.
+1. `kickoff` — first for new implementation work or an explicit design/feasibility session: classifies (spike / bounded / architectural), interviews via a decision tree, auto-answers multiple-choice questions through the TypeSafe judge, writes architectural specs to `docs/specs/`. If the user already approved the proposed bounded design, proceed with that design instead of asking again.
 2. `spec-review` — external review of the spec by Codex; findings judged (findings against the user's own decisions go to the user); one re-review round; a clear spec goes straight on to the plan, otherwise the user approves it.
 3. `writing-plans` — turns the reviewed spec into `docs/plans/<date>-<name>.md`.
 4. `plan-review` — external review of the plan by Codex; findings judged; one re-review round; then the key architecture decisions are shown without stopping.
@@ -25,11 +25,11 @@ Each skill names the next one; follow the chain. Never skip `plan-review` or `re
 
 ## Decisions
 
-Whenever a skill auto-accepts an answer via the TypeSafe judge — or, when Jev does not confirm it, takes Claude's recommendation without asking — the decision block (question, options with probabilities, choice, confidence, sufficiency) is printed in chat immediately and recorded in the spec, plan or review report. The user always sees what was decided and from what. In `kickoff`, routine questions (naming, defaults, minor options, reversible choices) are never asked, even when the judge is down; only owner questions — irreversible, costing money, touching security or access, or with a low-confidence recommendation — and open-ended ones reach the user.
+Whenever a skill auto-accepts an answer via the TypeSafe judge — or, when Jev does not confirm it, takes the coordinating agent's recommendation without asking — the decision block (question, options with probabilities, choice, confidence, sufficiency) is printed in chat immediately and recorded in the spec, plan or review report. The user always sees what was decided and from what. In `kickoff`, routine questions (naming, defaults, minor options, reversible choices) are never asked, even when the judge is down; only owner questions — irreversible, costing money, touching security or access, or with a low-confidence recommendation — and open-ended ones reach the user.
 
 ## Rules
 
-- Subagents are dispatched unnamed and in the background, never as named teammates with their own windows. In Claude Code they run as the distro's agent types via `subagent_type` — `verus-worker`, `verus-reviewer`, `verus-explorer` (prefixed `verus-skills:` under the plugin install) — whose model and effort come from `config/models.json`; never pass a `model` parameter. In a Codex session they are dispatched with spawn_agent, with no model. The user reads your summary, not the subagents.
+- Before delegating or launching long commands, read `references/runtime.md` relative to this file. It maps Claude `subagent_type` roles (`verus-worker`, `verus-reviewer`, `verus-explorer`) to Codex `spawn_agent` prompts, using the same role bodies, and explains context isolation, waits and cleanup.
 - Work in the current checkout when it is an Orca worktree. If the session runs in the repo's main checkout and the work needs a branch, create one with `orca worktree create --no-parent` and work there; when the session already runs in an Orca worktree and the task needs another branch, create it with `orca worktree create --parent-worktree current` so Orca nests it under the task's workspace instead of beside it; never `git checkout` a branch in the main checkout and never `git worktree add` by hand (Orca picks such paths up as stray workspaces, and the Codex reviewer opens in them).
 - When the branch lives in a worktree other than the session's directory (the session started in the main checkout), run every shell command there (`cd <worktree> && …` or `git -C <worktree>`), and give every subagent that touches the repo its absolute path and branch: "Work only in `<worktree>` on branch `<branch>`; before each commit check that `git -C <worktree> branch --show-current` prints `<branch>`, otherwise stop and report BLOCKED." Subagents start in the session's directory, so without this they commit to `main`.
 - User instructions (CLAUDE.md, AGENTS.md, direct requests) override skills.

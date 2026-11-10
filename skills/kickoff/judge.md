@@ -3,9 +3,10 @@
 Use this whenever you are about to ask the user a question that has 2–6 concrete options. An accepted answer is taken as is, an unaccepted one falls back to your recommendation. A judged question reaches the user only when the judge is unavailable — and in kickoff not even then, because kickoff judges only routine questions (kickoff § 3).
 
 Every fenced block below is one shell call; the locator must be at the top of any
-block that uses `$SKILLS_REPO`. It tries the pointer file the SessionStart hook
-writes (the plugin install), then the symlinks the installer creates (the
-development install), and validates each candidate before accepting it.
+block that uses `$SKILLS_REPO`. Fill `SKILL_DIR` with the absolute base
+directory of the loaded skill (from its catalog path or Skill tool result).
+It resolves that version's physical root through symlinks and validates it.
+It never consults the global legacy pointer or another installation.
 
 ## Locate the repo (informational)
 
@@ -14,13 +15,9 @@ it to export `SKILLS_REPO` for a later block; variables do not survive between
 shell calls.
 
 ```bash
-SKILLS_REPO=""
-for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
-         "$HOME/.claude/skills/kickoff/../.." \
-         "$HOME/.codex/skills/kickoff/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
-done
-[ -n "$SKILLS_REPO" ] || echo "distro root not found"
+SKILL_DIR="<absolute directory of the loaded kickoff skill>"
+SKILLS_REPO="$(cd -P "$SKILL_DIR/../.." 2>/dev/null && pwd -P)"
+[ -f "$SKILL_DIR/SKILL.md" ] && [ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || { echo "distro root not found for loaded skill: $SKILL_DIR" >&2; exit 2; }
 echo "SKILLS_REPO=$SKILLS_REPO"
 ```
 
@@ -30,13 +27,9 @@ This is the block you actually run: locator first, then the question, then the
 script — all in one call.
 
 ```bash
-SKILLS_REPO=""
-for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
-         "$HOME/.claude/skills/kickoff/../.." \
-         "$HOME/.codex/skills/kickoff/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
-done
-[ -n "$SKILLS_REPO" ] || echo "distro root not found"
+SKILL_DIR="<absolute directory of the loaded kickoff skill>"
+SKILLS_REPO="$(cd -P "$SKILL_DIR/../.." 2>/dev/null && pwd -P)"
+[ -f "$SKILL_DIR/SKILL.md" ] && [ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || { echo "distro root not found for loaded skill: $SKILL_DIR" >&2; exit 2; }
 echo "SKILLS_REPO=$SKILLS_REPO"
 
 Q=$(mktemp)

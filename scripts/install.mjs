@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Install/uninstall the distro: symlinks, SessionStart hook, Codex AGENTS.md line.
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -257,9 +257,9 @@ function claudePluginList() {
   }
 }
 
-function codexPluginConfig(home) {
+function codexPluginConfig(home, codexHome = path.join(home, ".codex")) {
   try {
-    return readFileSync(path.join(home, ".codex", "config.toml"), "utf8");
+    return readFileSync(path.join(codexHome, "config.toml"), "utf8");
   } catch {
     return null;
   }
@@ -269,10 +269,10 @@ function codexPluginConfig(home) {
 // both installs would double every skill and inject USING.md twice. Codex
 // declares its plugins in config.toml, which the claude CLI never reports, so
 // both sources are checked.
-export function pluginInstalled(home, run = claudePluginList, readCodex = codexPluginConfig) {
+export function pluginInstalled(home, run = claudePluginList, readCodex = codexPluginConfig, codexHome = path.join(home, ".codex")) {
   const claude = run();
   if (typeof claude === "string" && claude.includes(PLUGIN_ID)) return "claude";
-  const codex = readCodex(home);
+  const codex = readCodex(home, codexHome);
   if (typeof codex === "string" && codex.includes(`[plugins."${PLUGIN_ID}"]`)) return "codex";
   return null;
 }
@@ -310,10 +310,13 @@ function main() {
     return;
   }
   const home = opts.home ?? homedir();
+  // An explicit --home is an isolated installation, including its Codex config.
+  const codexHome = opts.home ? path.join(home, ".codex") : path.resolve(process.env.CODEX_HOME?.trim() || path.join(home, ".codex"));
   const claudeSkills = path.join(home, ".claude", "skills");
-  const codexSkills = path.join(home, ".codex", "skills");
+  const codexSkills = path.join(home, ".agents", "skills");
+  const legacyCodexSkills = path.join(codexHome, "skills");
   const settings = path.join(home, ".claude", "settings.json");
-  const agents = path.join(home, ".codex", "AGENTS.md");
+  const agents = path.join(codexHome, "AGENTS.md");
   const claudeAgents = path.join(home, ".claude", "agents");
 
   // Validate before touching anything: a broken settings.json used to blow up
@@ -336,12 +339,12 @@ function main() {
     }
   }
 
-  const installedFor = opts.uninstall || opts.force ? null : pluginInstalled(home);
+  const installedFor = opts.uninstall || opts.force ? null : pluginInstalled(home, claudePluginList, codexPluginConfig, codexHome);
   if (installedFor) {
     console.error(`${PLUGIN_ID} is installed (${installedFor}); the symlink install would duplicate every skill and inject USING.md twice`);
     console.error(
       installedFor === "codex"
-        ? `remove the [plugins."${PLUGIN_ID}"] section from ${path.join(home, ".codex", "config.toml")}   (or re-run with --force)`
+        ? `remove the [plugins."${PLUGIN_ID}"] section from ${path.join(codexHome, "config.toml")}   (or re-run with --force)`
         : `run: claude plugin uninstall ${PLUGIN_ID}   (or re-run with --force)`,
     );
     process.exitCode = 1;
@@ -360,6 +363,7 @@ function main() {
   if (opts.uninstall) {
     console.log("claude skills removed:", unlinkSkills(REPO_ROOT, claudeSkills).removed.join(", ") || "none");
     console.log("codex skills removed:", unlinkSkills(REPO_ROOT, codexSkills).removed.join(", ") || "none");
+    console.log("legacy codex skills removed:", unlinkSkills(REPO_ROOT, legacyCodexSkills).removed.join(", ") || "none");
     console.log("claude agents removed:", unlinkAgents(REPO_ROOT, claudeAgents).removed.join(", ") || "none");
     removeHook(settings, REPO_ROOT);
     removeAgentsLine(agents, REPO_ROOT);
@@ -375,6 +379,19 @@ function main() {
       console.log(`${label}: re-pointed from ${from}: ${names.join(", ")}`);
     }
     if (r.skipped.length) console.log(`${label}: SKIPPED (name taken by a foreign entry): ${r.skipped.join(", ")}`);
+    // Remove a legacy duplicate only after the new discoverable link succeeded.
+    // Foreign entries and skills skipped at the new location remain untouched.
+    if (label === "codex" && (!existsSync(legacyCodexSkills) || realpathSync(legacyCodexSkills) !== realpathSync(codexSkills))) {
+      for (const name of r.linked) {
+        const old = path.join(legacyCodexSkills, name);
+        if (!isSymlink(old)) continue;
+        const from = distroRootOfLink(path.resolve(legacyCodexSkills, readlinkSync(old)), name);
+        if (from && isDistroCheckout(from)) {
+          unlinkSync(old);
+          console.log(`codex: removed legacy link ${old}`);
+        }
+      }
+    }
   }
   const ag = linkAgents(REPO_ROOT, claudeAgents);
   console.log(`claude agents: linked ${ag.linked.join(", ")}`);

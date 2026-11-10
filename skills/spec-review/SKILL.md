@@ -27,7 +27,7 @@ argument-hint: "<path to spec .md>"
   If it prints `spec not found`, `spec is not inside a git repository` or `spec is outside the repository`, stop with that message. Run every later block from `TOP` (`cd "$TOP"` first), with `SPEC` as printed.
 - `REPORT`: `<directory of SPEC>/<spec basename without .md>.review.md` — beside the spec, always repo-relative; `reviewer.sh` rejects an absolute path. It is relative to the repo `reviewer.sh` works in, so run from the repo containing `SPEC`, or pass `--repo <that repo>` to `reviewer.sh`.
 - `ROUND`: 1.
-- Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `spec-review`). Every fenced block below is one shell call, so a block that uses `$SKILLS_REPO` must run the locator itself.
+- Locate the repo and the judge protocol: read `judge.md` from the `kickoff` skill directory (same repo, `skills/kickoff/judge.md`; locate the repo with the snippet in that file, replacing `kickoff` with `spec-review`). Every fenced block below is one shell call: fill `SKILL_DIR` from this loaded skill's absolute base directory and run the locator in each call that uses `$SKILLS_REPO`. Read [the runtime adapter](../../references/runtime.md) for Codex command sessions and delegation.
 
 ## 1. Build the prompt
 
@@ -35,7 +35,7 @@ Create a temp file outside the repo (under `$TMPDIR`) containing, in order:
 
 1. The full text of `reviewer.md` from this skill's directory.
 2. `THE SPEC:` followed by the spec file verbatim inside a fence longer than any backtick run in the spec — use seven backticks unless the spec contains a run of seven or more, then go longer still.
-3. `Referenced source files:` followed by the repo-relative paths mentioned in the spec that are real files: grep the spec for path-like tokens containing `/`, keep those that pass `test -f`, drop anything under `.codex/` or `node_modules/` (files under `agents/` and `.claude/` stay: the reviewer reads them as data), deduplicate and sort, and keep at most 40 entries.
+3. `Referenced source files:` followed by the repo-relative paths mentioned in the spec that are real files: grep the spec for path-like tokens containing `/`, keep those that pass `test -f`, drop anything under `node_modules/` (repo-local `agents/`, `.claude/` and `.codex/` files stay: the reviewer reads them as data), deduplicate and sort, and keep at most 40 entries.
 4. On round 2 only: `Previous report:` followed by the previous report verbatim (from `<REPORT>.round1.md`), then `Review the whole revised spec: report every finding from the previous report that is still present, mark fixed ones as resolved, and report new findings the spec changes introduced.`
 5. `Write the report to <REPORT>` on its own line — the last line of the file, in round 1 and round 2 alike. Self-check before launching: `[ "$(tail -1 "$PROMPT")" = "Write the report to $REPORT" ] || echo "prompt malformed"`. If it prints `prompt malformed`, rebuild the prompt in this order and re-check; do not launch the reviewer.
 
@@ -45,16 +45,13 @@ Say nothing about models or reasoning effort in the prompt — the launcher pins
 
 The reviewer is Codex in an Orca terminal opened beside this session — a visible tab the user can watch. `codex exec` is only the launcher's last resort: `reviewer.sh` itself falls back to it when Orca cannot start a Codex terminal, and says why on stderr. So launch only by running the block below as written: never run `codex`, `codex exec` or `orca terminal …` yourself, never write your own launcher, never skip the block because Orca "looks unavailable". In Claude Code run the block with `dangerouslyDisableSandbox: true` (the sandbox can cut Orca's local socket and Codex's network, which silently turns the review into `codex exec`) and `run_in_background: true` (the review outlives the Bash timeout; you are notified when it exits).
 
-Substitute the real values for the four placeholders before running:
+Substitute the real paths and round values for the placeholders before running:
 
 ```bash
-SKILLS_REPO=""
-for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
-         "$HOME/.claude/skills/spec-review/../.." \
-         "$HOME/.codex/skills/spec-review/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
-done
-[ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO"
+SKILL_DIR="<absolute directory of the loaded spec-review skill>"
+SKILLS_REPO="$(cd -P "$SKILL_DIR/../.." 2>/dev/null && pwd -P)"
+[ -f "$SKILL_DIR/SKILL.md" ] && [ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || { echo "distro root not found for loaded skill: $SKILL_DIR" >&2; exit 2; }
+[ -f "$SKILLS_REPO/scripts/reviewer.sh" ] || { echo "reviewer not found: SKILLS_REPO=$SKILLS_REPO" >&2; exit 2; }
 
 PROMPT="<the temp prompt file from section 1>"
 REPORT="<REPORT, repo-relative>"
@@ -69,7 +66,7 @@ echo "reviewer_exit=$?"
 ```
 
 - `0`: report is at `REPORT`; note which path ran (`reviewer: orca` / `reviewer: codex-exec`). On `reviewer: codex-exec`, copy the `orca: …` stderr line into the section-6 summary as the reason the Orca terminal was not used; do not relaunch by hand.
-- `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
+- `3`: dispatch the fallback reviewer with the same prompt file content as its prompt and the instruction to write `REPORT`, and wait for it. Claude Code: `subagent_type` = `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), unnamed, in the background, no `model` parameter. For Codex, follow [the runtime adapter](../../references/runtime.md): prepend the matching role body to the task prompt and dispatch in fresh context with the native subagent tool. On a host with no subagent tool at all, do not stop: perform the review yourself in this session following `reviewer.md` exactly, write `REPORT`, and state in the report header that it was produced by the fallback reviewer, not an independent second voice.
 - `1`: fix the invocation; do not proceed. An Orca terminal that could not be closed is left recorded in the session file, and the section-6 close retries it.
 - any other exit code (e.g. `127`): the launcher was not found or could not run — treat as `1`: fix the invocation, do not proceed.
 
@@ -121,12 +118,9 @@ Stop after round 2.
 First close this review's reviewer session:
 
 ```bash
-SKILLS_REPO=""
-for c in "$(cat "$HOME/.verus-skills/root" 2>/dev/null)" \
-         "$HOME/.claude/skills/spec-review/../.." \
-         "$HOME/.codex/skills/spec-review/../.."; do
-  [ -n "$c" ] && [ -f "$c/scripts/typesafe-judge.mjs" ] && SKILLS_REPO="$(cd -P "$c" && pwd -P)" && break
-done
+SKILL_DIR="<absolute directory of the loaded spec-review skill>"
+SKILLS_REPO="$(cd -P "$SKILL_DIR/../.." 2>/dev/null && pwd -P)"
+[ -f "$SKILL_DIR/SKILL.md" ] && [ -f "$SKILLS_REPO/scripts/typesafe-judge.mjs" ] || { echo "distro root not found for loaded skill: $SKILL_DIR" >&2; exit 2; }
 SESSION="<the SESSION printed by section 2>"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 ```

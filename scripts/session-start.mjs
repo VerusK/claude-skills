@@ -12,9 +12,8 @@ export function pointerPath(home = homedir()) {
   return path.join(home, ".verus-skills", "root");
 }
 
-// The Bash tool gets neither CLAUDE_SKILL_DIR nor CLAUDE_PLUGIN_ROOT, so the
-// skills read this file to find the distro. A failure here is not fatal: the
-// locator still has its symlink branches.
+// Compatibility for already-loaded older releases. Current skills resolve
+// resources from their loaded skill path and never read this global pointer.
 export function writePointer(root, home = homedir()) {
   const p = pointerPath(home);
   try {
@@ -68,7 +67,7 @@ export function buildContext(root, other = null) {
     other && other !== root && looksLikeDistro(other) && !(inPluginCache(root) && inPluginCache(other))
       ? `WARNING: two installs of this distro are active — this session runs ${root}, while ${other} wrote the pointer file. Keep one: \`claude plugin uninstall verus-skills@verus-skills\`, or \`make uninstall\` run from ${other}.\n\n`
       : "";
-  return `<EXTREMELY_IMPORTANT>\nYou have a personal skills distro.\n\n${warning}Distro root: ${root}\n\n${text}\n</EXTREMELY_IMPORTANT>`;
+  return `<EXTREMELY_IMPORTANT>\nYou have a personal skills distro.\n\n${warning}Distro root: ${root}\nResolve each skill's resources from its loaded path, not the legacy global pointer.\nBefore delegation or long commands, read ${path.join(root, "references", "runtime.md")}.\n\n${text}\n</EXTREMELY_IMPORTANT>`;
 }
 
 function main() {

@@ -1,6 +1,6 @@
 ---
 name: kickoff
-description: Entry point for any new task. Classifies the task (spike / bounded / architectural), interviews the user through a decision tree with multiple-choice questions, auto-answers questions via the TypeSafe judge when confidence is high, and ends with a spec in docs/specs/. Use when starting a task, "let's build", "kickoff", "brainstorm", "grill me", or before writing any plan.
+description: Scope new implementation work or an explicit design or feasibility session. Classifies spike, bounded, or architectural work, settles open decisions, and writes architectural specs. Use for kickoff, brainstorming, or before a new implementation plan; ordinary questions and read-only audits use their own workflow.
 ---
 
 # Kickoff
@@ -13,6 +13,11 @@ questions (irreversible, money, security or access, low-confidence) and
 open-ended ones reach the user.
 
 **Announce at start:** "Using kickoff to scope this task."
+
+An approved design from earlier in this conversation is already approval.
+For bounded work, use it and proceed to `test-driven-development`
+(`verus-skills:test-driven-development` when installed as a plugin) without
+repeating the interview. Honor the user's authorized scope throughout.
 
 <HARD-GATE>
 Do not write code, scaffold, or invoke implementation skills until the user has
@@ -34,7 +39,7 @@ When in doubt, take the heavier path. Hidden complexity found later upgrades the
 
 Before asking anything, read: repo layout, docs, recent commits, existing specs in
 `docs/specs/`. Any question that a file or command can answer is never asked;
-dispatch an explorer subagent for broad lookups — Claude Code: `subagent_type` = `verus-explorer` (`verus-skills:verus-explorer` when installed as a plugin), unnamed, in the background, no `model` parameter. In a Codex session: dispatch the same prompt with spawn_agent, unnamed, in the background; pass no model. Keep asking
+dispatch an explorer subagent for broad lookups — Claude Code: `subagent_type` = `verus-explorer` (`verus-skills:verus-explorer` when installed as a plugin), unnamed, in the background, no `model` parameter. For Codex, follow [the runtime adapter](../../references/runtime.md): prepend the matching role body to the task prompt and dispatch in fresh context with the native subagent tool. Keep asking
 the rest of the frontier meanwhile.
 
 ## 3. The decision tree
