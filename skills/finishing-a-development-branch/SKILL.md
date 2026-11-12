@@ -123,6 +123,10 @@ tooling — its CLI if one is available, or the creation URL most forges
 print when you push — following the repo's PR template and conventions if
 present, and report the URL to your human partner.
 
+If an installed skill covers waiting for review on this repository's merge
+or pull requests (its description says so), invoke it now with the PR/MR
+URL instead of stopping here; it takes the request through review.
+
 Keep the worktree — your human partner iterates on PR feedback there.
 
 ### Option 3: Keep As-Is

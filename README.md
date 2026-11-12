@@ -104,7 +104,7 @@ A **clean** working tree gives full mode: review → findings judged → at most
 | `subagent-driven-development` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
 | `systematic-debugging` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
 | `test-driven-development` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
-| `finishing-a-development-branch` | copy | obra/superpowers | Jesse Vincent | MIT |
+| `finishing-a-development-branch` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
 | `verification-before-completion` | copy | obra/superpowers | Jesse Vincent | MIT |
 | `typesafe-ai` | copy | [typesafe-ai/skills](https://github.com/typesafe-ai/skills) | TypeSafe AI | MIT |
 

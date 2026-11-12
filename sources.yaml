@@ -16,6 +16,7 @@ sources:
     repo: obra/superpowers
     ref: main
     path: skills/finishing-a-development-branch
+    patch: true
   - name: test-driven-development
     repo: obra/superpowers
     ref: main
