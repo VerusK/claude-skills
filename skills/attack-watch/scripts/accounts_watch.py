@@ -26,16 +26,21 @@ def pg_rows(config, sql, deadline):
         command=list(pg['argv'])
         if '--db-user' not in command: command+=['--db-user',pg['user']]
         if '--db-name' not in command: command+=['--db-name',pg['db']]
+        sql='\\set ON_ERROR_STOP on\n'+sql+'\\echo ATTACK_WATCH_QUERY_COMPLETE\n'
         result=subprocess.run(command,input=sql,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=min(30,budget),check=False)
         if result.returncode: raise SafeError('PGFailure')
-        rows=[]
+        rows=[]; completed=False
         for line in result.stdout.splitlines():
             line=line.strip()
+            if line=='ATTACK_WATCH_QUERY_COMPLETE':
+                completed=True; continue
+            if completed and line: raise SafeError('PGTrailingOutput')
             # psql settings acknowledgements are not rows; unexpected response is a failure.
             if not line or line.startswith(('Output format','Tuples only','SET')): continue
             item=json.loads(line)
             if not isinstance(item,dict): raise SafeError('PGShape')
             rows.append(item)
+        if not completed: raise SafeError('PGIncomplete')
         return rows
     except subprocess.TimeoutExpired:
         if time.monotonic() >= deadline:

@@ -78,6 +78,46 @@ class ObserverTests(unittest.TestCase):
         agg['auth']['doc_count']=99
         self.assertEqual(len(self.es.detect_hostsec(agg, {})), 1)
 
+    def test_es_poll_reports_bare_and_qualified_exception_classes(self):
+        c=config(); c['elastic']={'url':'https://es.example','indexes':{'app':'app','ingress':'ingress','hostsec':'hostsec'}}
+        empty={'hits':{'hits':[],'total':0}}
+        errors={'hits':{'hits':[{'_source':{'message':'Traceback\n'+name+': SECRET'}} for name in ('Error','Exception','builtins.Exception','ValueError')],'total':4}}
+        host={'aggregations':{'key':{'buckets':[]},'auth':{'doc_count':0}}}
+        state={}
+        with patch('es_watch.request_json',side_effect=[empty,errors,empty,host]):
+            events=self.es.poll(c,state,time.monotonic()+10)
+        found={e['exception']:e['count'] for e in events if e['event']=='APPERR'}
+        self.assertEqual(found,{'Error':1,'Exception':2,'ValueError':1})
+        self.assertEqual(state['targets']['errors']['status'],'success')
+        self.assertNotIn('SECRET',json.dumps(events))
+
+    def test_pg_zero_exit_without_select_completion_retains_all_checkpoints(self):
+        c=config(); c['accounts']={'initial_cursor':100,'pg':{'argv':['tsh','db','connect','resource'],'user':'reader','db':'db'},'ch':{'url':'http://127.0.0.1:1','db':'db'},'tables':{}}
+        data={'cursor':100,'recent':{'1':{'created':int(time.time())-90000}},'reconcile':{'created':1,'id':7}}
+        previous=self.common.utc()
+        for output in ('SET\nOutput format is unaligned.\n', ''):
+            state={'targets':{'accounts':{'last_success':previous,'data':copy.deepcopy(data)}}}
+            with patch('accounts_watch.subprocess.run',return_value=subprocess.CompletedProcess([],0,output,'ERROR: SECRET')):
+                events=self.accounts.poll(c,state,time.monotonic()+10)
+            self.assertEqual(state['targets']['accounts']['status'],'error')
+            self.assertEqual(state['targets']['accounts']['data'],data)
+            self.assertEqual(state['targets']['accounts']['last_success'],previous)
+            self.assertTrue(any(e['event']=='ERROR' for e in events))
+            self.assertNotIn('SECRET',json.dumps(events))
+
+    def test_pg_completed_empty_query_uses_stdin_error_stop_and_readonly_first_sql(self):
+        c=config(); c['accounts']={'pg':{'argv':['tsh','db','connect','resource'],'user':'reader','db':'db'}}
+        def transport(command,**kwargs):
+            sql=kwargs['input']
+            self.assertIn('\\set ON_ERROR_STOP on\n',sql)
+            statements=[line for line in sql.splitlines() if line and not line.startswith('\\')]
+            self.assertEqual(statements[0],'set default_transaction_read_only = on;')
+            self.assertEqual(command,['tsh','db','connect','resource','--db-user','reader','--db-name','db'])
+            self.assertTrue(sql.rstrip().endswith('\\echo ATTACK_WATCH_QUERY_COMPLETE'))
+            return subprocess.CompletedProcess(command,0,'SET\nATTACK_WATCH_QUERY_COMPLETE\n','')
+        with patch('accounts_watch.subprocess.run',side_effect=transport):
+            self.assertEqual(self.accounts.pg_rows(c,self.accounts.select_sql({},'u.id > 100','u.id ASC',100),time.monotonic()+10),[])
+
     def test_config_rejects_unsafe_values_and_requires_initial_cursor(self):
         for change in [{'poll':{'interval':float('nan')}}, {'poll':{'page_size':0}}, {'elastic':{'url':'http://external.example.com'}}, {'accounts':{'initial_cursor':None}}, {'accounts':{'initial_cursor':0, 'tables':{'users':'users;DELETE'}}}, {'credentials':{'cf':{'env':'$TOKEN'}}}, {'cloudflare':{'zones':{str(i):{'id':'x','hosts':['x']} for i in range(33)}}}]:
             c=config(); c.update(change)
@@ -177,14 +217,15 @@ class ObserverTests(unittest.TestCase):
         self.assertNotIn('SECRET',json.dumps(events))
 
     def test_cf_poll_sends_minute_and_host_bounds_and_rejects_remote_errors(self):
-        c=config(); c['poll']={'max_response_bytes':1024}; c['cloudflare']['zones']={'zone':{'id':'z','hosts':['app.example']}}
+        c=config(); c['cloudflare']['url']='http://127.0.0.1:8123/proxy/client/v4/'; c['poll']={'max_response_bytes':1024}; c['cloudflare']['zones']={'zone':{'id':'z','hosts':['app.example']}}
         sent=[]
         def transport(*args,**kwargs):
-            sent.append(kwargs)
+            sent.append(dict(kwargs,url=args[1]))
             return {'data':{'viewer':{'zones':[{'httpRequestsAdaptiveGroups':[]}]}}}
         with patch.dict(os.environ,{'FIXTURE_TOKEN':'SECRET'}), patch('cf_watch.request_json',side_effect=transport):
             c['credentials']={'cloudflare':{'env':'FIXTURE_TOKEN'}}
             state={}; events=self.cf.poll(c,state,time.monotonic()+10)
+        self.assertEqual(sent[0]['url'],'http://127.0.0.1:8123/proxy/client/v4/graphql')
         self.assertEqual(sent[0].get('max_response_bytes'),1024)
         self.assertEqual(sent[0]['body']['variables']['hosts'],['app.example'])
         self.assertIn('datetimeMinute',sent[0]['body']['query'])
@@ -252,7 +293,7 @@ class ObserverTests(unittest.TestCase):
                             raise subprocess.TimeoutExpired(command,kwargs['timeout'])
                         clock[0]=32; rows=[row(i) for i in range(1,101)]
                     else: rows=[]
-                    return subprocess.CompletedProcess(command,0,'\n'.join(json.dumps(r) for r in rows),'')
+                    return subprocess.CompletedProcess(command,0,'\n'.join(json.dumps(r) for r in rows)+'\nATTACK_WATCH_QUERY_COMPLETE\n','')
                 def clickhouse(*args,**kwargs): ch.append(kwargs['body']); return {'data':[]}
                 with patch('accounts_watch.time.monotonic',side_effect=lambda:clock[0]), patch('accounts_watch.subprocess.run',side_effect=transport), patch('accounts_watch.request_json',side_effect=clickhouse):
                     events=self.accounts.poll(c,state,60)
@@ -270,7 +311,7 @@ class ObserverTests(unittest.TestCase):
                 if lane=='reconcile_timeout': self.assertEqual(data['reconcile'],{'created':now,'id':100})
                 state=json.loads(json.dumps(state)); resumed=[]; clock[0]=100
                 def resumed_pg(command,**kwargs):
-                    resumed.append(kwargs['input']); return subprocess.CompletedProcess(command,0,'','')
+                    resumed.append(kwargs['input']); return subprocess.CompletedProcess(command,0,'ATTACK_WATCH_QUERY_COMPLETE\n','')
                 with patch('accounts_watch.time.monotonic',side_effect=lambda:clock[0]), patch('accounts_watch.subprocess.run',side_effect=resumed_pg), patch('accounts_watch.request_json',return_value={'data':[]}):
                     self.accounts.poll(c,state,160)
                 self.assertIn('u.id > 200',resumed[0])
@@ -289,7 +330,7 @@ class ObserverTests(unittest.TestCase):
                         self.assertEqual(kwargs['timeout'],30)
                         clock[0]=30; raise subprocess.TimeoutExpired(command,30)
                     rows=[{'id':101,'company':101,'created':now,'active':True,'verified':False,'wallets':0}] if 'u.id >' in kwargs['input'] else []
-                    return subprocess.CompletedProcess(command,0,'\n'.join(json.dumps(r) for r in rows),'')
+                    return subprocess.CompletedProcess(command,0,'\n'.join(json.dumps(r) for r in rows)+'\nATTACK_WATCH_QUERY_COMPLETE\n','')
                 with patch('accounts_watch.time.monotonic',side_effect=lambda:clock[0]), patch('accounts_watch.subprocess.run',side_effect=transport), patch('accounts_watch.request_json',side_effect=ValueError('SECRET')):
                     events=self.accounts.poll(c,state,240)
                 self.assertEqual(state['targets']['accounts']['data'],data)
@@ -327,6 +368,10 @@ class HttpBoundaries(unittest.TestCase):
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*a): pass
             def do_GET(self):
+                if self.path=='/status':
+                    self.send_response(503); self.end_headers(); self.wfile.write(b'SECRET'); return
+                if self.path=='/redirect':
+                    self.send_response(302); self.send_header('Location','http://localhost:1/SECRET'); self.end_headers(); return
                 self.send_response(200); self.end_headers()
                 try:
                     if self.path=='/trickle':
@@ -340,9 +385,10 @@ class HttpBoundaries(unittest.TestCase):
             self.assertEqual(common.request_json('GET',url+'/empty'),[])
             body,headers=common.request_json('GET',url+'/empty',with_headers=True)
             self.assertEqual(body,[]); self.assertIn('Server',headers)
-            for path,kw in [('/trickle',{'timeout':.35}),('/large',{'max_response_bytes':100}),('/bad',{})]:
+            for path,kw in [('/trickle',{'timeout':.35}),('/large',{'max_response_bytes':100}),('/bad',{}),('/status',{}),('/redirect',{})]:
                 start=time.monotonic()
                 with self.assertRaises(common.SafeError) as ctx: common.request_json('GET',url+path,**kw)
+                self.assertEqual(type(ctx.exception).__name__,'TransportError' if path=='/trickle' else 'ResponseError')
                 self.assertLess(time.monotonic()-start,1.5); self.assertNotIn('SECRET',str(ctx.exception))
         finally: server.shutdown(); server.server_close(); t.join()
 

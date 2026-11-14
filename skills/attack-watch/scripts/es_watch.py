@@ -28,7 +28,7 @@ def detect_errors(rows):
     for row in rows:
         # Class only, no message, address, request data or traceback frames.
         for line in row['_source'].get('message','').splitlines():
-            m=re.match(r'^\s*([A-Za-z_][A-Za-z_0-9.]*(?:Error|Exception))(?::|\s*$)',line)
+            m=re.match(r'^\s*((?:[A-Za-z_][A-Za-z_0-9.]*)?(?:Error|Exception))(?::|\s*$)',line)
             if m: counts[m[1].split('.')[-1]]+=1
     return [dict(event='APPERR',exception=k,count=v) for k,v in counts.items()]
 

@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skills/attack-watch/scripts'))
@@ -39,7 +41,7 @@ class CF:
     def __call__(self, method, url, body=None, timeout=30):
         if method == 'GET':
             self.get_count += 1
-            if self.get_errors: self.get_errors -= 1; raise OSError('unsafe remote payload')
+            if self.get_errors: self.get_errors -= 1; raise common.TransportError('HTTPTransport')
             if self.drift and self.get_count == 2: self.state['version'] = '2'
             return {'success':True,'result':copy.deepcopy(self.state)}
         self.patch_count += 1
@@ -108,6 +110,26 @@ class BlockTests(unittest.TestCase):
         self.assertEqual(self.run_block()['status'],'incomplete'); self.assertEqual(self.cf.patch_count,0)
         self.cf=CF(); self.cf.get_errors=2
         self.assertEqual(self.run_block()['status'],'verified'); self.assertEqual(self.cf.patch_count,1)
+    def test_real_malformed_response_is_not_retried(self):
+        requests=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args): pass
+            def do_GET(self):
+                requests.append(self.path)
+                self.send_response(200); self.end_headers(); self.wfile.write(b'SECRET invalid JSON')
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True); thread.start()
+        self.c['cloudflare']['url']=f'http://127.0.0.1:{server.server_port}/client/v4'
+        self.c['credentials']={'cloudflare':{'env':'FIXTURE_TOKEN'}}
+        try:
+            with patch.dict(os.environ,{'FIXTURE_TOKEN':'SECRET'}):
+                result=self.run_block(transport=None)
+            self.assertEqual(result['status'],'rejected')
+            self.assertEqual(len(requests),1)
+            self.assertNotIn('SECRET',json.dumps(result))
+            self.assertEqual(self.clock.t,0)
+        finally: server.shutdown(); server.server_close(); thread.join()
+
     def test_ambiguous_patch_readback_never_repatches(self):
         self.cf.timeout=True
         result=self.run_block(); self.assertEqual(result['status'],'verified'); self.assertEqual(self.cf.patch_count,1)

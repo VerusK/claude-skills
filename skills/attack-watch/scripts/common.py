@@ -15,12 +15,21 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
 
 class SafeError(Exception):
     """A fixed error code, never remote text or credentials."""
+
+
+class TransportError(SafeError):
+    """Connection or end-to-end transport timeout, safe to retry on GET."""
+
+
+class ResponseError(SafeError):
+    """Rejected status, redirect, size or malformed response; never retry."""
 
 
 def utc():
@@ -172,8 +181,12 @@ def _http_worker():
             if len(raw) > args['max_response_bytes']: raise SafeError('ResponseLimit')
             result = json.loads(raw)
             print(json.dumps({'body': result, 'headers': dict(response.headers)}))
+    except urllib.error.HTTPError:
+        print('{"error":"response"}')
+    except (urllib.error.URLError, OSError):
+        print('{"error":"transport"}')
     except Exception:
-        print('{"error":"HTTPFailure"}')
+        print('{"error":"response"}')
 
 
 def request_json(method, url, headers=None, body=None, timeout=30, *, with_headers=False, max_response_bytes=8388608):
@@ -183,10 +196,16 @@ def request_json(method, url, headers=None, body=None, timeout=30, *, with_heade
     try:
         r = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--http-worker'], input=json.dumps(args), text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout, check=False)
         result = json.loads(r.stdout)
-        if r.returncode or 'error' in result: raise SafeError('HTTPFailure')
+        if r.returncode: raise ResponseError('HTTPResponse')
+        if result.get('error')=='transport': raise TransportError('HTTPTransport')
+        if 'error' in result: raise ResponseError('HTTPResponse')
         return (result['body'], result['headers']) if with_headers else result['body']
+    except subprocess.TimeoutExpired:
+        raise TransportError('HTTPTransport') from None
+    except SafeError:
+        raise
     except Exception:
-        raise SafeError('HTTPFailure') from None
+        raise ResponseError('HTTPResponse') from None
 
 
 def atomic_json(path, value):

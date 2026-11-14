@@ -75,7 +75,7 @@ def poll(config, state, deadline):
         def fetch(data):
             limit=config.get('poll',{}).get('cf_limit',10000)
             variables=dict(zone=z['id'],hosts=z['hosts'],since=timestamp(epoch(end)-window),until=end,limit=limit)
-            r=request_json('POST','https://api.cloudflare.com/client/v4/graphql',headers={'Authorization':'Bearer '+credential(config,'cloudflare')},body=dict(query=QUERY,variables=variables),timeout=remaining(per_deadline),max_response_bytes=config.get('poll',{}).get('max_response_bytes',8388608))
+            r=request_json('POST',config['cloudflare'].get('url','https://api.cloudflare.com/client/v4').rstrip('/')+'/graphql',headers={'Authorization':'Bearer '+credential(config,'cloudflare')},body=dict(query=QUERY,variables=variables),timeout=remaining(per_deadline),max_response_bytes=config.get('poll',{}).get('max_response_bytes',8388608))
             if not isinstance(r,dict) or r.get('errors'): raise ValueError('GraphQL')
             groups=r['data']['viewer']['zones'][0]['httpRequestsAdaptiveGroups']
             if not isinstance(groups,list): raise ValueError('Groups')

@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 import uuid
-from common import SafeError, argv, atomic_json, credential, epoch, load_config, request_json, utc, validate_url
+from common import SafeError, TransportError, argv, atomic_json, credential, epoch, load_config, request_json, utc, validate_url
 
 # These are writable rule fields; identifiers/version/timestamps belong to the API.
 WRITABLE = ('action', 'expression', 'description', 'enabled', 'action_parameters', 'logging', 'ratelimit', 'exposed_credential_check', 'ref')
@@ -171,7 +171,7 @@ def execute_block(config, targets, *, state_dir, zone, evidence, apply=False, su
             for attempt in range(3):
                 try:
                     response=transport('GET',endpoint,timeout=budget())
-                except (OSError,SafeError):
+                except TransportError:
                     if attempt==2: raise SafeError('ReadFailure') from None
                     clock.sleep(min(attempt+1,budget())); continue
                 if not isinstance(response,dict) or response.get('success') is not True: raise SafeError('ReadFailure')
