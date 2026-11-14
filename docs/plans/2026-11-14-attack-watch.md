@@ -92,3 +92,7 @@ Accepted without the judge: all four confidence-7+ findings identify concrete mi
 ## Execution rulings
 
 Ruling: Use full branch review for committed feature while excluding only pre-existing untracked `docs/handoff/` from dirty-mode classification — these are owner-supplied read-only inputs, all feature files are committed. Cost if wrong: edits inside supplied provenance itself are not part of the code diff/review. Supplied files remain untouched and unstaged.
+
+## Review decisions (round 1)
+
+Accepted without the judge: all four findings are reproduced contract failures with one reasonable correction. PG must enable ON_ERROR_STOP and prove successful query completion (not infer empty rows from zero exit); regression preserves checkpoints on missing completion/SQL failure. APPERR must recognize bare Error/Exception via the complete poll path. CF observer must use the validated configured API base for GraphQL. Common HTTP boundary must preserve safe transport/response failure categories so GET retries only transport. Evidence: docs/reviews/VerusK-sentinel-2026-11-14.md findings and offline reproductions. Scope unchanged; no live operational activity.
