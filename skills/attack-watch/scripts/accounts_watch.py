@@ -13,13 +13,20 @@ def integer(value):
     return value
 
 
+class LaneBudget(SafeError):
+    """The reserved local lane deadline elapsed; successful pages remain usable."""
+
+
 def pg_rows(config, sql, deadline):
+    budget=deadline-time.monotonic()
+    if budget <= 0:
+        raise LaneBudget('LaneBudget')
     try:
         pg=config['accounts']['pg']
         command=list(pg['argv'])
         if '--db-user' not in command: command+=['--db-user',pg['user']]
         if '--db-name' not in command: command+=['--db-name',pg['db']]
-        result=subprocess.run(command,input=sql,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=remaining(deadline),check=False)
+        result=subprocess.run(command,input=sql,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=min(30,budget),check=False)
         if result.returncode: raise SafeError('PGFailure')
         rows=[]
         for line in result.stdout.splitlines():
@@ -30,6 +37,10 @@ def pg_rows(config, sql, deadline):
             if not isinstance(item,dict): raise SafeError('PGShape')
             rows.append(item)
         return rows
+    except subprocess.TimeoutExpired:
+        if time.monotonic() >= deadline:
+            raise LaneBudget('LaneBudget') from None
+        raise SafeError('PGFailure') from None
     except Exception:
         raise SafeError('PGFailure') from None
 
@@ -84,13 +95,17 @@ def poll(config,state,deadline):
             found.append(dict(event='REVISIT_EXPIRED',count=len(expired),no_login=sum(1 for uid in expired if recent[uid].get('no_login',True))))
             for uid in expired: del recent[uid]
         cursor=integer(data.get('cursor',a['initial_cursor'])); page_size=p.get('page_size',100)
-        rows={}; new_cursor=cursor; full=False
+        rows={}; new_cursor=cursor; full=False; budget_limited=False
         # Reserve a third of elapsed budget for revisits and a third for enrichment;
         # each lane is bounded independently so busy forward streams cannot starve it.
         start=time.monotonic(); duration=max(0,deadline-start)
         forward_deadline=min(deadline,start+duration/3)
         for _ in range(p.get('max_new_pages',3)):
-            page=pg_rows(config,select_sql(a,f'u.id > {new_cursor}','u.id ASC',page_size),forward_deadline)
+            try:
+                page=pg_rows(config,select_sql(a,f'u.id > {new_cursor}','u.id ASC',page_size),forward_deadline)
+            except LaneBudget:
+                budget_limited=True
+                break
             page=[normalize(r) for r in page]
             if len(page)>page_size or any(r['id']<=new_cursor for r in page) or [r['id'] for r in page]!=sorted({r['id'] for r in page}): raise SafeError('PGOrder')
             for row in page: rows[row['id']]=row
@@ -100,9 +115,16 @@ def poll(config,state,deadline):
         # Oldest checked first; bounded persistent fairness across restarts.
         revisit=sorted(recent,key=lambda uid:(recent[uid].get('checked',0),int(uid)))[:p.get('revisit_limit',100)]
         revisit_deadline=min(deadline,start+duration*2/3)
+        revisited=[]
         if revisit:
             ids=','.join(str(integer(int(uid))) for uid in revisit)
-            for r in pg_rows(config,select_sql(a,f'u.id IN ({ids})','u.id ASC',100),revisit_deadline):
+            try:
+                page=pg_rows(config,select_sql(a,f'u.id IN ({ids})','u.id ASC',100),revisit_deadline)
+                revisited=revisit
+            except LaneBudget:
+                budget_limited=True
+                page=[]
+            for r in page:
                 row=normalize(r)
                 if str(row['id']) not in revisit: raise SafeError('PGUnexpectedID')
                 rows[row['id']]=row
@@ -113,7 +135,11 @@ def poll(config,state,deadline):
         for _ in range(p.get('reconcile_pages',1)):
             ts=integer(max(now-horizon,checkpoint['created'])); uid=integer(checkpoint['id'])
             predicate=f'u.ts_spawn >= {now-horizon} AND (u.ts_spawn > {ts} OR (u.ts_spawn = {ts} AND u.id > {uid}))'
-            page=pg_rows(config,select_sql(a,predicate,'u.ts_spawn ASC, u.id ASC',page_size),revisit_deadline)
+            try:
+                page=pg_rows(config,select_sql(a,predicate,'u.ts_spawn ASC, u.id ASC',page_size),revisit_deadline)
+            except LaneBudget:
+                budget_limited=True
+                break
             page=[normalize(r) for r in page]
             if len(page)>page_size: raise SafeError('PGPageLimit')
             ordering=[(r['created'],r['id']) for r in page]
@@ -131,11 +157,11 @@ def poll(config,state,deadline):
                 found.append(dict(event='NEWUSER',**row,login=login))
             if now-row['created']<=horizon:
                 recent[str(uid)]={'created':row['created'],'checked':now,'signature':signature,'no_login':login is None}
-        for uid in revisit:
+        for uid in revisited:
             if uid in recent: recent[uid]['checked']=now
         if len(recent)>10000: raise SafeError('RecentAccountCap')
         data.update(cursor=new_cursor,reconcile=checkpoint)
-        return found,full or reconcile_full
+        return found,budget_limited or full or reconcile_full
     target(state,'accounts',utc(),p.get('window',600),scan,events)
     return events
 

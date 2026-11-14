@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import threading
 import time
@@ -223,6 +224,78 @@ class ObserverTests(unittest.TestCase):
             events=self.accounts.poll(c,state,time.monotonic()+10)
         self.assertEqual(state['targets']['accounts']['data']['cursor'],100)
         self.assertEqual(next(e['id'] for e in events if e['event']=='NEWUSER'),5)
+
+    def test_account_lane_budget_saves_pages_revisits_and_resumes_after_restart(self):
+        # A local shortened PG timeout must not discard the preceding full page.
+        for lane in ('forward_timeout','forward_exhausted','reconcile_timeout'):
+            with self.subTest(lane=lane):
+                c=config(); c['accounts']={'initial_cursor':100,'pg':{'argv':['tsh','db','connect','resource'],'user':'reader','db':'db'},'ch':{'url':'http://127.0.0.1:1','db':'db'},'tables':{}}
+                c['poll']={'max_new_pages':3,'page_size':100,'revisit_limit':100,'reconcile_pages':3}
+                clock=[0.0]; sqls=[]; ch=[]; now=int(time.time())
+                def row(i): return {'id':i,'company':i,'created':now,'active':True,'verified':False,'wallets':0}
+                previous=self.common.utc()
+                state={'targets':{'accounts':{'last_success':previous,'data':{'cursor':100,'recent':{'1':{'created':now,'checked':0,'signature':''}}}}}}
+                def transport(command,**kwargs):
+                    sql=kwargs['input']; sqls.append(sql)
+                    if 'u.id > 100' in sql and 'u.ts_spawn >=' not in sql:
+                        clock[0]=20 if lane=='forward_exhausted' else 12
+                        rows=[row(i) for i in range(101,201)]
+                    elif 'u.id > 200' in sql and lane=='forward_timeout':
+                        self.assertEqual(kwargs['timeout'],8)
+                        clock[0]=20
+                        raise subprocess.TimeoutExpired(command,kwargs['timeout'])
+                    elif 'u.id IN' in sql:
+                        clock[0]+=1; rows=[row(1)]
+                    elif 'u.ts_spawn >=' in sql and lane=='reconcile_timeout':
+                        if 'u.id > 100' in sql:
+                            clock[0]=40
+                            raise subprocess.TimeoutExpired(command,kwargs['timeout'])
+                        clock[0]=32; rows=[row(i) for i in range(1,101)]
+                    else: rows=[]
+                    return subprocess.CompletedProcess(command,0,'\n'.join(json.dumps(r) for r in rows),'')
+                def clickhouse(*args,**kwargs): ch.append(kwargs['body']); return {'data':[]}
+                with patch('accounts_watch.time.monotonic',side_effect=lambda:clock[0]), patch('accounts_watch.subprocess.run',side_effect=transport), patch('accounts_watch.request_json',side_effect=clickhouse):
+                    events=self.accounts.poll(c,state,60)
+                data=state['targets']['accounts']['data']
+                self.assertEqual(data['cursor'],200)
+                self.assertGreater(data['recent']['1']['checked'],0)
+                self.assertEqual(state['targets']['accounts']['status'],'partial')
+                self.assertEqual(state['targets']['accounts']['last_success'],previous)
+                self.assertTrue(any(e['event']=='COVERAGE' for e in events))
+                self.assertFalse(any(e['event']=='ERROR' for e in events))
+                self.assertTrue(any('u.id IN' in sql for sql in sqls))
+                self.assertEqual(len(ch),2)
+                self.assertTrue(all(len(sql.split(' IN (')[1].split(')')[0].split(','))<=100 for sql in ch))
+                if lane=='forward_exhausted': self.assertFalse(any('u.id > 200' in sql for sql in sqls))
+                if lane=='reconcile_timeout': self.assertEqual(data['reconcile'],{'created':now,'id':100})
+                state=json.loads(json.dumps(state)); resumed=[]; clock[0]=100
+                def resumed_pg(command,**kwargs):
+                    resumed.append(kwargs['input']); return subprocess.CompletedProcess(command,0,'','')
+                with patch('accounts_watch.time.monotonic',side_effect=lambda:clock[0]), patch('accounts_watch.subprocess.run',side_effect=resumed_pg), patch('accounts_watch.request_json',return_value={'data':[]}):
+                    self.accounts.poll(c,state,160)
+                self.assertIn('u.id > 200',resumed[0])
+                self.assertEqual(state['targets']['accounts']['data']['cursor'],200)
+                if lane=='reconcile_timeout': self.assertTrue(any(f'u.ts_spawn = {now} AND u.id > 100' in sql for sql in resumed))
+
+    def test_account_genuine_pg_and_ch_failures_keep_all_checkpoints(self):
+        for failure in ('pg_exit','pg_request_timeout','ch'):
+            with self.subTest(failure=failure):
+                c=config(); c['accounts']={'initial_cursor':100,'pg':{'argv':['tsh','db','connect','resource'],'user':'reader','db':'db'},'ch':{'url':'http://127.0.0.1:1','db':'db'},'tables':{}}
+                clock=[0.0]; now=int(time.time()); data={'cursor':100,'recent':{'1':{'created':now,'checked':0,'signature':''}},'reconcile':{'created':now-500,'id':7}}
+                state={'targets':{'accounts':{'last_success':self.common.utc(),'data':copy.deepcopy(data)}}}
+                def transport(command,**kwargs):
+                    if failure=='pg_exit': return subprocess.CompletedProcess(command,1,'SECRET','')
+                    if failure=='pg_request_timeout':
+                        self.assertEqual(kwargs['timeout'],30)
+                        clock[0]=30; raise subprocess.TimeoutExpired(command,30)
+                    rows=[{'id':101,'company':101,'created':now,'active':True,'verified':False,'wallets':0}] if 'u.id >' in kwargs['input'] else []
+                    return subprocess.CompletedProcess(command,0,'\n'.join(json.dumps(r) for r in rows),'')
+                with patch('accounts_watch.time.monotonic',side_effect=lambda:clock[0]), patch('accounts_watch.subprocess.run',side_effect=transport), patch('accounts_watch.request_json',side_effect=ValueError('SECRET')):
+                    events=self.accounts.poll(c,state,240)
+                self.assertEqual(state['targets']['accounts']['data'],data)
+                self.assertEqual(state['targets']['accounts']['status'],'error')
+                self.assertTrue(any(e['event']=='ERROR' for e in events))
+                self.assertNotIn('SECRET',json.dumps(events))
 
     def test_accounts_batched_new_revisit_and_reconciliation_across_restart(self):
         c=config(); c['accounts']={'initial_cursor':100,'revisit_seconds':86400,'pg':{},'ch':{'url':'http://127.0.0.1:1','db':'db'},'tables':{}}; c['poll']={'max_new_pages':3,'page_size':100,'revisit_limit':100,'window':600}
