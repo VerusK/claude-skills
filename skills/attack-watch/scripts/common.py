@@ -92,6 +92,7 @@ def load_config(path):
             if any(not isinstance(v, str) for v in entry.values()):
                 raise SafeError('ConfigCredential')
         cf = c['cloudflare']
+        if 'url' in cf: validate_url(cf['url'])
         for key in ('exempt_egress', 'owner_egress'):
             if not isinstance(cf.setdefault(key, []), list): raise SafeError('ConfigNetwork')
             for network in cf[key]: ipaddress.ip_network(network, strict=False)
@@ -99,7 +100,8 @@ def load_config(path):
         for name, zone in cf['zones'].items():
             if not isinstance(name, str) or not isinstance(zone, dict) or not isinstance(zone.get('hosts'), list) or not zone['hosts'] or any(not isinstance(h, str) or not re.fullmatch(r'[A-Za-z0-9.*-]+', h) for h in zone['hosts']): raise SafeError('ConfigZone')
             if not isinstance(zone.get('id'), str) or not zone['id']: raise SafeError('UnconfiguredZone')
-            if not isinstance(zone.get('rule_ids', []), list): raise SafeError('ConfigRule')
+            ids = zone.get('rule_ids', [])
+            if not isinstance(ids, list) or any(not isinstance(v, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', v) for v in ids) or len(set(ids)) != len(ids): raise SafeError('ConfigRule')
         signals = cf.setdefault('signals', {})
         if not isinstance(signals, dict): raise SafeError('ConfigSignals')
         for k in ('scanner_pattern','bad_pattern','auth_pattern'):

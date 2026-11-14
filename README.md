@@ -9,7 +9,7 @@ checkout. The plugin is the normal path: updates arrive through
 `claude plugin update`. The symlink install is the development path: edits in the
 checkout are live with no release. They are mutually exclusive — the symlink
 installer refuses to run while the plugin is installed, because both ship the
-same eleven skills, the same three agents and the same SessionStart hook.
+same twelve skills, the same three agents and the same SessionStart hook.
 
 - **One flow, one place.** Skills from different authors are wired to call each
   other by name; the routing lives in `USING.md`, injected into every session by a
@@ -61,7 +61,7 @@ kickoff → spec-review → writing-plans → plan-review → subagent-driven-de
 | 6 | `review` | Codex reviews the whole diff against plan, spec and the design rules; report in `docs/reviews/`. At most one fix subagent, at most one re-review, then the hand-off to step 7. |
 | 7 | `finishing-a-development-branch` | Merge, PR, or keep. |
 
-Outside the flow: `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `typesafe-ai`.
+Outside the flow: `attack-watch` (`verus-skills:attack-watch`) for continuous defensive monitoring and scoped containment, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `typesafe-ai`.
 
 ### Design rules
 
@@ -96,6 +96,7 @@ A **clean** working tree gives full mode: review → findings judged → at most
 
 | Skill | Type | Source | Author | License |
 |---|---|---|---|---|
+| `attack-watch` | own | configurable defensive incident watch and guarded containment | this repo | MIT |
 | `kickoff` | own | inspired by [superpowers brainstorming](https://github.com/obra/superpowers) and [mattpocock grilling](https://github.com/mattpocock/skills) | this repo | MIT |
 | `plan-review` | own | methodology from [gstack plan-eng-review](https://github.com/garrytan/gstack) (watched) | this repo | MIT |
 | `spec-review` | own | scope challenge from [gstack plan-eng-review](https://github.com/garrytan/gstack) (watched) | this repo | MIT |

@@ -18,6 +18,8 @@ Each skill names the next one; follow the chain. Never skip `plan-review` or `re
 
 ## Outside the flow
 
+- `attack-watch` (`verus-skills:attack-watch`) — continuous defensive watch, scans or «сторож» across CF/logs/Sentry/accounts; observation first, containment only inside an explicit project grant.
+
 - `systematic-debugging` — any bug, failing test or unexpected behavior, before proposing a fix.
 - `test-driven-development` — any implementation or bugfix, before writing code.
 - `verification-before-completion` — before claiming anything is done, fixed or passing.

@@ -18,6 +18,6 @@
   "elastic": {"url": "http://127.0.0.1:19200", "username": "ops_roman", "password_env": "ATTACK_WATCH_ES_PASSWORD", "indexes": {"app": "logs-ca_prod-*", "ingress": "logs-ca_ingress-*", "hostsec": "logs-hostsec-*"}, "deployments": ["ca-partner", "ca-ext-api", "ca-admin"], "baseline_keys": ["jg_root_exec", "(null)", "cc_secrets"]},
   "sentry": {"url": "https://sentry-new.serv-ac.com/api/0", "org": "sentry", "projects": ["vaultnow-back", "vaultnow-front", "cc-back-do"]},
   "accounts": {"pg": {"argv": ["tsh", "db", "connect", "vn-pg-prod-master"], "resource": "vn-pg-prod-master", "user": "UNCONFIGURED", "db": "caccounting"}, "ch": {"url": "http://127.0.0.1:18224", "db": "caccounting"}, "tables": {"users": "users", "wallets": "wallets", "login_history": "login_history"}, "initial_cursor": null, "revisit_seconds": 86400},
-  "authority": {"owner": null, "evidence": null, "project": "ccinfra", "zones": [], "actions": [], "expires_at": null, "review_at": null, "owner_egress": []},
+  "authority": {"enabled": false, "notification_destination": null, "owner": null, "evidence": null, "project": "ccinfra", "zones": [], "actions": [], "expires_at": null, "review_at": null, "owner_egress": []},
   "hooks": {}
 }
