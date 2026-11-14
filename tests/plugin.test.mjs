@@ -9,7 +9,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => JSON.parse(readFileSync(path.join(ROOT, rel), "utf8"));
 
 const SKILLS = [
-  "attack-watch",
   "finishing-a-development-branch",
   "kickoff",
   "plan-review",
@@ -23,7 +22,7 @@ const SKILLS = [
   "writing-plans",
 ];
 
-test("skills/ holds exactly the twelve skills, each with a SKILL.md", () => {
+test("skills/ holds exactly the eleven skills, each with a SKILL.md", () => {
   const dirs = readdirSync(path.join(ROOT, "skills"), { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
