@@ -6,6 +6,10 @@
     "elastic": {"env": "ATTACK_WATCH_ES_PASSWORD", "store_entry": "es-users.env", "store_key": "OPS_ROMAN_PW"},
     "sentry": {"env": "ATTACK_WATCH_SENTRY_TOKEN", "store_entry": "sentry.token"}
   },
+  "access": {
+    "elastic": {"app_resource": "cc-elastic", "proxy_port": 19200},
+    "clickhouse": {"db_resource": "vn-ch-prod", "readonly_user": "teleport_ro", "tunnel_port": 18224}
+  },
   "cloudflare": {
     "zones": {
       "vaultnow.co": {"id": null, "hosts": ["app.vaultnow.co"], "rule_ids": []},

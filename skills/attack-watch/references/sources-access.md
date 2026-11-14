@@ -21,6 +21,20 @@ Copy `examples/ccinfra.json` to the persistent project incident workspace, fill 
 
 Run `tsh status` at startup; inspect identity, roles and expiry, ensure enough remaining validity for the next watch period, and check app/db/kube access separately. Authenticate with the project's approved login (`ctsh login` where provided) **before** expiry; owner interaction may be required. Start/inspect the ES app login+proxy and CH tunnel using configured resource names/ports; PG uses its configured connection argv. Verify read-only minimal queries and health, then start observers. Keep the proxy/tunnel in a managed persistent process as well as the observers.
 
+### Operator-managed access mapping
+
+The top-level `access` object is **operator-only metadata**: adapters do not consume it, start tunnels, log in or load credentials. Fill it alongside the source URLs. The example preserves the incident's app/database resource names, ports and read-only CH user as setup examples; confirm them for the selected project. Authentication, proxy/tunnel startup and renewal remain explicit operator actions under the project's access workflow.
+
+Construct these argv arrays from the JSON fields below (each field is one literal argument; ports are decimal strings). Execute through an argv-capable process tool with `shell=False`, without shell interpolation or `eval`:
+
+| Step | Exact argv mapping |
+|---|---|
+| ES app login | `["tsh", "apps", "login", access.elastic.app_resource]` |
+| ES local app proxy | `["tsh", "proxy", "app", access.elastic.app_resource, "--port", str(access.elastic.proxy_port)]` |
+| CH read-only DB tunnel | `["tsh", "proxy", "db", access.clickhouse.db_resource, "--db-user", access.clickhouse.readonly_user, "--db-name", accounts.ch.db, "--tunnel", "--port", str(access.clickhouse.tunnel_port)]` |
+
+Check that `elastic.url` points to the ES proxy's loopback port and `accounts.ch.url` to the CH tunnel's loopback port. `elastic.username` is ES basic-auth identity, distinct from the Teleport app resource; its password comes only from the configured credential environment binding. `accounts.ch.db` supplies the CH database for both SQL and tunnel startup; `access.clickhouse.readonly_user` is its Teleport DB user. Keep proxies/tunnels in managed persistent processes, inspect their status and run minimal read-only source probes after startup/renewal. Missing metadata or unavailable access is a named coverage blocker, never a reason to infer resources from repository-only provenance.
+
 Do not treat a running proxy or a local HTTP200 as proof of valid upstream access. On expiry, notify owner of exact blind sources (PG, CH, ES, kube health as applicable), record GAP, continue healthy sources and request renewal. After renewal verify sources/health and report recovered coverage bounds; no silent backfill claim. Browser connection is exclusively authenticated Playwright MCP. If missing, diagnose its connection and report blocker; switching browser tooling needs explicit owner instruction.
 
 ## Running and observing coverage
