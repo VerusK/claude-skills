@@ -1,6 +1,6 @@
 diff -ruN vendor/finishing-a-development-branch/SKILL.md skills/finishing-a-development-branch/SKILL.md
---- vendor/finishing-a-development-branch/SKILL.md	2026-11-12 09:45:54
-+++ skills/finishing-a-development-branch/SKILL.md	2026-11-12 10:46:17
+--- vendor/finishing-a-development-branch/SKILL.md	2026-11-23 17:20:03.484464824 +0000
++++ skills/finishing-a-development-branch/SKILL.md	2026-11-23 17:19:56.594994887 +0000
 @@ -123,6 +123,10 @@
  print when you push — following the repo's PR template and conventions if
  present, and report the URL to your human partner.
