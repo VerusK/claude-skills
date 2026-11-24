@@ -4,6 +4,8 @@ Use this template when dispatching an implementer subagent.
 
 **Dispatch.** Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. For Codex, follow [the runtime adapter](../../references/runtime.md): prepend the matching role body to the task prompt and dispatch in fresh context with the native subagent tool.
 
+The agent defaults to Sonnet (high effort). For a task the controller marked hard (architecture, migration, security, retry after a failed Sonnet attempt — see Model Selection in the skill), add `model` = `opus` to the Claude Code dispatch; otherwise pass none.
+
 ```
 Subagent (verus-worker):
   description: "Implement Task N: [task name]"

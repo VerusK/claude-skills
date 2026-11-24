@@ -20,9 +20,9 @@ after(() => { for (const d of TEMP_DIRS) rmSync(d, { recursive: true, force: tru
 
 const MODELS = {
   subagents: {
-    worker: { model: "opus", effort: "high" },
+    worker: { model: "sonnet", effort: "high" },
     reviewer: { model: "opus", effort: "xhigh" },
-    explorer: { model: "opus", effort: "medium" },
+    explorer: { model: "sonnet", effort: "medium" },
   },
   codex: { model: "default", reasoning: "default" },
   judge: { model: "jev-latest" },

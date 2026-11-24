@@ -1,7 +1,7 @@
 ---
 name: verus-worker
 description: Implementer and fix subagent of the verus-skills distro — writes, runs and commits code for one planned task or one review fix wave, exactly as its task prompt says.
-model: opus
+model: sonnet
 effort: high
 ---
 

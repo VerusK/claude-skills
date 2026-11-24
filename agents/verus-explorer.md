@@ -1,7 +1,7 @@
 ---
 name: verus-explorer
 description: Read-only explorer subagent of the verus-skills distro — broad repository lookups for kickoff, answering with facts, file paths and short excerpts.
-model: opus
+model: sonnet
 effort: medium
 ---
 

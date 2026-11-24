@@ -113,7 +113,8 @@ implementation.
 Before dispatching, read [the runtime adapter](../../references/runtime.md).
 Role bodies in `agents/verus-*.md` are shared by both hosts:
 
-- Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Never pass a `model` parameter: it would override the agent's configured model.
+- Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Defaults come from `config/models.json`: workers run on Sonnet at high effort, reviewers on Opus. Do not pass a `model` parameter for an ordinary task: it would override the agent's configured model. The one exception is below.
+- **Hard tasks go to Opus.** The controller decides per task, when it writes the dispatch, and only for a task that is hard in one of these ways: architecture or a new abstraction other tasks build on; a data migration or schema change; security or access (auth, secrets, permissions, crypto); or a retry after a Sonnet implementer ended BLOCKED or failed its review twice on the same point. For those, dispatch the same `verus-worker` with `model` = `opus` (the agent keeps its effort setting) and record the reason in the ledger. Everything else stays on the default; do not upgrade a task just because it is long. Haiku and Fable never implement code.
 - Codex: prepend the role file body to the prompt and use `spawn_agent`
   with fresh context where supported (`fork_turns="none"`). Do not pass
   model/effort overrides unless requested; Codex host defaults apply.
@@ -191,7 +192,7 @@ and fix-round diffs need it.
   a pointer to that ledger entry in the dispatch.
 - Record the implementer's agent identity from the dispatch result —
   fix-loop rounds 1-3 resume this agent.
-- Never dispatch multiple implementation subagents in parallel (conflicts).
+- Run implementers one at a time by default. Dispatch tasks in parallel only when they are independent (no shared files, no interface one needs from the other) and never more than 3 implementers at once. Give each its own file list and tell it to commit only those paths (`git commit -- <paths>`; no `git add -A`, stash or reset) and to run only its own tests; the full suite runs once per batch, from the controller. Their commits interleave in the history, so review each task with `review-package --commits` on that task's own commits. A task that depends on a running one waits for it.
 
 Template: [implementer-prompt.md](implementer-prompt.md)
 
@@ -207,7 +208,7 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
 1. If it's a context problem, provide more context and re-dispatch with the same model
-2. If the task requires more reasoning, re-dispatch a fresh implementer with a sharper brief
+2. If the task requires more reasoning, re-dispatch a fresh implementer with a sharper brief — on `model` = `opus` when the blocked one ran on the default Sonnet
 3. If the task is too large, break it into smaller pieces
 4. If the plan itself is wrong, rule on the correction, ledger it, and re-dispatch with the ruling carried in the dispatch
 

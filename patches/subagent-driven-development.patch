@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
---- vendor/subagent-driven-development/SKILL.md	2026-11-10 19:57:06
-+++ skills/subagent-driven-development/SKILL.md	2026-11-10 20:16:14
+--- vendor/subagent-driven-development/SKILL.md	2026-11-24 16:04:06
++++ skills/subagent-driven-development/SKILL.md	2026-11-24 16:04:54
 @@ -32,99 +32,26 @@
  
  ## When to Use
@@ -118,7 +118,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  Never start implementation on a main/master branch without your human
  partner's explicit consent.
  
-@@ -183,41 +110,21 @@
+@@ -183,41 +110,22 @@
  
  ## Model Selection
  
@@ -127,7 +127,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 +Role bodies in `agents/verus-*.md` are shared by both hosts:
  
 -**Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
-+- Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Never pass a `model` parameter: it would override the agent's configured model.
++- Claude Code: implementers use `verus-worker` (`verus-skills:verus-worker` when installed as a plugin); task reviewers and re-reviewers use `verus-reviewer` (`verus-skills:verus-reviewer` when installed as a plugin), each as `subagent_type`. Defaults come from `config/models.json`: workers run on Sonnet at high effort, reviewers on Opus. Do not pass a `model` parameter for an ordinary task: it would override the agent's configured model. The one exception is below.
++- **Hard tasks go to Opus.** The controller decides per task, when it writes the dispatch, and only for a task that is hard in one of these ways: architecture or a new abstraction other tasks build on; a data migration or schema change; security or access (auth, secrets, permissions, crypto); or a retry after a Sonnet implementer ended BLOCKED or failed its review twice on the same point. For those, dispatch the same `verus-worker` with `model` = `opus` (the agent keeps its effort setting) and record the reason in the ledger. Everything else stays on the default; do not upgrade a task just because it is long. Haiku and Fable never implement code.
 +- Codex: prepend the role file body to the prompt and use `spawn_agent`
 +  with fresh context where supported (`fork_turns="none"`). Do not pass
 +  model/effort overrides unless requested; Codex host defaults apply.
@@ -172,7 +173,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## The Task Loop
  
  **Batch small same-shape work.** When the plan lists several tasks that are
-@@ -236,8 +143,7 @@
+@@ -236,8 +144,7 @@
  short timeouts, and never sit in one silent, open-ended wait either.
  While you have local work — ledger updates, packaging the next review,
  reading reports — keep working; child results arrive on their own.
@@ -182,7 +183,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  line of status and reconcile your live children: list them, and chase
  any that finished without reporting. A bounded stretch keeps nearly
  all of a long wait's efficiency while guaranteeing a stuck or lost
-@@ -249,10 +155,16 @@
+@@ -249,10 +156,16 @@
  and fix-round diffs need it.
  
  - **Task brief:** before dispatching an implementer, run this skill's
@@ -201,7 +202,16 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
    task fits in the project; (2) the brief path, introduced as "read this
    first — it is your requirements, with the exact values to use verbatim";
    (3) interfaces and decisions from earlier tasks that the brief cannot
-@@ -287,7 +199,7 @@
+@@ -279,7 +192,7 @@
+   a pointer to that ledger entry in the dispatch.
+ - Record the implementer's agent identity from the dispatch result —
+   fix-loop rounds 1-3 resume this agent.
+-- Never dispatch multiple implementation subagents in parallel (conflicts).
++- Run implementers one at a time by default. Dispatch tasks in parallel only when they are independent (no shared files, no interface one needs from the other) and never more than 3 implementers at once. Give each its own file list and tell it to commit only those paths (`git commit -- <paths>`; no `git add -A`, stash or reset) and to run only its own tests; the full suite runs once per batch, from the controller. Their commits interleave in the history, so review each task with `review-package --commits` on that task's own commits. A task that depends on a running one waits for it.
+ 
+ Template: [implementer-prompt.md](implementer-prompt.md)
+ 
+@@ -287,7 +200,7 @@
  
  Implementer subagents report one of four statuses. Handle each appropriately:
  
@@ -210,16 +220,16 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  **DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
  
-@@ -295,7 +207,7 @@
+@@ -295,7 +208,7 @@
  
  **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
  1. If it's a context problem, provide more context and re-dispatch with the same model
 -2. If the task requires more reasoning, re-dispatch with a more capable model
-+2. If the task requires more reasoning, re-dispatch a fresh implementer with a sharper brief
++2. If the task requires more reasoning, re-dispatch a fresh implementer with a sharper brief — on `model` = `opus` when the blocked one ran on the default Sonnet
  3. If the task is too large, break it into smaller pieces
  4. If the plan itself is wrong, rule on the correction, ledger it, and re-dispatch with the ruling carried in the dispatch
  
-@@ -308,19 +220,29 @@
+@@ -308,19 +221,29 @@
  ### 3. Review the task
  
  Per-task reviews are task-scoped gates. The broad review happens once, at the
@@ -254,7 +264,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
    dispatch a task reviewer without a diff file.
  - **Reviewer inputs:** the task reviewer gets three paths — the same brief
    file, the report file, and the review package — plus the global
-@@ -378,25 +300,28 @@
+@@ -378,25 +301,28 @@
  dispatch a fresh implementer carrying the brief path, the report-file path,
  and the findings — the report file is the persistent memory either way.
  
@@ -293,7 +303,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  each finding ADDRESSED or NOT ADDRESSED and flags new breakage in the fix
  diff only. New Critical/Important breakage in the fix diff joins the open
  findings list. Out-of-scope observations go to the ledger as deferred
-@@ -444,30 +369,16 @@
+@@ -444,30 +370,16 @@
  
  ## Final Review
  
@@ -332,7 +342,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -480,11 +391,14 @@
+@@ -480,11 +392,14 @@
  made in secret.
  
  When the final whole-branch review is clean and its fixes are merged,
@@ -351,7 +361,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  ## Common Rationalizations
  
-@@ -499,70 +413,3 @@
+@@ -499,70 +414,3 @@
  | "Reviews slow the loop down" | The loop without reviews is just unverified churn. Reviews are the loop's brakes and steering. |
  | "Ledger bookkeeping is overhead" | The ledger is what survives compaction. Controllers without one have re-dispatched entire completed task sequences. |
  | "The implementer spawned its own reviewer — free extra assurance" | It's a duplicate seat reviewing the same diff; the task review is the gate. A worker-spawned reviewer is a defect to flag, not rigor. |
@@ -423,13 +433,15 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -Done! Using superpowers:finishing-a-development-branch.
 -```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
---- vendor/subagent-driven-development/implementer-prompt.md	2026-11-10 19:57:06
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-11-10 20:15:37
-@@ -2,18 +2,20 @@
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-11-24 16:04:06
++++ skills/subagent-driven-development/implementer-prompt.md	2026-11-24 16:04:54
+@@ -2,18 +2,22 @@
  
  Use this template when dispatching an implementer subagent.
  
 +**Dispatch.** Claude Code: `subagent_type` = `verus-worker` (`verus-skills:verus-worker` when installed as a plugin), unnamed, in the background, no `model` parameter. For Codex, follow [the runtime adapter](../../references/runtime.md): prepend the matching role body to the task prompt and dispatch in fresh context with the native subagent tool.
++
++The agent defaults to Sonnet (high effort). For a task the controller marked hard (architecture, migration, security, retry after a failed Sonnet attempt — see Model Selection in the skill), add `model` = `opus` to the Claude Code dispatch; otherwise pass none.
 +
  ```
 -Subagent (general-purpose):
@@ -450,7 +462,7 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
  
      ## Context
  
-@@ -39,7 +41,11 @@
+@@ -39,7 +43,11 @@
      5. Self-review (see below)
      6. Report back
  
@@ -463,7 +475,7 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
  
      **While you work:** If you encounter something unexpected or unclear, **ask questions**.
      It's always OK to pause and clarify. Don't guess or make assumptions.
-@@ -47,6 +53,16 @@
+@@ -47,6 +55,16 @@
      While iterating, run the focused test for what you're changing; run the
      full suite once before committing, not after every edit.
  
@@ -480,7 +492,7 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
      ## You Do Not Dispatch Subagents
  
      Do all of this task's work yourself. Never spawn a subagent to
-@@ -86,7 +102,7 @@
+@@ -86,7 +104,7 @@
  
      **How to escalate:** Report back with status BLOCKED or NEEDS_CONTEXT. Describe
      specifically what you're stuck on, what you've tried, and what kind of help you need.
@@ -489,7 +501,7 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
      or break the task into smaller pieces.
  
      ## Before Reporting Back: Self-Review
-@@ -120,8 +136,8 @@
+@@ -120,8 +138,8 @@
  
      If the task review finds issues, you will be resumed with the findings.
      Fix them, re-run the tests that cover the amended code, and append a fix
@@ -501,8 +513,8 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
      status contract as your first report.
  
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
---- vendor/subagent-driven-development/re-review-prompt.md	2026-11-10 19:57:06
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-11-10 20:15:37
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-11-24 16:04:06
++++ skills/subagent-driven-development/re-review-prompt.md	2026-11-24 16:04:06
 @@ -7,35 +7,37 @@
  **Purpose:** Verify each finding from the previous review was addressed, and
  that the fix itself broke nothing.
@@ -586,8 +598,8 @@ diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent
  - `[HEAD_SHA]` — current commit
  - `[DIFF_FILE]` — the path `bash scripts/review-package PLAN_FILE FIX_BASE HEAD` printed
 diff -ruN vendor/subagent-driven-development/scripts/review-package skills/subagent-driven-development/scripts/review-package
---- vendor/subagent-driven-development/scripts/review-package	2026-11-10 19:57:06
-+++ skills/subagent-driven-development/scripts/review-package	2026-11-10 19:57:06
+--- vendor/subagent-driven-development/scripts/review-package	2026-11-24 16:04:06
++++ skills/subagent-driven-development/scripts/review-package	2026-11-24 16:04:06
 @@ -1,17 +1,33 @@
  #!/usr/bin/env bash
 -# Generate a review package: commit list, stat summary, and the net
@@ -720,8 +732,8 @@ diff -ruN vendor/subagent-driven-development/scripts/review-package skills/subag
 +fi
 +echo "wrote ${out}: ${n} commit(s), $(wc -c < "$out" | tr -d ' ') bytes${kind}"
 diff -ruN vendor/subagent-driven-development/scripts/sdd-workspace skills/subagent-driven-development/scripts/sdd-workspace
---- vendor/subagent-driven-development/scripts/sdd-workspace	2026-11-10 19:57:06
-+++ skills/subagent-driven-development/scripts/sdd-workspace	2026-11-10 19:57:06
+--- vendor/subagent-driven-development/scripts/sdd-workspace	2026-11-24 16:04:06
++++ skills/subagent-driven-development/scripts/sdd-workspace	2026-11-24 16:04:06
 @@ -27,11 +27,21 @@
  # Single source of truth for the workspace location, so task-brief and
  # review-package cannot drift to different directories.
@@ -775,8 +787,8 @@ diff -ruN vendor/subagent-driven-development/scripts/sdd-workspace skills/subage
  # True when the workspace at $1 is (or becomes) this plan's: an existing
  # marker must name this plan; a missing marker means a new workspace or a
 diff -ruN vendor/subagent-driven-development/scripts/task-brief skills/subagent-driven-development/scripts/task-brief
---- vendor/subagent-driven-development/scripts/task-brief	2026-11-10 19:57:06
-+++ skills/subagent-driven-development/scripts/task-brief	2026-11-10 19:57:06
+--- vendor/subagent-driven-development/scripts/task-brief	2026-11-24 16:04:06
++++ skills/subagent-driven-development/scripts/task-brief	2026-11-24 16:04:06
 @@ -1,14 +1,23 @@
  #!/usr/bin/env bash
 -# Extract one task's full text from an implementation plan into a file the
@@ -891,8 +903,8 @@ diff -ruN vendor/subagent-driven-development/scripts/task-brief skills/subagent-
 +
 +echo "wrote ${out}: pointer brief, $(wc -c < "$out" | tr -d ' ') bytes (task text ${size} bytes in ${plan} lines ${first}-${last})"
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
---- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-10 19:57:06
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-10 20:15:37
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-24 16:04:06
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-24 16:04:06
 @@ -7,11 +7,11 @@
  **Purpose:** Verify one task's implementation matches its requirements (nothing
  more, nothing less) and is well-built (clean, tested, maintainable)
@@ -980,8 +992,8 @@ diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/suba
    prints the path; same file the implementer worked from)
  - `[GLOBAL_CONSTRAINTS]` — the binding requirements copied verbatim from
 diff -ruN vendor/subagent-driven-development/workflow-examples.md skills/subagent-driven-development/workflow-examples.md
---- vendor/subagent-driven-development/workflow-examples.md	1970-01-01 02:00:00
-+++ skills/subagent-driven-development/workflow-examples.md	2026-11-10 20:16:14
+--- vendor/subagent-driven-development/workflow-examples.md	1970-01-01 03:00:00
++++ skills/subagent-driven-development/workflow-examples.md	2026-11-24 16:04:06
 @@ -0,0 +1,152 @@
 +# SDD illustrations
 +

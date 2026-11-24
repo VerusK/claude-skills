@@ -34,13 +34,20 @@ distro as the loaded skill. Roles are `worker`, `reviewer`, and `explorer`.
   adapter and tell the child to use its Codex command/session mapping for
   Claude tool terms in the role or task template. Dispatch with the available native
   subagent tool (`spawn_agent` where exposed), without model/effort
-  overrides unless the user requests them. Claude's `model: opus` and
+  overrides unless the user requests them. Claude's `model:` and
   `effort:` metadata are not Codex settings. Codex uses its host defaults.
   When supported, request a fresh context (`fork_turns="none"`); provide
   the task, absolute worktree path, branch and necessary constraints.
   A required `task_name` or task label is fine: the Claude teammate naming
   restriction does not apply to it. If the host always forks history,
   disclose that isolation is limited and provide a self-contained brief.
+
+Claude Code model policy: `verus-worker` and `verus-explorer` run on Sonnet,
+`verus-reviewer` on Opus (see `config/models.json`). The controller sends a
+worker to Opus for one dispatch by adding `model` = `opus` to it, only for a
+hard task: architecture, migration, security, or a retry after a failed
+Sonnet attempt. Haiku and Fable never write code. Keep at most 3
+implementers running at once. Codex ignores all of this and uses host defaults.
 
 Role instructions bind the child along with its task. Workers implement
 and self-review; reviewers write only the named report; explorers are

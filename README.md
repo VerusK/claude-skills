@@ -117,9 +117,9 @@ Every model and effort setting lives in `config/models.json`:
 ```json
 {
   "subagents": {
-    "worker":   { "model": "opus", "effort": "high" },
+    "worker":   { "model": "sonnet", "effort": "high" },
     "reviewer": { "model": "opus", "effort": "xhigh" },
-    "explorer": { "model": "opus", "effort": "medium" }
+    "explorer": { "model": "sonnet", "effort": "medium" }
   },
   "codex": { "model": "default", "reasoning": "default" },
   "judge": { "model": "jev-latest" }
@@ -127,10 +127,11 @@ Every model and effort setting lives in `config/models.json`:
 ```
 
 - **Claude subagents** run as the agent types `verus-worker` (implementers, fix waves), `verus-reviewer` (task reviews, re-reviews, plan reviews, the fallback external reviewer of spec-review, plan-review and review) and `verus-explorer` (kickoff lookups); `make install` links them into `~/.claude/agents/`, the plugin ships them. After editing `subagents`, run `make models` — it rewrites the `model:`/`effort:` lines of `agents/verus-*.md`; a test fails if they drift. The symlink install sees the change at once; the plugin after a release. Effort: `low|medium|high|xhigh|max`.
+- **Model policy:** code-writing agents (`verus-worker`: implementers, fix waves) default to Sonnet at high effort; the read-only `verus-explorer` runs on Sonnet at medium. `verus-reviewer` stays on Opus, as does the external review (Codex). The controller moves a single worker dispatch to Opus (`model` = `opus` on the dispatch) only for a hard task: architecture, migration, security, or a retry after a failed Sonnet attempt. Haiku and Fable are not used for code. At most 3 implementers run in parallel.
 - **The `opus` alias** follows the newest Opus only when the main session is not itself pinned to an older Opus: a session on an older Opus keeps its subagents on that exact version. To pin, write a full model id (e.g. `claude-opus-5-6`) and run `make models`.
 - **Codex reviewer:** `default` passes no `-m`/`model_reasoning_effort`, so Codex uses `~/.codex/config.toml`. Override per run with `REVIEWER_CODEX_MODEL` / `REVIEWER_CODEX_REASONING`. Every Codex value must be a single token (letters, digits, `_ . : [ ] -`); anything else stops the review with an error that names the setting, never its value. Each review starts a fresh Codex terminal, so a change applies from the next review.
 - **Judge:** `jev-latest` by default; override per run with `TYPESAFE_DEFAULT_MODEL`.
-- **Per machine**, without a commit: `~/.verus-skills/config.json` may set `codex.model`, `codex.reasoning` and `judge.model`; it wins over `config/models.json`, env wins over both. A Claude subagent's model cannot be overridden per run — agent definitions are static.
+- **Per machine**, without a commit: `~/.verus-skills/config.json` may set `codex.model`, `codex.reasoning` and `judge.model`; it wins over `config/models.json`, env wins over both. A Claude subagent's configured model is not overridable by the local file; the only per-run override is the controller's `model` = `opus` on a hard-task dispatch.
 
 ## Install
 
