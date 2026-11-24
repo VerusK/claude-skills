@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { parseSources, validateSources, pinSources, resolveRef, updatePins, fetchFromGitHub, syncSource, repatch, readLock, summarize, hasBlockingResults, REPO_ROOT } from "../scripts/sync.mjs";
+import { parseSources, validateSources, pinSources, resolveRef, runSync, spdxError, fetchFromGitHub, syncSource, repatch, readLock, summarize, hasBlockingResults, REPO_ROOT } from "../scripts/sync.mjs";
 
 const TEMP_DIRS = [];
 function tmp(prefix) {
@@ -287,6 +287,7 @@ test("validateSources flags branch refs, missing ref and license, bad SPDX and d
   assert.match(problems.join("\n"), /branch.*commit sha/);
   assert.match(problems.join("\n"), /nolic.*license/);
   assert.match(problems.join("\n"), /badlic.*SPDX/);
+  assert.match(problems.join("\n"), /unknown license id/);
 });
 
 test("validateSources can skip the pin check for an update run", () => {
@@ -322,16 +323,57 @@ test("resolveRef returns a sha as is and reads a branch through the injected lis
   await assert.rejects(() => resolveRef(src, "nope", { lsRemote: lines("") }), /cannot resolve/);
 });
 
-test("updatePins moves the pin of the selected sources and leaves the rest", async () => {
-  const root = tmp("pins-");
-  const text = `sources:\n  - name: a\n    repo: o/r\n    ref: ${SHA}\n    license: MIT\n    path: skills/a\n  - name: b\n    repo: o/r\n    ref: ${SHA}\n    license: MIT\n    path: skills/b\n`;
+test("spdxError accepts real expressions, nested ones included, and rejects the rest", () => {
+  for (const ok of ["MIT", "Apache-2.0 OR MIT", "(MIT OR Apache-2.0) AND BSD-2-Clause", "GPL-2.0-only WITH Classpath-exception-2.0", "((MIT))"]) {
+    assert.equal(spdxError(ok), null, ok);
+  }
+  for (const bad of ["Definitely-Not-A-License", "(MIT and MIT)", "MIT OR", "OR MIT", "(MIT", "MIT)", "MIT Apache-2.0", "MIT WITH", "()", "", "mit"]) {
+    assert.ok(spdxError(bad), `should reject ${JSON.stringify(bad)}`);
+  }
+});
+
+// ---- runSync: per-source error boundaries and pin persistence ----
+
+function yamlRoot(names) {
+  const root = setupRoot();
+  const text = "sources:\n" + names.map((n) => `  - name: ${n}\n    repo: o/${n}\n    ref: ${SHA}\n    license: MIT\n    path: skills/${n}\n    patch: true\n`).join("");
   writeFileSync(path.join(root, "sources.yaml"), text);
-  const NEW = "f".repeat(40);
-  const list = parseSources(text);
-  const pins = await updatePins(list.filter((s) => s.name === "b"), { to: null, lsRemote: async () => `${NEW}\tHEAD\n` });
-  assert.deepEqual(pins, { b: NEW });
-  writeFileSync(path.join(root, "sources.yaml"), pinSources(text, pins));
+  return { root, sources: parseSources(text) };
+}
+const NEWSHA = "b".repeat(40);
+
+test("runSync update: an unresolvable source is reported and the healthy one still syncs and is pinned", async () => {
+  const { root, sources } = yamlRoot(["bad", "good"]);
+  const up = upstream({ "skills/good/SKILL.md": "g\n" });
+  const lsRemote = async (s) => { if (s.name === "bad") throw new Error("repo gone"); return `${NEWSHA}\tHEAD\n`; };
+  const { results } = await runSync(sources, { root, update: true, lsRemote, fetchSource: async (s) => ({ dir: up, commit: s.ref }) });
+  assert.equal(results.length, 2);
+  assert.match(results[0].conflicts[0], /bad.*repo gone|sync error: .*repo gone/);
+  assert.equal(results[1].name, "good");
+  assert.ok(hasBlockingResults(results));
   const after = parseSources(readFileSync(path.join(root, "sources.yaml"), "utf8"));
-  assert.equal(after[0].ref, SHA);
-  assert.equal(after[1].ref, NEW);
+  assert.equal(after[0].ref, SHA, "failed source keeps its pin");
+  assert.equal(after[1].ref, NEWSHA);
+  assert.equal(readLock(root).good.commit, NEWSHA);
+});
+
+test("runSync update: a failing patch record does not discard the pin of a source that synced", async () => {
+  const { root, sources } = yamlRoot(["demo"]);
+  const fetcher1 = async (s) => ({ dir: upstream({ "skills/demo/SKILL.md": "l1\nl2\nl3\n" }), commit: s.ref });
+  await runSync(sources, { root, fetchSource: fetcher1 });
+  writeFileSync(path.join(root, "skills/demo/SKILL.md"), "l1\nOURS\nl3\n"); // local patch, so repatch has a diff to write
+  mkdirSync(path.join(root, "patches/demo.patch")); // makes writing the patch record fail
+  const fetcher2 = async (s) => ({ dir: upstream({ "skills/demo/SKILL.md": "l1\nl2\nl3\nTHEIRS\n" }), commit: s.ref });
+  const { results } = await runSync(sources, { root, update: true, lsRemote: async () => `${NEWSHA}\tHEAD\n`, fetchSource: fetcher2 });
+  assert.equal(parseSources(readFileSync(path.join(root, "sources.yaml"), "utf8"))[0].ref, NEWSHA);
+  assert.equal(readLock(root).demo.commit, NEWSHA, "yaml and lock agree");
+  assert.match(results[0].mergeErrors.join("\n"), /patch record not regenerated/);
+  assert.ok(hasBlockingResults(results), "the failure still fails the run");
+});
+
+test("runSync without update never touches sources.yaml", async () => {
+  const { root, sources } = yamlRoot(["demo"]);
+  const before = readFileSync(path.join(root, "sources.yaml"), "utf8");
+  await runSync(sources, { root, fetchSource: async (s) => ({ dir: upstream({ "skills/demo/SKILL.md": "x\n" }), commit: s.ref }) });
+  assert.equal(readFileSync(path.join(root, "sources.yaml"), "utf8"), before);
 });

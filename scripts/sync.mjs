@@ -31,8 +31,48 @@ export function parseSources(text) {
 }
 
 const SHA_RE = /^[0-9a-f]{40}$/;
-// SPDX license expression: ids joined by AND / OR / WITH, parentheses allowed.
-const SPDX_RE = /^\(?[A-Za-z0-9.+-]+\)?( (AND|OR|WITH) \(?[A-Za-z0-9.+-]+\)?)*$/;
+// SPDX license identifiers this distro accepts. Not the whole SPDX list: add the id here
+// when a new source needs one, after checking it against https://spdx.org/licenses/.
+export const SPDX_IDS = new Set([
+  "0BSD", "AGPL-3.0-only", "AGPL-3.0-or-later", "Apache-2.0", "Artistic-2.0", "BlueOak-1.0.0",
+  "BSD-2-Clause", "BSD-3-Clause", "BSL-1.0", "CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0", "EPL-2.0",
+  "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "ISC",
+  "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later", "MIT", "MIT-0",
+  "MPL-2.0", "Unlicense", "Zlib",
+]);
+
+// Parse an SPDX license expression: `idstring [WITH exception]`, combined with AND / OR
+// (AND binds tighter), parentheses nesting. Returns an error string, or null when valid.
+// Every id must be in SPDX_IDS; an exception after WITH only needs the SPDX id shape.
+export function spdxError(expr) {
+  const tokens = String(expr).match(/\(|\)|[^\s()]+/g) ?? [];
+  let i = 0;
+  const fail = (m) => { throw new Error(m); };
+  const simple = () => {
+    const t = tokens[i++];
+    if (t === "(") {
+      or();
+      if (tokens[i++] !== ")") fail("unbalanced parentheses");
+      return;
+    }
+    if (t === undefined || t === ")" || /^(AND|OR|WITH)$/.test(t)) fail(`unexpected ${t === undefined ? "end of expression" : `'${t}'`}`);
+    if (!SPDX_IDS.has(t)) fail(`unknown license id '${t}'`);
+    if (tokens[i] === "WITH") {
+      i++;
+      const ex = tokens[i++];
+      if (!ex || !/^[A-Za-z0-9.+-]+$/.test(ex) || /^(AND|OR|WITH)$/.test(ex)) fail("WITH needs an exception id");
+    }
+  };
+  const and = () => { simple(); while (tokens[i] === "AND") { i++; simple(); } };
+  const or = () => { and(); while (tokens[i] === "OR") { i++; and(); } };
+  try {
+    or();
+    if (i < tokens.length) fail(`unexpected '${tokens[i]}'`);
+    return null;
+  } catch (e) {
+    return e.message;
+  }
+}
 
 // Problems that make a sources.yaml unfit to sync from: every source must be pinned
 // to a full commit sha (`ref`) and carry an SPDX `license`. An update run resolves
@@ -47,7 +87,10 @@ export function validateSources(list, { requirePinned = true } = {}) {
       problems.push(`${s.name}: ref must be a full 40-hex commit sha, got ${JSON.stringify(s.ref)} — pin it with 'make sync-update ARGS="--only ${s.name}"'`);
     }
     if (!s.license) problems.push(`${s.name}: license is missing (SPDX id from the upstream LICENSE)`);
-    else if (!SPDX_RE.test(s.license)) problems.push(`${s.name}: license ${JSON.stringify(s.license)} is not an SPDX expression`);
+    else {
+      const err = spdxError(s.license);
+      if (err) problems.push(`${s.name}: license ${JSON.stringify(s.license)} is not a valid SPDX expression (${err})`);
+    }
   }
   return problems;
 }
@@ -85,14 +128,6 @@ export async function resolveRef(source, ref, { lsRemote = gitLsRemote } = {}) {
   const sha = (peeled ?? lines[0] ?? "").split(/\s+/)[0];
   if (!SHA_RE.test(sha)) throw new Error(`${source.name}: cannot resolve '${ref}' in ${source.repo}`);
   return sha;
-}
-
-// New pins for the given sources: `to` (a branch, tag or sha; only meaningful for one
-// source) or the upstream default branch (`HEAD`).
-export async function updatePins(sources, { to = null, lsRemote } = {}) {
-  const pins = {};
-  for (const s of sources) pins[s.name] = await resolveRef(s, to ?? "HEAD", { lsRemote });
-  return pins;
 }
 
 export function readLock(root) {
@@ -355,15 +390,7 @@ async function main() {
   if (to && !(update && only)) throw new Error("--to needs --update and --only <source>");
   const problems = validateSources(all, { requirePinned: !update && !args.includes("--repatch") });
   if (problems.length) throw new Error(`sources.yaml is not valid:\n- ${problems.join("\n- ")}`);
-  let sources = all.filter((s) => !only || s.name === only);
-
-  // Explicit update: move the pin of the selected sources to the upstream head (or --to),
-  // sync at the new commit, and write the pin to sources.yaml only for sources that synced.
-  let pins = {};
-  if (update && !args.includes("--repatch")) {
-    pins = await updatePins(sources, { to });
-    sources = sources.map((s) => ({ ...s, ref: pins[s.name] }));
-  }
+  const sources = all.filter((s) => !only || s.name === only);
 
   if (args.includes("--repatch")) {
     for (const s of sources.filter((s) => s.patch)) {
@@ -373,25 +400,52 @@ async function main() {
     return;
   }
 
-  const results = [];
-  for (const s of sources) {
-    try {
-      const r = await syncSource(s, { root: REPO_ROOT });
-      results.push(r);
-      if (s.patch) repatch(s, { root: REPO_ROOT });
-    } catch (err) {
-      delete pins[s.name]; // a source that did not sync keeps its old pin
-      results.push({ name: s.name, commit: "-", changed: false, conflicts: [`sync error: ${err.message}`], mergeErrors: [], added: [], removed: [], kept: [] });
-    }
-  }
-  if (Object.keys(pins).length) {
-    const moved = Object.fromEntries(Object.entries(pins).filter(([name, sha]) => all.find((s) => s.name === name).ref !== sha));
-    if (Object.keys(moved).length) writeFileSync(yamlPath, pinSources(readFileSync(yamlPath, "utf8"), moved));
-  }
+  const { results } = await runSync(sources, { root: REPO_ROOT, update, to });
   const report = summarize(results);
   writeFileSync(path.join(REPO_ROOT, ".sync-report.md"), report);
   console.log(report);
   process.exitCode = hasBlockingResults(results) ? 1 : 0;
+}
+
+// Sync every source, each inside its own error boundary: one unreachable repository or
+// failed merge is reported and the rest still run. With `update`, each source first
+// resolves its new pin (upstream head, or `to`); the pin is written to sources.yaml as
+// soon as that source's sync has succeeded, so sources.yaml and sources.lock.json agree
+// even when the patch record for it cannot be regenerated afterwards.
+export async function runSync(sources, { root = REPO_ROOT, update = false, to = null, fetchSource, lsRemote } = {}) {
+  const yamlPath = path.join(root, "sources.yaml");
+  const results = [];
+  const failure = (name, msg) => ({ name, commit: "-", changed: false, conflicts: [msg], mergeErrors: [], added: [], removed: [], kept: [] });
+  for (const original of sources) {
+    let s = original;
+    if (update) {
+      try {
+        s = { ...s, ref: await resolveRef(s, to ?? "HEAD", { lsRemote }) };
+      } catch (err) {
+        results.push(failure(s.name, `sync error: ${err.message}`)); // keeps the old pin
+        continue;
+      }
+    }
+    let r;
+    try {
+      r = await syncSource(s, { root, ...(fetchSource ? { fetchSource } : {}) });
+    } catch (err) {
+      results.push(failure(s.name, `sync error: ${err.message}`));
+      continue;
+    }
+    results.push(r);
+    if (update && s.ref !== original.ref) {
+      writeFileSync(yamlPath, pinSources(readFileSync(yamlPath, "utf8"), { [s.name]: s.ref }));
+    }
+    if (s.patch) {
+      try {
+        repatch(s, { root });
+      } catch (err) {
+        r.mergeErrors.push(`patch record not regenerated — run make repatch: ${err.message}`);
+      }
+    }
+  }
+  return { results };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
