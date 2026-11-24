@@ -42,6 +42,18 @@ Before asking anything, read: repo layout, docs, recent commits, existing specs 
 dispatch an explorer subagent for broad lookups — Claude Code: `subagent_type` = `verus-explorer` (`verus-skills:verus-explorer` when installed as a plugin), unnamed, in the background, no `model` parameter. For Codex, follow [the runtime adapter](../../references/runtime.md): prepend the matching role body to the task prompt and dispatch in fresh context with the native subagent tool. Keep asking
 the rest of the frontier meanwhile.
 
+## 2b. Is it worth doing? (architectural, and bounded work bigger than about a day)
+
+Before the decision tree, answer three questions yourself, from facts you found in section 2 (tickets, user reports, logs, code, docs, the user's own words in this conversation). Cite the fact behind every answer; "probably" is not an answer.
+
+1. **Real pain or risk.** Does the task remove a pain a real user or client has now, or a concrete risk (security, data loss, money, an outage)? Name who and what.
+2. **Holds other work.** Is other work blocked, or built on top of it? Name the work.
+3. **No cheap 80%.** Is there no cheap way to get about 80% of the result — a config change, an existing feature, a manual step, a smaller change? Name the cheapest alternative you looked at; answer "yes" only if none of them gets close, and "no" if one does.
+
+The task passes with at least one "yes". If every answer is "no", do not start the tree: propose the cheapest option you found, or not doing it, and let the user decide (this is an owner question: its answer changes what gets built). The facts are your job; ask the user only about a fact no file, command or tool can give you.
+
+Record the three answers and their facts: for architectural work in the spec's **Worth doing** section (right after Goal), for bounded work in the chat design (section 4). A spike skips this section. When the user already approved the design earlier in this conversation, the approval stands: record the answers in one line and go on.
+
 ## 3. The decision tree
 
 Model the design as a tree: every decision branches into the decisions that hang
@@ -73,13 +85,13 @@ Open-ended questions (no sensible options) are asked directly, one per message, 
 
 **Spike:** frame the question and the probe in 2–3 sentences, get a nod, investigate as cheaply as correctness allows, report a recommendation. Anything built is labeled throwaway. Stop.
 
-**Bounded:** after the tree is settled, present a short design in chat (approach, files touched, how to test) plus the Decisions list. STOP and wait for an explicit yes. Then hand off to `test-driven-development` (`verus-skills:test-driven-development` when installed as a plugin) for the change itself; no plan document.
+**Bounded:** after the tree is settled, present a short design in chat (worth-doing answers when the task is bigger than about a day, approach, files touched, how to test) plus the Decisions list. STOP and wait for an explicit yes. Then hand off to `test-driven-development` (`verus-skills:test-driven-development` when installed as a plugin) for the change itself; no plan document.
 
 **Architectural:** after the tree is settled:
 
 1. Propose 2–3 approaches with trade-offs and a recommendation (this is itself a judge-able question).
 2. Draft the design in sections (architecture, components, data flow, error handling, testing) straight through, without stopping between them: do not ask whether a section is right, do not wait for a nod, do not print the sections for approval one by one. Checking the design is the job of the external Codex review in `spec-review`; the user is asked to approve the reviewed spec only when that review does not come back clear. A gap you find while drafting is a new frontier question — run it through the tree (section 3), not through a "does this look right?" check-in.
-3. Write the spec to `docs/specs/YYYY-MM-DD-<topic>-design.md` with these sections: Goal, Non-goals, Design (the drafted sections), Testing, **Decisions** (every decision block, auto-accepted ones marked `auto`, ones that fell back to your recommendation marked `recommended`, user-answered ones marked `user`).
+3. Write the spec to `docs/specs/YYYY-MM-DD-<topic>-design.md` with these sections: Goal, **Worth doing** (the three answers from section 2b, each with its fact), Non-goals, Design (the drafted sections), Testing, **Decisions** (every decision block, auto-accepted ones marked `auto`, ones that fell back to your recommendation marked `recommended`, user-answered ones marked `user`).
 4. Self-review the spec: no placeholders, no contradictions, one interpretation per requirement, scoped for a single plan. Fix inline.
 5. Commit the spec. Tell the user: "Spec written and committed to `<path>`. Sending it to an external review; if it comes back clear I go straight on to the plan."
 6. Invoke `spec-review` (`verus-skills:spec-review` when installed as a plugin) with the spec path. It revises the spec and hands off to the plan — on its own when the review is clear, after the user's approval when it is not. Invoke nothing else.
@@ -102,6 +114,8 @@ one line. The Decisions section of the spec is the durable copy.
 | "Routine, so no need to print it" | Every decision is printed and recorded, routine ones included. |
 | "Jev is 0.99 sure of another option, I'll switch my recommendation" | Then nothing independent agreed. Keep your pick, record it as `recommended`; both picks are in the block. |
 | "Jev disagreed, I'd better ask the user" | The user's rule: take the recommendation, print the block, keep going. |
+| "It's obviously worth it, skip the three questions" | Architectural and day-plus work answers them every time, with facts. A "yes" you cannot back with a fact is a "no". |
+| "Every answer is no, but the user asked for it" | Say so and propose the cheapest option before the tree; the user decides. Do not silently build it. |
 | "Too simple to need approval" | Simple means a short design, not no design. |
 | "I'll show this design section and ask before the next one" | Architectural designs are drafted straight through; the Codex spec review checks them and the user approves once, after it. |
 | "I'll batch the accepted decisions later" | Print each block as it happens. |

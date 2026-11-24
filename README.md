@@ -53,7 +53,7 @@ kickoff → spec-review → writing-plans → plan-review → subagent-driven-de
 
 | Step | Skill | What happens |
 |---|---|---|
-| 1 | `kickoff` | Classifies the task, interviews through a decision tree, judges each multiple-choice question, writes `docs/specs/<date>-<topic>-design.md` with a Decisions section. |
+| 1 | `kickoff` | Classifies the task; for architectural work and bounded work over about a day it first answers three worth-doing questions from facts (real pain or risk, holds other work, no cheap 80% route) and, with no "yes", proposes the minimal option or not doing it; then interviews through a decision tree, judges each multiple-choice question, writes `docs/specs/<date>-<topic>-design.md` with Worth doing and Decisions sections. |
 | 2 | `spec-review` | Codex reviews the spec (scope challenge, requirements, scope, feasibility, testability, `auto` decisions) and writes the report next to the spec as `<spec-name>.review.md`. Findings rated 7+/10 are judged — those against the user's own decisions go to the user — the spec is revised, one re-review; a clear spec goes straight on to the plan, otherwise the user approves it. |
 | 3 | `writing-plans` | Settles the design first (see [Design rules](#design-rules)), then writes a bite-sized TDD plan in `docs/plans/<date>-<name>.md`. |
 | 4 | `plan-review` | Codex reviews the plan (architecture and the [design rules](#design-rules), quality, tests, performance) and writes the report next to the plan as `<plan-name>.review.md` (the plan's basename without `.md`). Findings rated 7+/10 are judged, the plan is revised, one re-review, then the key architecture decisions are shown and execution starts without stopping. |
@@ -107,6 +107,8 @@ A **clean** working tree gives full mode: review → findings judged → at most
 | `finishing-a-development-branch` | copy + patch | obra/superpowers | Jesse Vincent | MIT |
 | `verification-before-completion` | copy | obra/superpowers | Jesse Vincent | MIT |
 | `typesafe-ai` | copy | [typesafe-ai/skills](https://github.com/typesafe-ai/skills) | TypeSafe AI | MIT |
+
+Every report form the distro gives executors and reviewers ends with a mandatory **Not verified and why** part: the `verus-worker` role, the SDD implementer prompt (task and fix reports), the `review` report, and the final reports of SDD, `review` and `finishing-a-development-branch`.
 
 Patches: `superpowers:*` references point at this distro's skill names, no git-worktree steps (work happens in Orca worktrees), every subagent dispatched as a `verus-*` agent type (see [Models and effort](#models-and-effort)), SDD's final review routed to `review`, the [design rules](#design-rules) in `writing-plans` and the SDD task reviewer, docs under `docs/specs/` and `docs/plans/`; `test-driven-development` only has its citations rewritten. Full attribution is in `NOTICE`.
 
