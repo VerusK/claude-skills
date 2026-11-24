@@ -140,8 +140,9 @@ Subagent (verus-worker):
     Fix them, re-run the tests that cover the amended code, and append a fix
     report to your report file under a `## Fix round <R>` heading: what you
     changed, the covering tests you ran, the command, and the output. Reviewers will not re-run tests for
-    you — your report is the test evidence. Then reply with the same short
-    status contract as your first report.
+    you — your report is the test evidence. End the fix report with its own
+    **Not verified and why** (see Report Format). Then reply with the same
+    short status contract as your first report.
 
     ## Report Format
 
@@ -154,12 +155,18 @@ Subagent (verus-worker):
     - Files changed
     - Self-review findings (if any)
     - Any issues or concerns
+    - **Not verified and why** (mandatory): everything you did not run, read
+      or check — a test you skipped, a path no test covers, a service or
+      environment you could not reach, a requirement you took on trust —
+      each with the reason. Write "Nothing — everything I claim was run"
+      only if that is literally true. An empty section is a defect.
 
     Then report back with ONLY (under 15 lines — the detail lives in the
     report file):
     - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
     - Commits created (short SHA + subject)
     - One-line test summary (e.g. "14/14 passing, output pristine")
+    - Not verified: one line, or "nothing"
     - Your concerns, if any
     - The report file path
 

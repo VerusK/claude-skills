@@ -1,6 +1,6 @@
 diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-development/SKILL.md
---- vendor/subagent-driven-development/SKILL.md	2026-11-24 16:04:06
-+++ skills/subagent-driven-development/SKILL.md	2026-11-24 16:04:54
+--- vendor/subagent-driven-development/SKILL.md	2026-11-24 22:00:47
++++ skills/subagent-driven-development/SKILL.md	2026-11-24 22:05:53
 @@ -32,99 +32,26 @@
  
  ## When to Use
@@ -211,16 +211,18 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  Template: [implementer-prompt.md](implementer-prompt.md)
  
-@@ -287,7 +200,7 @@
+@@ -287,15 +200,17 @@
  
  Implementer subagents report one of four statuses. Handle each appropriately:
  
 -**DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path.
-+**DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path — unless the printed line ends in `docs-only` (see step 3).
++Every report has a **Not verified and why** part. A report without it is incomplete: send it back and wait for the part before going on. Read the part first: an item that decides whether the task is correct (a test not run, a path nothing covers) is closed — by you, with the check — before review; the rest goes into the ledger as `Not verified:` lines for the final summary.
  
++**DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path — unless the printed line ends in `docs-only` (see step 3).
++
  **DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
  
-@@ -295,7 +208,7 @@
+ **NEEDS_CONTEXT:** The implementer needs information that wasn't provided. Provide the missing context and re-dispatch.
  
  **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
  1. If it's a context problem, provide more context and re-dispatch with the same model
@@ -229,7 +231,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  3. If the task is too large, break it into smaller pieces
  4. If the plan itself is wrong, rule on the correction, ledger it, and re-dispatch with the ruling carried in the dispatch
  
-@@ -308,19 +221,29 @@
+@@ -308,19 +223,29 @@
  ### 3. Review the task
  
  Per-task reviews are task-scoped gates. The broad review happens once, at the
@@ -264,7 +266,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
    dispatch a task reviewer without a diff file.
  - **Reviewer inputs:** the task reviewer gets three paths — the same brief
    file, the report file, and the review package — plus the global
-@@ -378,25 +301,28 @@
+@@ -378,25 +303,28 @@
  dispatch a fresh implementer carrying the brief path, the report-file path,
  and the findings — the report file is the persistent memory either way.
  
@@ -303,7 +305,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  each finding ADDRESSED or NOT ADDRESSED and flags new breakage in the fix
  diff only. New Critical/Important breakage in the fix diff joins the open
  findings list. Out-of-scope observations go to the ledger as deferred
-@@ -444,30 +370,16 @@
+@@ -444,30 +372,16 @@
  
  ## Final Review
  
@@ -342,9 +344,15 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  ## Finish
  
  Before you delete anything, collect every ledger line containing `Ruling:` —
-@@ -480,11 +392,14 @@
+@@ -479,12 +393,20 @@
+ whatever you got wrong. A ruling that dies with the workspace was a decision
  made in secret.
  
++Your final message also carries **Not verified and why**: the `Not verified:`
++ledger lines, plus what the final review's report lists under its own
++"Not verified and why", merged and deduplicated, each with the reason. Do
++not claim a check that no run in this session backs.
++
  When the final whole-branch review is clean and its fixes are merged,
 -delete this plan's workspace (`rm -rf <workspace>`) — the git history is
 -the record now. Sibling directories belong to other plans; leave them
@@ -361,7 +369,7 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
  
  ## Common Rationalizations
  
-@@ -499,70 +414,3 @@
+@@ -499,70 +421,3 @@
  | "Reviews slow the loop down" | The loop without reviews is just unverified churn. Reviews are the loop's brakes and steering. |
  | "Ledger bookkeeping is overhead" | The ledger is what survives compaction. Controllers without one have re-dispatched entire completed task sequences. |
  | "The implementer spawned its own reviewer — free extra assurance" | It's a duplicate seat reviewing the same diff; the task review is the gate. A worker-spawned reviewer is a defect to flag, not rigor. |
@@ -433,8 +441,8 @@ diff -ruN vendor/subagent-driven-development/SKILL.md skills/subagent-driven-dev
 -Done! Using superpowers:finishing-a-development-branch.
 -```
 diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subagent-driven-development/implementer-prompt.md
---- vendor/subagent-driven-development/implementer-prompt.md	2026-11-24 16:04:06
-+++ skills/subagent-driven-development/implementer-prompt.md	2026-11-24 16:04:54
+--- vendor/subagent-driven-development/implementer-prompt.md	2026-11-24 22:00:47
++++ skills/subagent-driven-development/implementer-prompt.md	2026-11-24 22:05:53
 @@ -2,18 +2,22 @@
  
  Use this template when dispatching an implementer subagent.
@@ -501,20 +509,44 @@ diff -ruN vendor/subagent-driven-development/implementer-prompt.md skills/subage
      or break the task into smaller pieces.
  
      ## Before Reporting Back: Self-Review
-@@ -120,8 +138,8 @@
+@@ -120,10 +138,11 @@
  
      If the task review finds issues, you will be resumed with the findings.
      Fix them, re-run the tests that cover the amended code, and append a fix
 -    report to your report file: what you changed, the covering tests you
 -    ran, the command, and the output. Reviewers will not re-run tests for
+-    you — your report is the test evidence. Then reply with the same short
+-    status contract as your first report.
 +    report to your report file under a `## Fix round <R>` heading: what you
 +    changed, the covering tests you ran, the command, and the output. Reviewers will not re-run tests for
-     you — your report is the test evidence. Then reply with the same short
-     status contract as your first report.
++    you — your report is the test evidence. End the fix report with its own
++    **Not verified and why** (see Report Format). Then reply with the same
++    short status contract as your first report.
+ 
+     ## Report Format
+ 
+@@ -136,12 +155,18 @@
+     - Files changed
+     - Self-review findings (if any)
+     - Any issues or concerns
++    - **Not verified and why** (mandatory): everything you did not run, read
++      or check — a test you skipped, a path no test covers, a service or
++      environment you could not reach, a requirement you took on trust —
++      each with the reason. Write "Nothing — everything I claim was run"
++      only if that is literally true. An empty section is a defect.
+ 
+     Then report back with ONLY (under 15 lines — the detail lives in the
+     report file):
+     - **Status:** DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+     - Commits created (short SHA + subject)
+     - One-line test summary (e.g. "14/14 passing, output pristine")
++    - Not verified: one line, or "nothing"
+     - Your concerns, if any
+     - The report file path
  
 diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent-driven-development/re-review-prompt.md
---- vendor/subagent-driven-development/re-review-prompt.md	2026-11-24 16:04:06
-+++ skills/subagent-driven-development/re-review-prompt.md	2026-11-24 16:04:06
+--- vendor/subagent-driven-development/re-review-prompt.md	2026-11-24 22:00:47
++++ skills/subagent-driven-development/re-review-prompt.md	2026-11-24 22:00:47
 @@ -7,35 +7,37 @@
  **Purpose:** Verify each finding from the previous review was addressed, and
  that the fix itself broke nothing.
@@ -598,8 +630,8 @@ diff -ruN vendor/subagent-driven-development/re-review-prompt.md skills/subagent
  - `[HEAD_SHA]` — current commit
  - `[DIFF_FILE]` — the path `bash scripts/review-package PLAN_FILE FIX_BASE HEAD` printed
 diff -ruN vendor/subagent-driven-development/scripts/review-package skills/subagent-driven-development/scripts/review-package
---- vendor/subagent-driven-development/scripts/review-package	2026-11-24 16:04:06
-+++ skills/subagent-driven-development/scripts/review-package	2026-11-24 16:04:06
+--- vendor/subagent-driven-development/scripts/review-package	2026-11-24 22:00:47
++++ skills/subagent-driven-development/scripts/review-package	2026-11-24 22:00:47
 @@ -1,17 +1,33 @@
  #!/usr/bin/env bash
 -# Generate a review package: commit list, stat summary, and the net
@@ -732,8 +764,8 @@ diff -ruN vendor/subagent-driven-development/scripts/review-package skills/subag
 +fi
 +echo "wrote ${out}: ${n} commit(s), $(wc -c < "$out" | tr -d ' ') bytes${kind}"
 diff -ruN vendor/subagent-driven-development/scripts/sdd-workspace skills/subagent-driven-development/scripts/sdd-workspace
---- vendor/subagent-driven-development/scripts/sdd-workspace	2026-11-24 16:04:06
-+++ skills/subagent-driven-development/scripts/sdd-workspace	2026-11-24 16:04:06
+--- vendor/subagent-driven-development/scripts/sdd-workspace	2026-11-24 22:00:47
++++ skills/subagent-driven-development/scripts/sdd-workspace	2026-11-24 22:00:47
 @@ -27,11 +27,21 @@
  # Single source of truth for the workspace location, so task-brief and
  # review-package cannot drift to different directories.
@@ -787,8 +819,8 @@ diff -ruN vendor/subagent-driven-development/scripts/sdd-workspace skills/subage
  # True when the workspace at $1 is (or becomes) this plan's: an existing
  # marker must name this plan; a missing marker means a new workspace or a
 diff -ruN vendor/subagent-driven-development/scripts/task-brief skills/subagent-driven-development/scripts/task-brief
---- vendor/subagent-driven-development/scripts/task-brief	2026-11-24 16:04:06
-+++ skills/subagent-driven-development/scripts/task-brief	2026-11-24 16:04:06
+--- vendor/subagent-driven-development/scripts/task-brief	2026-11-24 22:00:47
++++ skills/subagent-driven-development/scripts/task-brief	2026-11-24 22:00:47
 @@ -1,14 +1,23 @@
  #!/usr/bin/env bash
 -# Extract one task's full text from an implementation plan into a file the
@@ -903,8 +935,8 @@ diff -ruN vendor/subagent-driven-development/scripts/task-brief skills/subagent-
 +
 +echo "wrote ${out}: pointer brief, $(wc -c < "$out" | tr -d ' ') bytes (task text ${size} bytes in ${plan} lines ${first}-${last})"
 diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/subagent-driven-development/task-reviewer-prompt.md
---- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-24 16:04:06
-+++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-24 16:04:06
+--- vendor/subagent-driven-development/task-reviewer-prompt.md	2026-11-24 22:00:47
++++ skills/subagent-driven-development/task-reviewer-prompt.md	2026-11-24 22:00:47
 @@ -7,11 +7,11 @@
  **Purpose:** Verify one task's implementation matches its requirements (nothing
  more, nothing less) and is well-built (clean, tested, maintainable)
@@ -993,7 +1025,7 @@ diff -ruN vendor/subagent-driven-development/task-reviewer-prompt.md skills/suba
  - `[GLOBAL_CONSTRAINTS]` — the binding requirements copied verbatim from
 diff -ruN vendor/subagent-driven-development/workflow-examples.md skills/subagent-driven-development/workflow-examples.md
 --- vendor/subagent-driven-development/workflow-examples.md	1970-01-01 03:00:00
-+++ skills/subagent-driven-development/workflow-examples.md	2026-11-24 16:04:06
++++ skills/subagent-driven-development/workflow-examples.md	2026-11-24 22:00:47
 @@ -0,0 +1,152 @@
 +# SDD illustrations
 +

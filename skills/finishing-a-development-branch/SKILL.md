@@ -204,6 +204,17 @@ Carry out the choice, then remove the worktree.
 **Otherwise:** The host environment owns this workspace — leave it in
 place. If your platform provides a workspace-exit tool, use it.
 
+## Final report
+
+Whichever option ran, close with a report to your human partner: what was
+done (branch, commits, merge result or PR URL), the suite result from Step 1,
+and a **Not verified and why** part — everything this finish did not check,
+each with the reason: CI or deploy not observed, tests skipped or flaky, a
+platform or environment never exercised, findings the review left open. Take
+over the review report's "Not verified and why" instead of restating it
+differently. Write "Nothing — everything I claim was run" only if that is
+true.
+
 ## Quick Reference
 
 | Option | Merge | Push | Keep Worktree | Cleanup Branch |

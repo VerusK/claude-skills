@@ -62,11 +62,15 @@ The report path is named on its own line at the end of this prompt. Save the rep
 <one short paragraph; "No issues found" when clean, "No plan given" when PLAN and SPEC are both none>
 ## Ledger triage
 <for each deferred/parked line: BLOCKS MERGE or OK, one clause why; "None" if no ledger lines were given>
+## Not verified and why
+<each thing you could not or did not check, with the reason: a file or path you did not read, tests you did not run, behavior you judged only from the diff, a part of the scope you skipped or sampled; "Nothing — the whole scope was read and checked" only when that is true>
 <!-- end of review -->
 ```
 
 `<scope>` in the title is `<branch> vs <base>` when the SCOPE line says `branch`; otherwise it is a short description of what you reviewed — the paths, or `whole codebase`. When the MODE line says `report-only`, append ` (includes uncommitted changes)` to the title.
 
 End the report with this exact last line: `<!-- end of review -->` — write it once, after everything else. The launcher treats the report as finished only when that line is in the file, so a report without it is discarded.
+
+The verdict stands on what you checked: when a gap you list under "Not verified and why" limits it, say so in the Verdict sentence.
 
 Do not edit any file except the report. Do not print the report to stdout; write the file and stop.

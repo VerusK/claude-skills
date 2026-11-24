@@ -1,6 +1,6 @@
 diff -ruN vendor/finishing-a-development-branch/SKILL.md skills/finishing-a-development-branch/SKILL.md
---- vendor/finishing-a-development-branch/SKILL.md	2026-11-12 09:45:54
-+++ skills/finishing-a-development-branch/SKILL.md	2026-11-12 10:46:17
+--- vendor/finishing-a-development-branch/SKILL.md	2026-11-24 22:00:47
++++ skills/finishing-a-development-branch/SKILL.md	2026-11-24 22:05:53
 @@ -123,6 +123,10 @@
  print when you push — following the repo's PR template and conventions if
  present, and report the URL to your human partner.
@@ -12,3 +12,21 @@ diff -ruN vendor/finishing-a-development-branch/SKILL.md skills/finishing-a-deve
  Keep the worktree — your human partner iterates on PR feedback there.
  
  ### Option 3: Keep As-Is
+@@ -199,6 +203,17 @@
+ 
+ **Otherwise:** The host environment owns this workspace — leave it in
+ place. If your platform provides a workspace-exit tool, use it.
++
++## Final report
++
++Whichever option ran, close with a report to your human partner: what was
++done (branch, commits, merge result or PR URL), the suite result from Step 1,
++and a **Not verified and why** part — everything this finish did not check,
++each with the reason: CI or deploy not observed, tests skipped or flaky, a
++platform or environment never exercised, findings the review left open. Take
++over the review report's "Not verified and why" instead of restating it
++differently. Write "Nothing — everything I claim was run" only if that is
++true.
+ 
+ ## Quick Reference
+ 

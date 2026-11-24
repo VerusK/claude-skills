@@ -244,7 +244,7 @@ SESSION="<the SESSION printed by section 2>"
 bash "$SKILLS_REPO/scripts/reviewer.sh" --close-session "$SESSION"
 ```
 
-Report to the user: scope reviewed, rounds run, reviewer path used, findings fixed/rejected/asked, path of every report written (round 1 and, if it ran, round 2), and suite status.
+Report to the user: scope reviewed, rounds run, reviewer path used, findings fixed/rejected/asked, path of every report written (round 1 and, if it ran, round 2), suite status, and **Not verified and why** — the last report's section of that name, plus anything this session did not check (a suite not run, a reviewer path that fell back, a fix wave not re-reviewed).
 
 In branch scope and full mode, then say: "Review done. Using `finishing-a-development-branch`." and invoke `finishing-a-development-branch` (`verus-skills:finishing-a-development-branch` when installed as a plugin). Path scope, codebase scope and report-only mode end with the summary — there is no branch to finish.
 

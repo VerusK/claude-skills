@@ -200,6 +200,8 @@ Template: [implementer-prompt.md](implementer-prompt.md)
 
 Implementer subagents report one of four statuses. Handle each appropriately:
 
+Every report has a **Not verified and why** part. A report without it is incomplete: send it back and wait for the part before going on. Read the part first: an item that decides whether the task is correct (a test not run, a path nothing covers) is closed — by you, with the check — before review; the rest goes into the ledger as `Not verified:` lines for the final summary.
+
 **DONE:** Generate the review package (`bash scripts/review-package PLAN_FILE BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path — unless the printed line ends in `docs-only` (see step 3).
 
 **DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
@@ -390,6 +392,11 @@ ruling, the list holds it. That list is the only place the decisions you
 took on your human partner's behalf reach them — they read it and rework
 whatever you got wrong. A ruling that dies with the workspace was a decision
 made in secret.
+
+Your final message also carries **Not verified and why**: the `Not verified:`
+ledger lines, plus what the final review's report lists under its own
+"Not verified and why", merged and deduplicated, each with the reason. Do
+not claim a check that no run in this session backs.
 
 When the final whole-branch review is clean and its fixes are merged,
 delete this plan's workspace with this skill's

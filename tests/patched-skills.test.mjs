@@ -184,3 +184,42 @@ test("review keys its session by branch and scope, so the next review of the sam
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// C1: every report form the distro hands to executors and reviewers asks for "Not verified and why".
+const NOT_VERIFIED = /Not verified and why/;
+const AGENTS = new URL("../agents/", import.meta.url).pathname;
+
+test("verus-worker role requires a Not verified and why section and forbids a duplicate", () => {
+  const body = readFileSync(path.join(AGENTS, "verus-worker.md"), "utf8");
+  assert.match(body, NOT_VERIFIED);
+  assert.match(body, /do not add a second/);
+});
+
+test("SDD implementer report format, fix report and status contract carry Not verified", () => {
+  const body = readFileSync(path.join(root, "subagent-driven-development/implementer-prompt.md"), "utf8");
+  const format = body.slice(body.indexOf("## Report Format"));
+  assert.match(format, /\*\*Not verified and why\*\* \(mandatory\)/);
+  assert.match(format, /- Not verified: one line, or "nothing"/);
+  const fix = body.slice(body.indexOf("## After Review Findings"), body.indexOf("## Report Format"));
+  assert.match(fix, NOT_VERIFIED);
+});
+
+test("SDD controller rejects a report without the part and lists it in the final message", () => {
+  const sdd = readFileSync(path.join(root, "subagent-driven-development/SKILL.md"), "utf8");
+  assert.match(sdd, /A report without it is incomplete/);
+  assert.match(sdd, /final message also carries \*\*Not verified and why\*\*/);
+});
+
+test("finishing-a-development-branch closes with a Not verified and why report", () => {
+  const fin = readFileSync(path.join(root, "finishing-a-development-branch/SKILL.md"), "utf8");
+  assert.match(fin, /## Final report/);
+  assert.match(fin, NOT_VERIFIED);
+});
+
+test("review report template has exactly one Not verified and why heading, before the end marker", () => {
+  const rev = readFileSync(path.join(root, "review/reviewer.md"), "utf8");
+  const headings = rev.match(/^## Not verified and why$/gm) ?? [];
+  assert.equal(headings.length, 1);
+  assert.ok(rev.indexOf("## Not verified and why") < rev.indexOf("<!-- end of review -->"));
+  assert.match(readFileSync(path.join(root, "review/SKILL.md"), "utf8"), NOT_VERIFIED);
+});
