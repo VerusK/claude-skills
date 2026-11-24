@@ -246,14 +246,17 @@ Preview it first: `bash scripts/cleanup.sh < /dev/null` lists every group and re
 ## Update
 
 ```bash
-make sync      # fetch upstreams, 3-way merge into skills/, refresh patches/ and sources.lock.json
+make sync      # fetch the pinned upstream commits, 3-way merge into skills/, refresh patches/ and sources.lock.json
+make sync-update ARGS="--only <source> --to <branch|tag|sha>"   # explicit pin bump; no ARGS = every source to its upstream head
 make repatch   # after editing a vendored skill by hand, re-record the diff in patches/
 make test      # node --test tests/*.test.mjs
 ```
 
+Every source in `sources.yaml` is **pinned**: `ref` is a full commit sha, never a branch, and `license` is the SPDX id from the upstream `LICENSE`. `make sync` fetches exactly that commit, so it never pulls in new upstream content on its own; `make sync-update` is the only command that moves a pin (to the upstream head, or with `--only <source> --to <branch|tag|sha>` to a chosen commit), syncs at the new commit and writes the pin to `sources.yaml` only for sources that synced. `mode` and `patch` stay as they are. `npm test` fails when a source has no 40-hex `ref`, no SPDX `license`, or its `sources.lock.json` entry is not at the pinned commit.
+
 `make sync` merges file by file with `git merge-file`: base is the old `vendor/` copy, ours is `skills/`, theirs is the new upstream. Clean merges land in `skills/`; a conflict leaves `<<<<<<< ours` markers in the file and the run exits non-zero; a file `git merge-file` cannot handle (binaries) is listed as *merge error, local copy kept*. `patches/` is a regenerated record of our divergence, never replayed onto upstream, and `sources.lock.json` records the commit, content hash and sync time of each source.
 
-The `sync upstream skills` workflow does the same weekly (Mondays 06:00 UTC) and on demand, opening a PR on `sync/upstream` with `.sync-report.md` as its body and the `sync` label. One-time repo setting: enable *Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests*, or the PR step fails. PRs opened with the default token do not trigger the `test` workflow, so the sync job runs `npm test` itself and records the result in the PR body (`## Tests`) and the `tests-failing` label. Conflicts and merge errors add the `needs-attention` label; resolve the markers, run `make repatch`, merge.
+The `sync upstream skills` workflow runs `sync-update` for every source weekly (Mondays 06:00 UTC) and on demand, opening a PR on `sync/upstream` with `.sync-report.md` as its body and the `sync` label. One-time repo setting: enable *Settings → Actions → General → Workflow permissions → Allow GitHub Actions to create and approve pull requests*, or the PR step fails. PRs opened with the default token do not trigger the `test` workflow, so the sync job runs `npm test` itself and records the result in the PR body (`## Tests`) and the `tests-failing` label. Conflicts and merge errors add the `needs-attention` label; resolve the markers, run `make repatch`, merge.
 
 Watch-only sources (`mode: watch` in `sources.yaml`) are only tracked in `vendor/`, never merged into `skills/`: `gstack-plan-eng-review` (`plan-eng-review/SKILL.md.tmpl` from garrytan/gstack) and `superpowers-code-reviewer` (`skills/requesting-code-review/code-reviewer.md` from obra/superpowers). Their diffs appear in the PR body; our own prompts derived from them are updated by hand.
 
@@ -266,12 +269,13 @@ Append to `sources.yaml`:
 ```yaml
   - name: my-skill
     repo: owner/repo
-    ref: main
+    ref: <full commit sha>   # `make sync-update ARGS="--only my-skill"` fills in the upstream head
+    license: MIT             # SPDX id from the upstream LICENSE
     path: skills/my-skill
     patch: true      # only if you intend to edit the copy
 ```
 
-Run `make sync`, edit `skills/my-skill/` if needed, `make repatch`, commit.
+Run `make sync-update ARGS="--only my-skill"` (it resolves `ref` when you start from a branch name, then syncs), edit `skills/my-skill/` if needed, `make repatch`, commit.
 
 ## Release
 

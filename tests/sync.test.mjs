@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { parseSources, syncSource, repatch, readLock, summarize, hasBlockingResults } from "../scripts/sync.mjs";
+import { parseSources, validateSources, pinSources, resolveRef, updatePins, fetchFromGitHub, syncSource, repatch, readLock, summarize, hasBlockingResults, REPO_ROOT } from "../scripts/sync.mjs";
 
 const TEMP_DIRS = [];
 function tmp(prefix) {
@@ -34,12 +34,15 @@ function upstream(files) {
   return dir;
 }
 
-const src = { name: "demo", repo: "x/y", ref: "main", path: "skills/demo", mode: "merge", patch: true };
+const SHA = "a".repeat(40);
+const src = { name: "demo", repo: "x/y", ref: SHA, license: "MIT", path: "skills/demo", mode: "merge", patch: true };
 const fetcher = (dir, commit) => async () => ({ dir, commit });
 
 test("parseSources normalises defaults", () => {
-  const list = parseSources(`sources:\n  - name: a\n    repo: o/r\n    path: skills/a\n  - name: w\n    repo: o/r\n    path: f.md\n    mode: watch\n`);
-  assert.deepEqual(list[0], { name: "a", repo: "o/r", ref: "main", path: "skills/a", mode: "merge", patch: false });
+  const list = parseSources(`sources:\n  - name: a\n    repo: o/r\n    ref: ${SHA}\n    license: MIT\n    path: skills/a\n  - name: w\n    repo: o/r\n    path: f.md\n    mode: watch\n`);
+  assert.deepEqual(list[0], { name: "a", repo: "o/r", ref: SHA, license: "MIT", path: "skills/a", mode: "merge", patch: false });
+  assert.equal(list[1].ref, null);
+  assert.equal(list[1].license, null);
   assert.equal(list[1].mode, "watch");
 });
 
@@ -122,7 +125,7 @@ test("lock entry records repo, ref, path, commit, hash and syncedAt", async () =
   const entry = readLock(root).demo;
   assert.deepEqual(Object.keys(entry).sort(), ["commit", "hash", "path", "ref", "repo", "syncedAt"]);
   assert.equal(entry.repo, "x/y");
-  assert.equal(entry.ref, "main");
+  assert.equal(entry.ref, SHA);
   assert.equal(entry.path, "skills/demo");
   assert.equal(entry.commit, "aaa");
   assert.match(entry.hash, /^[0-9a-f]{64}$/);
@@ -240,4 +243,95 @@ test("stale vendor tmp directories from earlier runs are pruned", async () => {
   writeFileSync(path.join(stale, "junk.md"), "junk\n");
   await syncSource(src, { root, fetchSource: fetcher(upstream({ "skills/demo/SKILL.md": "v1\n" }), "a") });
   assert.deepEqual(readdirSync(path.join(root, "vendor")), ["demo"]);
+});
+
+// ---- H3: every external source is pinned to a commit and carries a license ----
+
+const REAL_SOURCES = parseSources(readFileSync(path.join(REPO_ROOT, "sources.yaml"), "utf8"));
+
+test("every source in sources.yaml has a 40-hex ref commit and an SPDX license", () => {
+  assert.ok(REAL_SOURCES.length > 0);
+  for (const s of REAL_SOURCES) {
+    assert.match(s.ref ?? "", /^[0-9a-f]{40}$/, `${s.name}: ref must be a full commit sha, not a branch`);
+    assert.ok(s.license, `${s.name}: license is missing`);
+  }
+  assert.deepEqual(validateSources(REAL_SOURCES), []);
+});
+
+test("sources.lock.json records exactly the pinned commit of every source", () => {
+  const lock = readLock(REPO_ROOT);
+  for (const s of REAL_SOURCES) {
+    assert.equal(lock[s.name]?.commit, s.ref, `${s.name}: lock commit differs from the pinned ref (run make sync)`);
+    assert.equal(lock[s.name]?.ref, s.ref, `${s.name}: lock ref differs from the pinned ref (run make sync)`);
+  }
+});
+
+test("local mode and patch flags survive pinning", () => {
+  const watch = REAL_SOURCES.filter((s) => s.mode === "watch").map((s) => s.name).sort();
+  assert.deepEqual(watch, ["gstack-plan-eng-review", "superpowers-code-reviewer"]);
+  assert.ok(REAL_SOURCES.find((s) => s.name === "writing-plans").patch);
+});
+
+test("validateSources flags branch refs, missing ref and license, bad SPDX and duplicates", () => {
+  const ok = { name: "a", repo: "o/r", ref: SHA, license: "MIT", path: "p", mode: "merge", patch: false };
+  assert.deepEqual(validateSources([ok]), []);
+  assert.deepEqual(validateSources([ok, { ...ok, license: "Apache-2.0 OR MIT" }]).length, 1, "duplicate name only");
+  const problems = validateSources([
+    { ...ok, name: "branch", ref: "main" },
+    { ...ok, name: "noref", ref: null },
+    { ...ok, name: "nolic", license: null },
+    { ...ok, name: "badlic", license: "my own terms!" },
+    { ...ok, name: "short", ref: "abc123" },
+  ]);
+  assert.equal(problems.length, 5);
+  assert.match(problems.join("\n"), /branch.*commit sha/);
+  assert.match(problems.join("\n"), /nolic.*license/);
+  assert.match(problems.join("\n"), /badlic.*SPDX/);
+});
+
+test("validateSources can skip the pin check for an update run", () => {
+  const s = { name: "a", repo: "o/r", ref: "main", license: "MIT", path: "p", mode: "merge", patch: false };
+  assert.equal(validateSources([s]).length, 1);
+  assert.deepEqual(validateSources([s], { requirePinned: false }), []);
+});
+
+test("fetchFromGitHub refuses an unpinned ref before touching the network", async () => {
+  await assert.rejects(() => fetchFromGitHub({ ...src, ref: "main" }), /not pinned/);
+});
+
+test("pinSources rewrites only ref lines and keeps comments, mode and patch", () => {
+  const text = `# header comment\nsources:\n  - name: a\n    repo: o/r\n    ref: ${SHA}\n    license: MIT\n    path: skills/a\n    patch: true\n  # watch-only\n  - name: w\n    repo: o/r\n    ref: ${SHA}\n    license: MIT\n    path: f.md\n    mode: watch\n`;
+  const NEW = "b".repeat(40);
+  const out = pinSources(text, { w: NEW });
+  assert.match(out, /# header comment/);
+  assert.match(out, /# watch-only/);
+  const list = parseSources(out);
+  assert.equal(list[0].ref, SHA);
+  assert.equal(list[1].ref, NEW);
+  assert.equal(list[0].patch, true);
+  assert.equal(list[1].mode, "watch");
+  assert.throws(() => pinSources(text, { nope: NEW }), /unknown source/);
+});
+
+test("resolveRef returns a sha as is and reads a branch through the injected lister", async () => {
+  assert.equal(await resolveRef(src, SHA), SHA);
+  const lines = (out) => async () => out;
+  assert.equal(await resolveRef(src, "main", { lsRemote: lines(`${"c".repeat(40)}\trefs/heads/main\n`) }), "c".repeat(40));
+  // annotated tag: the peeled commit wins over the tag object
+  assert.equal(await resolveRef(src, "v1", { lsRemote: lines(`${"d".repeat(40)}\trefs/tags/v1\n${"e".repeat(40)}\trefs/tags/v1^{}\n`) }), "e".repeat(40));
+  await assert.rejects(() => resolveRef(src, "nope", { lsRemote: lines("") }), /cannot resolve/);
+});
+
+test("updatePins moves the pin of the selected sources and leaves the rest", async () => {
+  const root = tmp("pins-");
+  const text = `sources:\n  - name: a\n    repo: o/r\n    ref: ${SHA}\n    license: MIT\n    path: skills/a\n  - name: b\n    repo: o/r\n    ref: ${SHA}\n    license: MIT\n    path: skills/b\n`;
+  writeFileSync(path.join(root, "sources.yaml"), text);
+  const NEW = "f".repeat(40);
+  const list = parseSources(text);
+  const pins = await updatePins(list.filter((s) => s.name === "b"), { to: null, lsRemote: async () => `${NEW}\tHEAD\n` });
+  assert.deepEqual(pins, { b: NEW });
+  writeFileSync(path.join(root, "sources.yaml"), pinSources(text, pins));
+  const after = parseSources(readFileSync(path.join(root, "sources.yaml"), "utf8"));
+  assert.equal(after[0].ref, SHA);
+  assert.equal(after[1].ref, NEW);
 });

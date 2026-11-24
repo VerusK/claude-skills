@@ -9,6 +9,7 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "sync": "node scripts/sync.mjs",
+    "sync-update": "node scripts/sync.mjs --update",
     "repatch": "node scripts/sync.mjs --repatch",
     "vendor-sdk": "node scripts/vendor-sdk.mjs",
     "models": "node scripts/models.mjs",

@@ -21,8 +21,78 @@ export function parseSources(text) {
     for (const k of ["name", "repo", "path"]) {
       if (typeof s[k] !== "string" || !s[k]) throw new Error(`source is missing '${k}'`);
     }
-    return { name: s.name, repo: s.repo, ref: s.ref ?? "main", path: s.path, mode: s.mode === "watch" ? "watch" : "merge", patch: s.patch === true };
+    return {
+      name: s.name, repo: s.repo,
+      ref: typeof s.ref === "string" ? s.ref : null,
+      license: typeof s.license === "string" ? s.license : null,
+      path: s.path, mode: s.mode === "watch" ? "watch" : "merge", patch: s.patch === true,
+    };
   });
+}
+
+const SHA_RE = /^[0-9a-f]{40}$/;
+// SPDX license expression: ids joined by AND / OR / WITH, parentheses allowed.
+const SPDX_RE = /^\(?[A-Za-z0-9.+-]+\)?( (AND|OR|WITH) \(?[A-Za-z0-9.+-]+\)?)*$/;
+
+// Problems that make a sources.yaml unfit to sync from: every source must be pinned
+// to a full commit sha (`ref`) and carry an SPDX `license`. An update run resolves
+// the pin itself, so it passes `requirePinned: false`.
+export function validateSources(list, { requirePinned = true } = {}) {
+  const problems = [];
+  const seen = new Set();
+  for (const s of list) {
+    if (seen.has(s.name)) problems.push(`${s.name}: duplicate source name`);
+    seen.add(s.name);
+    if (requirePinned && !SHA_RE.test(s.ref ?? "")) {
+      problems.push(`${s.name}: ref must be a full 40-hex commit sha, got ${JSON.stringify(s.ref)} — pin it with 'make sync-update ARGS="--only ${s.name}"'`);
+    }
+    if (!s.license) problems.push(`${s.name}: license is missing (SPDX id from the upstream LICENSE)`);
+    else if (!SPDX_RE.test(s.license)) problems.push(`${s.name}: license ${JSON.stringify(s.license)} is not an SPDX expression`);
+  }
+  return problems;
+}
+
+// Rewrite `ref` of the named sources in sources.yaml text, keeping comments and every
+// other field. `pins` maps source name -> commit sha.
+export function pinSources(text, pins) {
+  const doc = YAML.parseDocument(text);
+  const items = doc.get("sources");
+  const names = new Set();
+  for (const item of items.items) {
+    const name = item.get("name");
+    names.add(name);
+    if (name in pins) item.set("ref", pins[name]);
+  }
+  for (const name of Object.keys(pins)) {
+    if (!names.has(name)) throw new Error(`unknown source '${name}'`);
+  }
+  return doc.toString();
+}
+
+function gitLsRemote(source, ref) {
+  return execFileSync("git", ["ls-remote", `https://github.com/${source.repo}.git`, ref, `${ref}^{}`], {
+    encoding: "utf8",
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
+}
+
+// Turn a branch, tag or sha into a commit sha. `lsRemote(source, ref)` is injectable for tests.
+// An annotated tag resolves to the commit it points at (the peeled `^{}` line), not the tag object.
+export async function resolveRef(source, ref, { lsRemote = gitLsRemote } = {}) {
+  if (SHA_RE.test(ref)) return ref;
+  const lines = (await lsRemote(source, ref)).trim().split("\n").filter(Boolean);
+  const peeled = lines.find((l) => l.endsWith("^{}"));
+  const sha = (peeled ?? lines[0] ?? "").split(/\s+/)[0];
+  if (!SHA_RE.test(sha)) throw new Error(`${source.name}: cannot resolve '${ref}' in ${source.repo}`);
+  return sha;
+}
+
+// New pins for the given sources: `to` (a branch, tag or sha; only meaningful for one
+// source) or the upstream default branch (`HEAD`).
+export async function updatePins(sources, { to = null, lsRemote } = {}) {
+  const pins = {};
+  for (const s of sources) pins[s.name] = await resolveRef(s, to ?? "HEAD", { lsRemote });
+  return pins;
 }
 
 export function readLock(root) {
@@ -103,15 +173,15 @@ function diffDirs(vendorDir, stagedDir) {
   }
 }
 
-// Default fetcher: resolve ref to a commit, download tarball, extract.
+// Default fetcher: download the tarball of the pinned commit, extract.
+// Never follows a moving branch: an unpinned ref is an error (see `--update`).
 // Returns { dir, commit, cleanup } — `cleanup` removes the extracted tree, and
 // `syncSource` calls it once it is done with `dir`.
 export async function fetchFromGitHub(source) {
-  const ls = execFileSync("git", ["ls-remote", `https://github.com/${source.repo}.git`, source.ref], {
-    encoding: "utf8",
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-  });
-  const commit = ls.trim().split(/\s+/)[0] || source.ref;
+  if (!SHA_RE.test(source.ref ?? "")) {
+    throw new Error(`${source.name}: ref ${JSON.stringify(source.ref)} is not pinned to a commit; run 'make sync-update ARGS="--only ${source.name}"'`);
+  }
+  const commit = source.ref;
   const work = mkdtempSync(path.join(tmpdir(), `skills-${source.name}-`));
   const cleanup = () => rmSync(work, { recursive: true, force: true });
   try {
@@ -266,10 +336,34 @@ export function summarize(results) {
   return lines.join("\n");
 }
 
+function flagValue(args, flag) {
+  const i = args.indexOf(flag);
+  if (i === -1) return null;
+  const v = args[i + 1];
+  if (!v || v.startsWith("--")) throw new Error(`${flag} needs a value`);
+  return v;
+}
+
 async function main() {
   const args = process.argv.slice(2);
-  const only = args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
-  const sources = parseSources(readFileSync(path.join(REPO_ROOT, "sources.yaml"), "utf8")).filter((s) => !only || s.name === only);
+  const only = flagValue(args, "--only");
+  const to = flagValue(args, "--to");
+  const update = args.includes("--update");
+  const yamlPath = path.join(REPO_ROOT, "sources.yaml");
+  const all = parseSources(readFileSync(yamlPath, "utf8"));
+  if (only && !all.some((s) => s.name === only)) throw new Error(`unknown source '${only}'`);
+  if (to && !(update && only)) throw new Error("--to needs --update and --only <source>");
+  const problems = validateSources(all, { requirePinned: !update && !args.includes("--repatch") });
+  if (problems.length) throw new Error(`sources.yaml is not valid:\n- ${problems.join("\n- ")}`);
+  let sources = all.filter((s) => !only || s.name === only);
+
+  // Explicit update: move the pin of the selected sources to the upstream head (or --to),
+  // sync at the new commit, and write the pin to sources.yaml only for sources that synced.
+  let pins = {};
+  if (update && !args.includes("--repatch")) {
+    pins = await updatePins(sources, { to });
+    sources = sources.map((s) => ({ ...s, ref: pins[s.name] }));
+  }
 
   if (args.includes("--repatch")) {
     for (const s of sources.filter((s) => s.patch)) {
@@ -286,8 +380,13 @@ async function main() {
       results.push(r);
       if (s.patch) repatch(s, { root: REPO_ROOT });
     } catch (err) {
+      delete pins[s.name]; // a source that did not sync keeps its old pin
       results.push({ name: s.name, commit: "-", changed: false, conflicts: [`sync error: ${err.message}`], mergeErrors: [], added: [], removed: [], kept: [] });
     }
+  }
+  if (Object.keys(pins).length) {
+    const moved = Object.fromEntries(Object.entries(pins).filter(([name, sha]) => all.find((s) => s.name === name).ref !== sha));
+    if (Object.keys(moved).length) writeFileSync(yamlPath, pinSources(readFileSync(yamlPath, "utf8"), moved));
   }
   const report = summarize(results);
   writeFileSync(path.join(REPO_ROOT, ".sync-report.md"), report);

@@ -1,48 +1,60 @@
-# External skills. `mode: merge` (default) syncs into skills/<name>/ via 3-way merge;
+# External skills. Every source is pinned: `ref` is a full commit sha (never a branch) and
+# `license` is the SPDX id from the upstream LICENSE. `make sync` fetches exactly that commit;
+# `make sync-update` (weekly workflow, or by hand) moves the pin to the upstream head.
+# `mode: merge` (default) syncs into skills/<name>/ via 3-way merge;
 # `mode: watch` only tracks upstream in vendor/<name>/ and reports diffs.
 # `patch: true` marks sources with local edits; `make repatch` records them in patches/.
 sources:
   - name: writing-plans
     repo: obra/superpowers
-    ref: main
+    ref: 5bf4e78011075bcfc0dc295f0724994cd123ee71
+    license: MIT
     path: skills/writing-plans
     patch: true
   - name: subagent-driven-development
     repo: obra/superpowers
-    ref: main
+    ref: 5bf4e78011075bcfc0dc295f0724994cd123ee71
+    license: MIT
     path: skills/subagent-driven-development
     patch: true
   - name: finishing-a-development-branch
     repo: obra/superpowers
-    ref: main
+    ref: 5bf4e78011075bcfc0dc295f0724994cd123ee71
+    license: MIT
     path: skills/finishing-a-development-branch
     patch: true
   - name: test-driven-development
     repo: obra/superpowers
-    ref: main
+    ref: 5bf4e78011075bcfc0dc295f0724994cd123ee71
+    license: MIT
     path: skills/test-driven-development
     patch: true
   - name: verification-before-completion
     repo: obra/superpowers
-    ref: main
+    ref: 5bf4e78011075bcfc0dc295f0724994cd123ee71
+    license: MIT
     path: skills/verification-before-completion
   - name: systematic-debugging
     repo: obra/superpowers
-    ref: main
+    ref: 5bf4e78011075bcfc0dc295f0724994cd123ee71
+    license: MIT
     path: skills/systematic-debugging
     patch: true
   - name: typesafe-ai
     repo: typesafe-ai/skills
-    ref: main
+    ref: 65a39f393687675ce170e6094757de20370365b9
+    license: MIT
     path: skills/typesafe-ai
   # Watch-only: sources our own prompts were derived from.
   - name: gstack-plan-eng-review
     repo: garrytan/gstack
-    ref: main
+    ref: 35dd014c580037d1c009776d8b0584587c1bd42c
+    license: MIT
     path: plan-eng-review/SKILL.md.tmpl
     mode: watch
   - name: superpowers-code-reviewer
     repo: obra/superpowers
-    ref: main
+    ref: 5bf4e78011075bcfc0dc295f0724994cd123ee71
+    license: MIT
     path: skills/requesting-code-review/code-reviewer.md
     mode: watch

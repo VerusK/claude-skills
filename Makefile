@@ -1,4 +1,4 @@
-.PHONY: install uninstall sync repatch vendor-sdk models release cleanup test deps
+.PHONY: install uninstall sync sync-update repatch vendor-sdk models release cleanup test deps
 
 deps:
 	npm install --no-audit --no-fund
@@ -11,6 +11,10 @@ uninstall:
 
 sync: deps
 	node scripts/sync.mjs
+
+# Explicit pin bump: ARGS="[--only <source> [--to <branch|tag|sha>]]"; no ARGS = every source to its upstream head.
+sync-update: deps
+	node scripts/sync.mjs --update $(ARGS)
 
 repatch:
 	node scripts/sync.mjs --repatch
